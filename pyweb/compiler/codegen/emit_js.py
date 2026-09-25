@@ -25,7 +25,12 @@ def emit_js(page_name, ui, signals, computeds, initial, rpc_specs, handlers=None
         lines.append(f"export const {s} = sig({_js_val(init)}); // pyweb:{s}")
         if sourcemap_out is not None:
             sourcemap_out.append((f"sig {s}", 0))
+    emitted_consts: set = set()
     for name, c in computeds.items():
+        for dep in c["deps"]:
+            if dep not in signals and dep not in emitted_consts and dep in (initial or {}):
+                emitted_consts.add(dep)
+                lines.append(f"const {dep} = {_js_val(initial[dep])}; // pyweb:const")
         lines.append(f"export const {name} = computed(() => ({_py2js(c['code'])})); // deps {','.join(c['deps'])}")
     for hname, h in handlers.items():
         lines.append(f"export function {hname}(e) {{ {_py2js(h['body_js'])} }} // pyweb-line:{h['line']}")
@@ -36,9 +41,16 @@ def emit_js(page_name, ui, signals, computeds, initial, rpc_specs, handlers=None
     scope_names = sorted(set(signals) | set(computeds) | set(handlers))
     if scope_names:
         lines.append(f"window.__pyweb_scope = {{ {', '.join(scope_names)} }};")
+    _assign_ids(ui)
     lines.append("export function mount(root=document) {")
     lines.append(_emit_bindings(ui, "root", signals))
     lines.append("}")
+    if has_dynamic:
+        lines.append("if (typeof document !== 'undefined') {")
+        lines.append("  if (document.readyState === 'loading') {")
+        lines.append("    document.addEventListener('DOMContentLoaded', () => mount(document));")
+        lines.append("  } else { mount(document); }")
+        lines.append("}")
     return "\n".join(lines) + "\n"
 
 
@@ -55,6 +67,29 @@ def _has_expr(ui):
     return False
 
 
+def _assign_ids(ui):
+    """Walk UI in document order; tag interactive elements with stable data-pw-id."""
+    counter = [0]
+
+    def walk(nodes):
+        for n in nodes:
+            t = type(n).__name__
+            if t == "Element":
+                interactive = any(
+                    (key.startswith("on") or key == "bind") and isinstance(val, tuple)
+                    for key, val in n.attrs.items())
+                if interactive:
+                    counter[0] += 1
+                    n.pw_id = f"pw{counter[0]:05d}"
+                walk(n.children)
+            elif t in ("ControlFor", "ControlIf", "_ControlBox"):
+                walk(getattr(n, "body", []) or [])
+                for c in getattr(n, "orelse", []):
+                    walk([c])
+
+    walk(ui)
+
+
 def _emit_bindings(ui, root_var, signals=()):
     out = []
     for n in ui:
@@ -62,12 +97,19 @@ def _emit_bindings(ui, root_var, signals=()):
         if t == "ExprNode":
             out.append(f"  bind_text({root_var}, {json.dumps(n.code)}, () => ({_py2js(n.code, signals)})); // line {n.line}")
         elif t == "Element":
+            el_id = getattr(n, "pw_id", None)
             for key, val in n.attrs.items():
                 if key.startswith("on") and isinstance(val, tuple):
                     fn = val[1]
-                    out.append(f"  on({root_var}, '{key[2:]}', {fn}); // line {val[2]}")
+                    if el_id:
+                        out.append(f"  on({root_var}, '{key[2:]}', {fn}, {el_id!r}); // line {val[2]}")
+                    else:
+                        out.append(f"  on({root_var}, '{key[2:]}', {fn}); // line {val[2]}")
                 elif key == "bind" and isinstance(val, tuple):
-                    out.append(f"  bind_input({root_var}, {json.dumps(val[1])}); // line {val[2]}")
+                    if el_id:
+                        out.append(f"  bind_input({root_var}, {json.dumps(val[1])}, {el_id!r}); // line {val[2]}")
+                    else:
+                        out.append(f"  bind_input({root_var}, {json.dumps(val[1])}); // line {val[2]}")
             if n.children:
                 out.append(_emit_bindings(n.children, root_var, signals))
         elif t in ("ControlFor", "ControlIf", "_ControlBox"):

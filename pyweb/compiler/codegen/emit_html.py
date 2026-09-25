@@ -82,3 +82,25 @@ def emit_page(route, title, ui, initial=None, js_url=None, css=""):
             f"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
             f"<title>{htmlmod.escape(title)}</title><style>{css}</style></head>"
             f"<body><div id=\"pyweb-root\" data-route=\"{htmlmod.escape(route)}\">{body}</div>{js}</body></html>")
+
+
+def emit_island(name, ui, initial=None):
+    """Render one interactive island: static SSR shell + activation marker."""
+    initial = initial or {}
+    return (f'<div data-pyweb-island="{htmlmod.escape(name)}">'
+            f"{emit_html(ui, initial)}</div>")
+
+
+def stream_shell(route, title, js_url=None, css=""):
+    """Streaming SSR: head + root-open chunks; caller appends fragments."""
+    js = f'\n<script type="module" src="{js_url}"></script>' if js_url else ""
+    head = ("<!doctype html><html><head><meta charset=\"utf-8\">"
+            f"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            f"<title>{htmlmod.escape(title)}</title><style>{css}</style></head>"
+            f"<body><div id=\"pyweb-root\" data-route=\"{htmlmod.escape(route)}\">")
+    tail = f"</div>{js}</body></html>"
+    return head, tail
+
+
+def stream_fragment(ui, initial=None):
+    return emit_html(ui, initial)

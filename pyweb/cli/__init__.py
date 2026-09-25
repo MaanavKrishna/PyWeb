@@ -129,6 +129,26 @@ def cmd_dev(args):
         httpd.serve_forever()
 
 
+def cmd_deploy(args):
+    from pyweb import deploy as D
+    target = (args.target or "docker").lower()
+    outdir = args.out
+    os.makedirs(outdir, exist_ok=True)
+    files = {}
+    if target in ("docker", "compose"):
+        files["Dockerfile"] = D.dockerfile(port=args.port)
+        if target == "compose" or args.compose:
+            files["compose.yaml"] = D.compose(port=args.port, db_url=args.db_url or "")
+    elif target == "k8s":
+        files["k8s.yaml"] = D.k8s_manifest(app=args.app, image=args.image, port=args.port)
+    else:
+        raise SystemExit(f"unknown deploy target {args.target!r} (docker|compose|k8s)")
+    for name, body in files.items():
+        with open(os.path.join(outdir, name), "w") as fh:
+            fh.write(body)
+    print(f"deploy {target} -> {outdir}/ ({', '.join(files)})")
+
+
 def cmd_new(args):
     os.makedirs(args.name, exist_ok=True)
     with open(f"{args.name}/app.pyweb", "w") as fh:
@@ -144,7 +164,16 @@ def main(argv=None):
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
-    for name in ("test", "fmt", "lint", "deploy"):
+    p = sub.add_parser("deploy")
+    p.add_argument("--target", default="docker")
+    p.add_argument("--out", default="deploy")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--compose", action="store_true")
+    p.add_argument("--db-url", default="")
+    p.add_argument("--app", default="pyweb")
+    p.add_argument("--image", default="pyweb:latest")
+    p.set_defaults(fn=cmd_deploy)
+    for name in ("test", "fmt", "lint"):
         pp = sub.add_parser(name); pp.set_defaults(fn=lambda a, n=name: print(f"pyweb {n}: not yet implemented in prototype"))
     args = ap.parse_args(argv)
     args.fn(args)

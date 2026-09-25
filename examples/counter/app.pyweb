@@ -1,0 +1,23 @@
+from pyweb import App
+
+
+app = App()
+
+
+@app.page("/")
+def Home():
+    count = 0
+
+
+    def increment():
+        count += 1
+
+
+    <main>
+        <h1>Counter</h1>
+
+
+        <button onclick={increment}>
+            Count: {count}
+        </button>
+    </main>

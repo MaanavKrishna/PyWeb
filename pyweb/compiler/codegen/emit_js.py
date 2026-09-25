@@ -1,0 +1,97 @@
+"""JS emitter: reactive page → minimal fine-grained browser module."""
+
+from __future__ import annotations
+
+import json
+
+from ..rpc import client_stub
+
+RUNTIME_IMPORT = "import { sig, computed, bind_text, bind_input, on, rpc, mutate } from './runtime.js';\n"
+
+
+def _js_val(v):
+    return json.dumps(v)
+
+
+def emit_js(page_name, ui, signals, computeds, initial, rpc_specs, handlers=None, sourcemap_out=None):
+    """Generate a JS module. Dynamic {expr} → bound text nodes (no VDOM)."""
+    handlers = handlers or {}
+    lines = []
+    has_dynamic = bool(signals or computeds or _has_expr(ui) or rpc_specs or handlers)
+    if has_dynamic:
+        lines.append(RUNTIME_IMPORT)
+    for s in signals:
+        init = initial.get(s)
+        lines.append(f"export const {s} = sig({_js_val(init)}); // pyweb:{s}")
+        if sourcemap_out is not None:
+            sourcemap_out.append((f"sig {s}", 0))
+    for name, c in computeds.items():
+        lines.append(f"export const {name} = computed(() => ({_py2js(c['code'])})); // deps {','.join(c['deps'])}")
+    for hname, h in handlers.items():
+        lines.append(f"export function {hname}(e) {{ {_py2js(h['body_js'])} }} // pyweb-line:{h['line']}")
+        if sourcemap_out is not None:
+            sourcemap_out.append((f"handler {hname}", h["line"]))
+    for spec in rpc_specs:
+        lines.append(client_stub(spec) + f" // rpc:{spec['name']} pyweb-line:{spec['line']}")
+    scope_names = sorted(set(signals) | set(computeds) | set(handlers))
+    if scope_names:
+        lines.append(f"window.__pyweb_scope = {{ {', '.join(scope_names)} }};")
+    lines.append("export function mount(root=document) {")
+    lines.append(_emit_bindings(ui, "root", signals))
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _has_expr(ui):
+    for n in ui:
+        t = type(n).__name__
+        if t == "ExprNode":
+            return True
+        if t == "Element" and any(isinstance(v, tuple) for v in n.attrs.values()):
+            return True
+        kids = getattr(n, "children", None) or getattr(n, "body", None) or []
+        if kids and _has_expr(kids):
+            return True
+    return False
+
+
+def _emit_bindings(ui, root_var, signals=()):
+    out = []
+    for n in ui:
+        t = type(n).__name__
+        if t == "ExprNode":
+            out.append(f"  bind_text({root_var}, {json.dumps(n.code)}, () => ({_py2js(n.code, signals)})); // line {n.line}")
+        elif t == "Element":
+            for key, val in n.attrs.items():
+                if key.startswith("on") and isinstance(val, tuple):
+                    fn = val[1]
+                    out.append(f"  on({root_var}, '{key[2:]}', {fn}); // line {val[2]}")
+                elif key == "bind" and isinstance(val, tuple):
+                    out.append(f"  bind_input({root_var}, {json.dumps(val[1])}); // line {val[2]}")
+            if n.children:
+                out.append(_emit_bindings(n.children, root_var, signals))
+        elif t in ("ControlFor", "ControlIf", "_ControlBox"):
+            body = getattr(n, "body", [])
+            if body:
+                out.append(_emit_bindings(body, root_var, signals))
+            for c in getattr(n, "orelse", []):
+                out.append(_emit_bindings([c], root_var, signals))
+    return "\n".join(out) if out else "  // static — no bindings"
+
+
+def _py2js(code, signals=()):
+    # Tiny expression lowering for the prototype: Python → JS for common ops.
+    # Signals are callable refs: `count` reads as `count()`, `count += 1`
+    # becomes `count(count() + 1)`. Full typing lives in PIR long-term.
+    import re
+    for s in sorted(signals, key=len, reverse=True):
+        code = re.sub(rf"\b{re.escape(s)}\b\s*\+=\s*([^;]+)", rf"{s}({s}() + \1)", code)
+        code = re.sub(rf"\b{re.escape(s)}\b\s*=\s*(?![=>])([^;]+)", rf"{s}(\1)", code)
+        code = re.sub(rf"(?<![\w$.]){re.escape(s)}(?![\w$(\[])", f"{s}()", code)
+    code = re.sub(r"\bTrue\b", "true", code)
+    code = re.sub(r"\bFalse\b", "false", code)
+    code = re.sub(r"\bNone\b", "null", code)
+    code = re.sub(r"\band\b", "&&", code)
+    code = re.sub(r"\bor\b", "||", code)
+    code = re.sub(r"\bnot\b", "!", code)
+    return code

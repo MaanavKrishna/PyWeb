@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 
-_lock = threading.Lock()
+_lock = threading.RLock()
 _db_path = ":memory:"
 _conns: dict[str, sqlite3.Connection] = {}
 

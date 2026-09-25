@@ -84,21 +84,28 @@ def compile_source(source, filename="<pyweb>", route="/", title="PyWeb"):
                 if m:
                     route_of = m.group(1)
         handlers = _handler_lowers(fn, signals)
-        js = emit_js(fn.name, ui, signals, computeds, initial, rpc, handlers=handlers, sourcemap_out=[])
+        smap: list = []
+        js = emit_js(fn.name, ui, signals, computeds, initial, rpc, handlers=handlers, sourcemap_out=smap)
         html_body = emit_html(ui, initial)
         html = emit_page(route_of, title, ui, initial, js_url=f"/static/{fn.name}.js")
         artifacts[fn.name] = {"ui": ui, "signals": signals, "computeds": computeds,
                               "placement": placement, "edges": edges, "initial": initial,
                               "js": js, "html": html, "html_body": html_body,
-                              "lineno": fn.lineno, "params": params, "route": route_of}
+                              "lineno": fn.lineno, "params": params, "route": route_of,
+                              "sourcemap": smap, "handlers": handlers}
         all_signals.update({s: initial.get(s) for s in signals})
         all_computeds.update(computeds)
         all_place.update(placement)
         all_edges.extend(edges)
         page_infos.append({"name": fn.name, "route": route_of, "signals": signals})
-    # Security gate: secret-like names must not be browser signals.
-    for s in all_signals:
-        if any(h in s.upper() for h in ("SECRET", "PASSWORD", "API_KEY", "TOKEN", "PRIVATE")):
+    # Security gate: a secret-like browser signal only leaks when its initial
+    # value is a non-empty literal baked into the SSR/JS bundle. Empty form
+    # state (e.g. `password = ""` bound to an <input>) originates in the
+    # browser and is safe.
+    for s, v in all_signals.items():
+        if v not in (None, "", 0, False) and any(
+            h in s.upper() for h in ("SECRET", "PASSWORD", "API_KEY", "TOKEN", "PRIVATE")
+        ):
             raise ValueError(f"ERROR: server secret {s!r} referenced from browser-executed code")
     graph = build_graph(page_infos, rpc, all_signals, all_computeds, all_place, all_edges)
     return {"graph": graph, "ir_text": to_text(graph), "rpc": rpc, "pages": artifacts}

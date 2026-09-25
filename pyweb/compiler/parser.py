@@ -174,8 +174,12 @@ def parse_ui_block(lines: dict[int, str]):
         me = re.match(r"^else\s*:$", code)
         ml = re.match(r"^elif\s+(.+):$", code)
         if mf or mi or me or ml:
-            while stack and isinstance(stack[-1], _CtlBox) and indent <= stack[-1].indent:
-                stack.pop()
+            if me or ml:
+                while stack and isinstance(stack[-1], _CtlBox) and indent < stack[-1].indent:
+                    stack.pop()
+            else:
+                while stack and isinstance(stack[-1], _CtlBox) and indent <= stack[-1].indent:
+                    stack.pop()
             if me or ml:
                 if not stack or not isinstance(stack[-1], _CtlBox) or not isinstance(stack[-1].node, ControlIf):
                     raise SyntaxError(f"pyweb: stray {code!r} at line {lineno}")

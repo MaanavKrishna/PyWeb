@@ -1,0 +1,16 @@
+from pyweb import App
+
+app = App()
+
+@app.page("/chat/{room}")
+def Chat(room):
+    draft = ""
+
+    def send():
+        draft = ""
+
+    <main>
+        <h1>Room {room}</h1>
+        <input bind={draft} />
+        <button onclick={send}>Send</button>
+    </main>

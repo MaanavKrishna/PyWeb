@@ -1,0 +1,18 @@
+from pyweb import App
+
+app = App()
+
+@app.page("/login")
+def Login():
+    email = ""
+    password = ""
+
+    def submit():
+        email = ""
+
+    <main>
+        <h1>Login</h1>
+        <input bind={email} />
+        <input bind={password} />
+        <button onclick={submit}>Sign in</button>
+    </main>

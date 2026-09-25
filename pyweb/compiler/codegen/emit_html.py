@@ -13,8 +13,13 @@ def _eval_static(code, initial):
         return None
 
 
-def emit_html(ui, initial=None, rpc=None):
-    initial = initial or {}
+def emit_html(ui, initial=None, rpc=None, computeds=None):
+    initial = dict(initial or {})
+    for name, spec in (computeds or {}).items():
+        if name not in initial:
+            val = _eval_static(spec["code"] if isinstance(spec, dict) else spec, initial)
+            if val is not None:
+                initial[name] = val
     parts = []
     for n in ui:
         parts.append(_node(n, initial))
@@ -51,7 +56,11 @@ def _node(n, initial):
         return "".join(_node(c, initial) for c in n.body)
     if t == "Element":
         tag = n.tag.lower() if not n.is_component else "div"
+        VOID_TAGS = {"input", "img", "br", "hr", "meta", "link", "source",
+                     "wbr", "col", "base", "area", "embed", "track", "param"}
         attrs = []
+        if getattr(n, "pw_id", None):
+            attrs.append(f'data-pw-id="{n.pw_id}"')
         for key, val in n.attrs.items():
             if key in ("bind", "onclick", "oninput", "onchange"):
                 continue
@@ -68,15 +77,18 @@ def _node(n, initial):
             elif val is True:
                 attrs.append(key.rstrip("_"))
         inner = "".join(_node(c, initial) for c in n.children)
+        open_tag = f"<{tag}{' ' if attrs else ''}{' '.join(attrs)}>"
+        if tag in VOID_TAGS:
+            return open_tag
         # dynamic text bindings: mark parent for activation
-        return f"<{tag}{' ' if attrs else ''}{' '.join(attrs)}>{inner}</{tag}>"
+        return f"{open_tag}{inner}</{tag}>"
     if t == "_ControlBox":
         return "".join(_node(c, initial) for c in n.node.body)
     return ""
 
 
-def emit_page(route, title, ui, initial=None, js_url=None, css=""):
-    body = emit_html(ui, initial)
+def emit_page(route, title, ui, initial=None, js_url=None, css="", computeds=None):
+    body = emit_html(ui, initial, computeds=computeds)
     js = f'\n<script type="module" src="{js_url}"></script>' if js_url else ""
     return ("<!doctype html><html><head><meta charset=\"utf-8\">"
             f"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"

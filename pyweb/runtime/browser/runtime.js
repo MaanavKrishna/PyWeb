@@ -46,38 +46,57 @@ function _walkText(root, cb) {
 // Bind {expr} text: codegen emits one bind_text per dynamic expression with a
 // thunk reading current signal values; we re-evaluate on any signal change.
 export function bind_text(root, code, thunk) {
-  const el = root.getElementById ? root : document;
-  const target = el.querySelector ? (el.querySelector(`[pw-bind="${CSS.escape(code)}"]`) || el) : document;
+  const el = root.querySelector ? root : document;
+  let targets;
+  try {
+    targets = el.querySelectorAll(`[pw-bind="${CSS.escape(code)}"]`);
+  } catch { targets = []; }
+  if (!targets || targets.length === 0) return;
   const render = () => {
     let v; try { v = thunk(); } catch { return; }
-    if (target === el) {
-      _walkText(el, () => {});
-    } else if (target) target.textContent = v == null ? "" : String(v);
+    if (typeof v === "function") { try { v = v(); } catch { return; } }
+    const s = v == null ? "" : String(v);
+    targets.forEach((t) => { if (t.textContent !== s) t.textContent = s; });
   };
   _effects.add(render); render();
 }
 
 export function bind_attr() {}
 
-export function bind_input(root, name) {
+// SSR emits data-pw-id on interactive elements; resolve handlers/inputs by id.
+const _marks = new Map();
+export function _mark_el(root, id, line) { return _resolve(root, id); }
+
+function _resolve(root, id) {
+  if (_marks.has(id)) return _marks.get(id);
+  const scope = root && root.querySelector ? root : (typeof document !== "undefined" ? document : null);
+  if (!scope) return null;
+  const el = scope.querySelector(`[data-pw-id="${CSS.escape(id)}"]`);
+  if (el) _marks.set(id, el);
+  return el;
+}
+
+export function bind_input(root, name, id) {
   const scope = window.__pyweb_scope || {};
   const s = scope[name];
   if (!s) return;
-  root.querySelectorAll("input,textarea,select").forEach((input) => {
+  const input = id ? _resolve(root, id) : null;
+  const targets = input ? [input]
+    : Array.from((root === document ? document : root).querySelectorAll("input,textarea,select"));
+  targets.forEach((input) => {
     input.value = s.peek ? s.peek() ?? "" : "";
     input.addEventListener("input", () => s(input.value));
     if (s.subscribe) s.subscribe((v) => { if (input.value !== String(v ?? "")) input.value = v ?? ""; });
   });
 }
 
-export function on(root, event, handlerName) {
+export function on(root, event, handler, id) {
   const scope = window.__pyweb_scope || {};
-  const fn = scope[handlerName];
+  const fn = typeof handler === "function" ? handler : scope[handler];
   if (typeof fn !== "function") return;
-  root.addEventListener(event === "click" ? "click" : event, (e) => {
-    const t = e.target.closest("button,a,input,[data-on]");
-    if (t || event !== "click") fn(e);
-  });
+  const el = id ? _resolve(root, id) : null;
+  if (el) { el.addEventListener(event, (e) => fn(e)); return; }
+  root.addEventListener(event, (e) => fn(e));
 }
 
 export async function rpc(name, args = {}, opts = {}) {

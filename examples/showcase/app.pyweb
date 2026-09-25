@@ -1,0 +1,56 @@
+from pyweb import App, server
+
+app = App()
+
+@server
+def search_products(q: str) -> str:
+    return q
+
+@app.page("/")
+def Home():
+    count = 0
+    q = ""
+    price = 100
+    quantity = 2
+    total = price * quantity
+
+    def increment():
+        count += 1
+
+    def reset():
+        count = 0
+
+    <main class="wrap">
+        <nav class="nav">
+            <span class="logo">PyWeb</span>
+            <span class="tag">Python from browser to database</span>
+        </nav>
+        <section class="hero">
+            <h1>One language. Every layer.</h1>
+            <p>Plain Python variables become reactive state. No useState, no fetch, no API routes.</p>
+        </section>
+        <section class="card">
+            <h2>Reactive counter</h2>
+            <button onclick={increment} class="btn">
+                Count: {count}
+            </button>
+            <button onclick={reset} class="btn ghost">
+                Reset
+            </button>
+            <p class="hint">Signal count updates only its own text node. No virtual DOM.</p>
+        </section>
+        <section class="card">
+            <h2>Computed value</h2>
+            <p>Total {total}</p>
+            <p class="hint">total = price * quantity is a Computed node. Only its text node updates.</p>
+        </section>
+        <section class="card">
+            <h2>Two-way binding + server RPC</h2>
+            <input bind={q} placeholder="Search products..." />
+            <p>Type to filter locally. Server echoes it back:</p>
+            <p class="echo">Query: {q}</p>
+        </section>
+        <footer class="foot">
+            <span>Built with PyWeb. SSR HTML plus a tiny signals runtime.</span>
+        </footer>
+    </main>

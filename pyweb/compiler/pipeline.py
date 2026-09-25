@@ -86,8 +86,9 @@ def compile_source(source, filename="<pyweb>", route="/", title="PyWeb"):
         handlers = _handler_lowers(fn, signals)
         smap: list = []
         js = emit_js(fn.name, ui, signals, computeds, initial, rpc, handlers=handlers, sourcemap_out=smap)
-        html_body = emit_html(ui, initial)
-        html = emit_page(route_of, title, ui, initial, js_url=f"/static/{fn.name}.js")
+        html_body = emit_html(ui, initial, computeds=computeds)
+        html = emit_page(route_of, title, ui, initial, js_url=f"/static/{fn.name}.js",
+                         computeds=computeds)
         artifacts[fn.name] = {"ui": ui, "signals": signals, "computeds": computeds,
                               "placement": placement, "edges": edges, "initial": initial,
                               "js": js, "html": html, "html_body": html_body,

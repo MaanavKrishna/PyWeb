@@ -1,0 +1,28 @@
+from pyweb import App, server
+from pyweb import Model
+
+app = App()
+
+class Post(Model):
+    title: str
+
+@server
+def latest() -> str:
+    return "hello"
+
+@app.page("/")
+def Home():
+    title = ""
+    posts = Post.all()
+
+    def publish():
+        Post.create(title=title)
+        title = ""
+
+    <main>
+        <h1>Blog</h1>
+        <input bind={title} placeholder="Post..." />
+        <button onclick={publish}>Publish</button>
+        for post in posts:
+            <article>{post}</article>
+    </main>

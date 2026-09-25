@@ -27,6 +27,23 @@ def cmd_inspect(args):
         print(f"rpc {spec['name']}({', '.join(a['name']+': '+a['type'] for a in spec['args'])}) -> {spec['returns']} [{spec['location']}] line {spec['line']}")
 
 
+def cmd_check(args):
+    from pyweb.compiler import compile_source
+    from pyweb.security import check_source
+    src = _load(args.file)
+    findings = check_source(src, args.file)
+    try:
+        out = compile_source(src, filename=args.file)
+        n_sig = sum(len(p["signals"]) for p in out["pages"].values())
+        print(f"ok: {len(out['pages'])} page(s), {n_sig} signal(s), {len(out['rpc'])} rpc(s)")
+    except Exception as exc:  # noqa: BLE001
+        findings.append({"kind": "compile-error", "line": 0, "message": str(exc)})
+    for f in findings:
+        print(f"{f['kind']} {args.file}:{f['line']}: {f['message']}")
+    if any(f["kind"] in ("secret-leak", "compile-error") for f in findings):
+        raise SystemExit(1)
+
+
 def cmd_build(args):
     from pyweb.compiler import compile_source
     src = _load(args.file)
@@ -38,10 +55,13 @@ def cmd_build(args):
             fh.write(page["js"])
         with open(f"{args.out}/server/{name}.html", "w") as fh:
             fh.write(page["html"])
+        with open(f"{args.out}/static/{name}.js.map", "w") as fh:
+            json.dump({"page": name, "mappings": page.get("sourcemap", [])}, fh, indent=2)
     import shutil
     shutil.copy(os.path.join(os.path.dirname(__file__), "..", "runtime", "browser", "runtime.js"),
                 args.out + "/static/runtime.js")
-    manifest = {"pages": {n: {"route": p["route"], "signals": p["signals"]} for n, p in out["pages"].items()},
+    manifest = {"pages": {n: {"route": p["route"], "signals": p["signals"],
+                              "computeds": list(p["computeds"])} for n, p in out["pages"].items()},
                 "rpc": out["rpc"], "ir": out["ir_text"]}
     with open(args.out + "/manifest.json", "w") as fh:
         json.dump(manifest, fh, indent=2)
@@ -123,7 +143,8 @@ def main(argv=None):
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)
-    for name in ("test", "check", "fmt", "lint", "deploy"):
+    p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
+    for name in ("test", "fmt", "lint", "deploy"):
         pp = sub.add_parser(name); pp.set_defaults(fn=lambda a, n=name: print(f"pyweb {n}: not yet implemented in prototype"))
     args = ap.parse_args(argv)
     args.fn(args)

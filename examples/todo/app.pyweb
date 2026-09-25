@@ -1,0 +1,32 @@
+from pyweb import App, server
+
+
+app = App()
+
+
+@server
+def get_count() -> int:
+    return 42
+
+
+@app.page("/")
+def Home():
+    new_todo = ""
+    todos = ["buy milk", "ship pyweb"]
+
+
+    def add():
+        todos = todos
+
+
+    <main>
+        <h1>Todos</h1>
+        <input bind={new_todo} />
+        <button onclick={add}>
+            Add
+        </button>
+        for todo in todos:
+            <label>
+                {todo}
+            </label>
+    </main>

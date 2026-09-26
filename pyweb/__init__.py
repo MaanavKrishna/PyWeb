@@ -6,7 +6,7 @@ from .models import Email, Model
 from . import auth, cache, jobs, realtime, security, observability, forms, testing
 from . import sync, live, deploy, uploads, lsp
 from . import browser as browser_api
-from . import build, css
+from . import build, css, plugins, platform
 from .jobs import task
 # NOTE: decorators import comes last — importing the ``pyweb.browser``
 # submodule rebinds the ``browser`` package attr to the module, so the
@@ -53,6 +53,8 @@ __all__ = [
     "browser_api",
     "build",
     "css",
+    "plugins",
+    "platform",
 ]
 
 __version__ = "0.1.0"

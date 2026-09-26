@@ -35,3 +35,21 @@ def worker(fn=None):
 
 def shared(fn=None):
     return _mark(fn, location="shared") if fn else lambda t: _mark(t, location="shared")
+
+
+def csrf_exempt(fn=None):
+    """Skip the CSRF check for this RPC (safe methods / token endpoints)."""
+    return _mark(fn, csrf_exempt=True) if fn else lambda t: _mark(t, csrf_exempt=True)
+
+
+def auth_required(fn=None):
+    """Require an authenticated session to call this RPC."""
+    return _mark(fn, auth="required") if fn else lambda t: _mark(t, auth="required")
+
+
+def rate_limited(fn=None, *, max_calls=60, window=60.0):
+    """Per-RPC rate-limit hint; enforced when a Server has a limiter."""
+    def apply(target):
+        _mark(target, rate_limit=(max_calls, window))
+        return target
+    return apply(fn) if fn else apply

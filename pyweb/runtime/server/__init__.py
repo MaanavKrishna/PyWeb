@@ -38,16 +38,84 @@ def _coerce(value, ann):
 
 
 class Server:
-    def __init__(self, compiled):
+    def __init__(self, compiled, *, auth_secret=None, csrf_secret=None,
+                 rate_limit=None, rpc_timeout=None, tracer=None,
+                 logger=None):
         self.compiled = compiled
         self.rpc_impls: dict[str, object] = {}
         self.routes: list[tuple[re.Pattern, str]] = []
         for name, page in compiled["pages"].items():
             pat = "^" + re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", page["route"]) + "$"
             self.routes.append((re.compile(pat), name))
+        # Production RPC controls (all optional; secure defaults when set).
+        self.auth_secret = auth_secret
+        self.csrf_secret = csrf_secret
+        self.rate_limit = rate_limit  # RateLimiter or None
+        self.rpc_timeout = rpc_timeout  # seconds or None
+        self.tracer = tracer
+        self.logger = logger
 
     def register_rpc(self, fn):
         self.rpc_impls[fn.__name__] = fn
+
+    def _trace_ctx(self, req: Request):
+        from pyweb import rpc as _rpc
+        parsed = _rpc.parse_traceparent(req.headers.get("traceparent"))
+        trace_id = parsed[0] if parsed else uuid.uuid4().hex
+        span_id = uuid.uuid4().hex[:16]
+        return trace_id, _rpc.make_traceparent(trace_id, span_id)
+
+    def _err(self, code, message, *, details=None, trace_id=None,
+             traceparent=None, retry_after=None):
+        from pyweb import rpc as _rpc
+        if isinstance(code, str):
+            body = {"error": {"code": code, "message": message,
+                              "details": details or {}}}
+            status = _rpc.status_for(code)
+        else:  # legacy numeric path kept for compat
+            status = code
+            body = {"error": message}
+        headers = {"Content-Type": "application/json"}
+        if trace_id:
+            headers["X-Request-Id"] = trace_id
+        if traceparent:
+            headers["traceparent"] = traceparent
+        if retry_after:
+            headers["Retry-After"] = str(retry_after)
+        return Response(status, json.dumps(body), headers)
+
+    def _check_rpc_access(self, req: Request, fn):
+        """Auth + CSRF + rate-limit gate. Returns None (allow) or Response."""
+        from pyweb import rpc as _rpc
+        need_auth = getattr(fn, "__pyweb_auth__", False)
+        need = getattr(fn, "__pyweb_permissions__", [])
+        csrf_exempt = getattr(fn, "__pyweb_csrf_exempt__", False)
+        if need_auth or need:
+            secret = self.auth_secret
+            if not secret:
+                return None  # no secret configured: decorators are advisory
+            from pyweb import auth as _auth
+            session = _auth.session_from_request(req, secret)
+            if session is None or "sub" not in session:
+                return self._err(_rpc.Code.AUTH, "authentication required")
+            if need and not _auth.can(session.get("roles", []), fn):
+                return self._err(_rpc.Code.FORBIDDEN,
+                                 f"missing permission: {need}")
+            if self.csrf_secret and not csrf_exempt:
+                token = req.headers.get("X-CSRF-Token", "")
+                if not _auth.verify_csrf(self.csrf_secret,
+                                         session.get("sid", session.get("sub", "")),
+                                         token):
+                    return self._err(_rpc.Code.CSRF, "invalid CSRF token")
+        if self.rate_limit is not None:
+            key = req.headers.get("X-Forwarded-For",
+                                  req.cookies.get("pyweb_session", "anon"))
+            ok, retry = self.rate_limit.allow(
+                f"{fn.__name__}:{key}")
+            if not ok:
+                return self._err(_rpc.Code.RATE_LIMIT, "rate limit exceeded",
+                                 retry_after=retry)
+        return None
 
     def _validate(self, fn, args: dict):
         sig = inspect.signature(fn)
@@ -66,26 +134,85 @@ class Server:
         return out
 
     def handle_rpc(self, req: Request):
+        from pyweb import rpc as _rpc
         m = re.match(r"^/__pyweb/rpc/(\w+)$", req.path)
         if not m:
             return None
-        name = m.group(1)
-        fn = self.rpc_impls.get(name)
-        if fn is None:
-            return Response(404, json.dumps({"error": f"unknown rpc {name}"}), {"Content-Type": "application/json"})
+        trace_id, traceparent = self._trace_ctx(req)
+        span = None
+        if self.tracer is not None:
+            span = self.tracer.start(f"rpc.{m.group(1)}", trace_id=trace_id)
         try:
-            payload = json.loads(req.body or b"{}")
-        except json.JSONDecodeError:
-            return Response(400, json.dumps({"error": "invalid JSON"}), {"Content-Type": "application/json"})
-        args = payload.get("args", {}) if isinstance(payload, dict) else {}
-        try:
-            clean = self._validate(fn, args if isinstance(args, dict) else {})
-            result = fn(**clean)
-            return Response(200, json.dumps({"result": result}), {"Content-Type": "application/json"})
-        except (TypeError, ValueError) as exc:
-            return Response(422, json.dumps({"error": str(exc)}), {"Content-Type": "application/json"})
-        except Exception as exc:  # noqa: BLE001
-            return Response(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}), {"Content-Type": "application/json"})
+            name = m.group(1)
+            fn = self.rpc_impls.get(name)
+            if fn is None:
+                return self._err(_rpc.Code.NOT_FOUND, f"unknown rpc {name}",
+                                 trace_id=trace_id, traceparent=traceparent)
+            gate = self._check_rpc_access(req, fn)
+            if gate is not None:
+                gate.headers.setdefault("X-Request-Id", trace_id)
+                gate.headers["traceparent"] = traceparent
+                return gate
+            try:
+                payload = json.loads(req.body or b"{}")
+            except json.JSONDecodeError:
+                return self._err(_rpc.Code.VALIDATION, "invalid JSON",
+                                 trace_id=trace_id, traceparent=traceparent)
+            args = payload.get("args", {}) if isinstance(payload, dict) else {}
+            try:
+                clean = self._validate(fn, args if isinstance(args, dict) else {})
+            except (TypeError, ValueError) as exc:
+                return self._err(_rpc.Code.VALIDATION, str(exc),
+                                 trace_id=trace_id, traceparent=traceparent)
+            try:
+                if self.rpc_timeout:
+                    result = self._call_with_timeout(fn, clean)
+                else:
+                    result = fn(**clean)
+            except TimeoutError:
+                return self._err(_rpc.Code.TIMEOUT,
+                                 f"{name} exceeded {self.rpc_timeout}s",
+                                 trace_id=trace_id, traceparent=traceparent)
+            except _rpc.RPCError as exc:
+                return self._err(exc.code, str(exc), details=exc.details,
+                                 trace_id=trace_id, traceparent=traceparent)
+            except (TypeError, ValueError) as exc:
+                return self._err(_rpc.Code.VALIDATION, str(exc),
+                                 trace_id=trace_id, traceparent=traceparent)
+            except Exception as exc:  # noqa: BLE001
+                if self.logger is not None:
+                    self.logger.error(f"rpc {name} failed: {exc}",
+                                      request_id=trace_id, rpc=name)
+                return self._err(_rpc.Code.INTERNAL,
+                                 "internal server error",
+                                 trace_id=trace_id, traceparent=traceparent)
+            headers = {"Content-Type": "application/json",
+                       "X-Request-Id": trace_id, "traceparent": traceparent}
+            if isinstance(result, dict) and result.get("__pyweb_stream__"):
+                return self._stream_response(result["chunks"], headers)
+            return Response(200, json.dumps({"result": result}), headers)
+        finally:
+            if span is not None and self.tracer is not None:
+                try:
+                    self.tracer.finish(span)
+                except Exception:
+                    pass
+
+    def _call_with_timeout(self, fn, clean):
+        import concurrent.futures as _fut
+        with _fut.ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(fn, **clean)
+            try:
+                return fut.result(timeout=self.rpc_timeout)
+            except _fut.TimeoutError as exc:
+                raise TimeoutError() from exc
+
+    def _stream_response(self, chunks, headers):
+        """NDJSON stream: one {"chunk": ...} object per line."""
+        headers = dict(headers)
+        headers["Content-Type"] = "application/x-ndjson"
+        lines = "".join(json.dumps({"chunk": c}) + "\n" for c in chunks)
+        return Response(200, lines, headers)
 
     def handle(self, req: Request):
         if req.path.startswith("/__pyweb/rpc/"):

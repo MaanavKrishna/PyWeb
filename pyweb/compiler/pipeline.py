@@ -153,6 +153,7 @@ def build_text(source: str, filename: str = "<input>", route: str = "/") -> Arti
     sm = SourceMap(source=filename)
     gen = jsgen.JSGen(analysis, filename, route)
     gen.map = sm
+    gen.templates = templates
     js = gen.generate(root.nodes if root else [], boot)
     sourcemap = sm.to_dict("app.js")
     # SSR html

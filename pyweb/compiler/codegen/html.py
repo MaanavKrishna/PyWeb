@@ -157,9 +157,8 @@ class SSR:
             return _html.escape(node.content)
         if isinstance(node, DynText):
             v = self.eval_static(node.code, node.line, loop_env)
-            if v is None:
-                return f"<!--pw:{node.hid}--><!--/pw:{node.hid}-->"
-            return _html.escape(str(v))
+            inner = "" if v is None else _html.escape(str(v))
+            return f"<!--pw:{node.hid}-->{inner}<!--/pw:{node.hid}-->"
         if isinstance(node, Element):
             return self.render_element(node, loop_env)
         if isinstance(node, For):
@@ -177,10 +176,18 @@ class SSR:
             return self.render(node.children, loop_env)
         attrs = self.render_attrs(node, loop_env)
         cls = f' class="{node.css_class}"' if node.css_class else ""
+        hid = f' data-pw-hid="{node.hid}"' if self._needs_hid(node) else ""
         inner = self.render(node.children, loop_env)
         if node.tag in ("input", "img", "br", "hr", "meta", "link"):
-            return f"<{node.tag}{cls}{attrs}>"
-        return f"<{node.tag}{cls}{attrs}>{inner}</{node.tag}>"
+            return f"<{node.tag}{cls}{hid}{attrs}>"
+        return f"<{node.tag}{cls}{hid}{attrs}>{inner}</{node.tag}>"
+
+    @staticmethod
+    def _needs_hid(node: Element) -> bool:
+        for attr in node.attrs:
+            if isinstance(attr.value, (Dyn, HandlerRef, BindRef, CssDyn, CssStatic)):
+                return True
+        return False
 
     def render_attrs(self, node: Element, loop_env: dict) -> str:
         out = []
@@ -255,9 +262,18 @@ class SSR:
                 env[pname] = self.eval_static(v.code, v.line, loop_env)
             elif isinstance(v, BindRef):
                 cur = self.values.get(v.name)
-                env[pname] = cur.get() if hasattr(cur, "get") else cur
+                env[pname] = cur.get() if isinstance(cur, (Signal, Computed)) else cur
             elif isinstance(v, HandlerRef):
                 env[pname] = v.name
+        if self.a is not None:
+            decl = self.a.components.get(node.name)
+            if decl is not None:
+                for pname, spec in decl.props.items():
+                    if pname not in env and spec.get("default") is not None:
+                        try:
+                            env[pname] = self.eval_static(spec["default"], node.span.start_line, loop_env)
+                        except Exception:
+                            env[pname] = None
         child_html = self.render(node.children, loop_env)
         # <slot> substitution
         saved = self.render(node.children, loop_env)

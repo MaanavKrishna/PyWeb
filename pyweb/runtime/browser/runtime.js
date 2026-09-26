@@ -211,6 +211,8 @@
         if (!row) {
           rows.set(key, makeRow(items[i], i, key));
         } else if (row.item !== items[i]) {
+          // Same key but a new item object: re-render so row content
+          // cannot go stale (immutable update pattern).
           killRow(key);
           rows.set(key, makeRow(items[i], i, key));
         }
@@ -264,12 +266,58 @@
   }
 
   function dynText(node, fn) {
-    function sync() { node.textContent = fn() == null ? "" : String(fn()); }
+    function sync() {
+      if (!node) return;
+      node.textContent = fn() == null ? "" : String(fn());
+    }
     return effect(sync);
+  }
+
+  /* Replace <!--pw:hid-->...<!--/pw:hid--> with a fresh text node. */
+  function takeoverText(parent, hid) {
+    var doc = parent.ownerDocument || document;
+    var node = doc.createTextNode("");
+    var start = _findComment(parent, "pw:" + hid);
+    if (!start) {
+      parent.appendChild(node);
+      return node;
+    }
+    var host = start.parentNode || parent;
+    host.insertBefore(node, start);
+    var cur = start;
+    while (cur) {
+      var next = cur.nextSibling;
+      if (cur !== node) host.removeChild(cur);
+      if (cur.nodeType === 8 && cur.nodeValue === "/pw:" + hid) break;
+      cur = next;
+    }
+    return node;
+  }
+
+  /* Two-way binding for input/select/textarea (else: text sync only). */
+  function bindEl(el, sig) {
+    if (!el) return function () {};
+    function read() {
+      var v = sig.get();
+      if (el.type === "checkbox" && "checked" in el) el.checked = !!v;
+      else if ("value" in el) el.value = v == null ? "" : String(v);
+      else el.textContent = v == null ? "" : String(v);
+    }
+    var dispose = effect(read);
+    el.addEventListener("input", function () {
+      if (el.type === "checkbox" && "checked" in el) sig.set(el.checked);
+      else if ("value" in el) sig.set(el.value);
+    });
+    el.addEventListener("change", function () {
+      if (el.type === "checkbox" && "checked" in el) sig.set(el.checked);
+      else if (el.tagName === "SELECT" && "value" in el) sig.set(el.value);
+    });
+    return dispose;
   }
 
   function dynAttr(el, name, fn) {
     return effect(function () {
+      if (!el) return;
       var v = fn();
       if (v == null || v === false) el.removeAttribute(name);
       else el.setAttribute(name, String(v));
@@ -277,8 +325,50 @@
   }
 
   /* Error overlay hook: maps a JS stack line/col through the sourcemap. */
+  var _B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  function _vlqValues(seg) {
+    var out = [];
+    var result = 0, shift = 0, i = 0;
+    while (i < seg.length) {
+      var digit = _B64.indexOf(seg[i++]);
+      result |= (digit & 31) << shift;
+      shift += 5;
+      if (!(digit & 32)) {
+        out.push(result & 1 ? -(result >> 1) : result >> 1);
+        result = 0;
+        shift = 0;
+      }
+    }
+    return out;
+  }
+  /* Map 1-based generated line/col through a v3 sourcemap to 1-based source pos. */
+  function mapPosition(map, genLine, genCol) {
+    if (!map || !map.mappings) return null;
+    var rows = map.mappings.split(";");
+    if (genLine < 1 || genLine > rows.length) return null;
+    var src = 0, srcLine = 0, srcCol = 0, genC = 0, best = null;
+    var parts = rows[genLine - 1].split(",");
+    for (var i = 0; i < parts.length; i++) {
+      if (!parts[i]) continue;
+      var f = _vlqValues(parts[i]);
+      genC += f[0];
+      if (f.length >= 4) {
+        src += f[1];
+        srcLine += f[2];
+        srcCol += f[3];
+        if (genC <= (genCol || 0)) best = { source: (map.sources || [])[src] || "", line: srcLine + 1, column: srcCol };
+      } else break;
+    }
+    // col 0 with a single segment at col 0 still matches
+    if (!best && parts.length && parts[0]) {
+      var f0 = _vlqValues(parts[0]);
+      if (f0.length >= 4 && (genCol || 0) >= 0)
+        best = { source: (map.sources || [])[src] || "", line: srcLine + 1, column: srcCol };
+    }
+    return best;
+  }
   function makeErrorHook(map) {
-    function hook(err) {
+    function hook(err, genLine, genCol) {
       var overlay = document.getElementById("__pyweb_overlay");
       if (!overlay) {
         overlay = document.createElement("div");
@@ -289,10 +379,14 @@
         document.body.appendChild(overlay);
       }
       var msg = err && (err.stack || err.message || String(err));
-      overlay.textContent = "PyWeb error: " + msg;
+      var mapped = (genLine != null) ? mapPosition(map, genLine, genCol || 0) : null;
+      overlay.textContent = "PyWeb error: " + msg
+        + (mapped ? "\n  at " + mapped.source + ":" + mapped.line + ":" + mapped.column : "");
+      overlay._mapped = mapped || null;
       return overlay;
     }
     hook.map = map || null;
+    hook.mapPosition = mapPosition;
     return hook;
   }
 
@@ -306,6 +400,8 @@
     dynText: dynText,
     dynAttr: dynAttr,
     takeover: takeover,
+    takeoverText: takeoverText,
+    bindEl: bindEl,
     capture: capture,
     makeErrorHook: makeErrorHook,
     _Signal: Signal,

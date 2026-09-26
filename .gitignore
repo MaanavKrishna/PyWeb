@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 dist/
 .pytest_cache/
+__pycache__/
+*.pyc
+.pytest_cache/

@@ -30,6 +30,10 @@ class JSGen:
         self._gen = 0
         self._scopes: list[dict[str, str]] = [{}]
         self._loop_vars: list[str] = []
+        self._mode = "hydrate"
+        self.templates: dict[str, list] = {}
+        self._renames: list[dict[str, str]] = []
+        self._seen_hids: set[int] = set()
 
     # -- output ----------------------------------------------------------
     def w(self, text: str, src_line: int = 0, src_col: int = 0) -> None:
@@ -64,27 +68,52 @@ class JSGen:
                 0,
             )
         self.w("document.addEventListener('DOMContentLoaded', () => {", 0)
+        self.w("  const __app = document.getElementById('app');", 0)
+        self._mode = "hydrate"
         for node in root_nodes:
-            self.emit(node, "document.getElementById('app')", True)
+            self.emit(node, "__app", True)
         self.w("});", 0)
         self.w("window.__pyweb_error = PyWeb.makeErrorHook(window.__pyweb_sourcemap || null);", 0)
         return "\n".join(self.lines) + "\n"
 
     # -- nodes --------------------------------------------------------------
+    # Two modes: "hydrate" locates SSR DOM via markers/data-pw-hid (top
+    # level); "create" builds fresh DOM (inside row/branch render callbacks).
+    def _claim(self, hid: int) -> bool:
+        """In hydrate mode, each SSR marker hydrates once; duplicate
+        component instances keep SSR output for repeats."""
+        if self._mode != "hydrate":
+            return True
+        if hid in self._seen_hids:
+            return False
+        self._seen_hids.add(hid)
+        return True
+
     def emit(self, node, parent_js: str, is_root: bool = False) -> None:
         if isinstance(node, Text):
-            if node.content.strip():
+            if self._mode == "create" and node.content.strip():
                 self.w(
                     f"{parent_js}.insertAdjacentHTML('beforeend', {json.dumps(node.content)});",
                     node.span.start_line,
                 )
             return
         if isinstance(node, DynText):
-            tmp = f"__t{node.hid}"
-            self.w(f"const {tmp} = document.createTextNode('');", node.span.start_line)
-            self.w(f"{parent_js}.appendChild({tmp});", node.span.start_line)
             js = self.js_expr(node.code, node.line)
-            self.w(f"PyWeb.dynText({tmp}, () => ({js}));", node.line)
+            if self._mode == "hydrate":
+                if not self._claim(node.hid):
+                    self.w(f"/* hid {node.hid} already hydrated; SSR kept */", node.span.start_line)
+                    return
+                tmp = f"__t{node.hid}"
+                self.w(
+                    f"const {tmp} = PyWeb.takeoverText(__app, {node.hid});",
+                    node.span.start_line,
+                )
+                self.w(f"PyWeb.dynText({tmp}, () => ({js}));", node.line)
+            else:
+                tmp = f"__t{node.hid}"
+                self.w(f"const {tmp} = document.createTextNode('');", node.span.start_line)
+                self.w(f"{parent_js}.appendChild({tmp});", node.span.start_line)
+                self.w(f"PyWeb.dynText({tmp}, () => ({js}));", node.line)
             return
         if isinstance(node, Element):
             self.emit_element(node, parent_js)
@@ -105,20 +134,45 @@ class JSGen:
     def emit_element(self, node: Element, parent_js: str) -> None:
         var = f"__e{node.hid}"
         if node.tag == "<>":
+            if self._mode == "hydrate":
+                for child in node.children:
+                    self.emit(child, parent_js)
+                return
             self.w(f"const {var} = document.createDocumentFragment();", node.span.start_line)
+        elif self._mode == "hydrate":
+            if self._element_needs_handle(node):
+                if not self._claim(node.hid):
+                    for child in node.children:
+                        self.emit(child, parent_js)
+                    return
+                self.w(
+                    f"const {var} = __app.querySelector('[data-pw-hid=\"{node.hid}\"]');",
+                    node.span.start_line,
+                )
+                self.w(f"if ({var}) {{", node.span.start_line)
+                for attr in node.attrs:
+                    self.emit_attr(node, var, attr)
+                self.w("}", node.span.start_line)
+                for child in node.children:
+                    self.emit(child, var)
+                return
+            for child in node.children:
+                self.emit(child, parent_js)
+            return
         else:
             self.w(f"const {var} = document.createElement({json.dumps(node.tag)});", node.span.start_line)
         for attr in node.attrs:
             self.emit_attr(node, var, attr)
-        if node.css_class:
-            self.w(f"{var}.classList.add({json.dumps(node.css_class)});", node.span.start_line)
         for child in node.children:
             self.emit(child, var)
-        if node.tag == "<>":
-            # fragments: append children (already appended to fragment)
-            self.w(f"{parent_js}.appendChild({var});", node.span.start_line)
-        else:
-            self.w(f"{parent_js}.appendChild({var});", node.span.start_line)
+        self.w(f"{parent_js}.appendChild({var});", node.span.start_line)
+
+    @staticmethod
+    def _element_needs_handle(node: Element) -> bool:
+        for attr in node.attrs:
+            if isinstance(attr.value, (Dyn, HandlerRef, BindRef, CssDyn)):
+                return True
+        return False
 
     def emit_attr(self, node: Element, var: str, attr: Attr) -> None:
         from pyweb.compiler.ast import CssStatic
@@ -127,16 +181,8 @@ class JSGen:
         name = attr.name
         line = attr.span.start_line
         if isinstance(v, BindRef):
-            if name in ("value", "checked"):
-                self.w(
-                    f"{var}.{name} = {v.name}.get(); "
-                    f"{v.name}.subscribe(() => {{ {var}.{name} = {v.name}.get(); }});",
-                    line,
-                )
-                self.w(
-                    f"{var}.addEventListener('input', () => {v.name}.set({var}.{name}));",
-                    line,
-                )
+            if name in ("value", "checked", "bind"):
+                self.w(f"PyWeb.bindEl({var}, {v.name});", line)
             else:
                 self.w(f"PyWeb.dynAttr({var}, {json.dumps(name)}, () => {v.name}.get());", line)
             return
@@ -159,7 +205,9 @@ class JSGen:
         if isinstance(v, CssStatic):
             self.w(f"{var}.style.cssText += {json.dumps(v.css)};", line)
             return
-        # Static
+        # Static (already in SSR DOM when hydrating; only set when creating)
+        if self._mode == "hydrate":
+            return
         if name.startswith("@") or name.startswith(":"):
             return
         if v.text == "" and name not in ("alt", "value", "placeholder"):
@@ -169,8 +217,15 @@ class JSGen:
 
     def emit_for(self, node: For, parent_js: str) -> None:
         anchor = f"__a{node.hid}"
-        self.w(f"const {anchor} = document.createComment('for');", node.span.start_line)
-        self.w(f"{parent_js}.appendChild({anchor});", node.span.start_line)
+        outer_mode = self._mode
+        if outer_mode == "hydrate":
+            if not self._claim(node.hid):
+                self.w(f"/* for hid {node.hid} already hydrated; SSR kept */", node.span.start_line)
+                return
+            self.w(f"const {anchor} = PyWeb.takeover(__app, {node.hid});", node.span.start_line)
+        else:
+            self.w(f"const {anchor} = document.createComment('for');", node.span.start_line)
+            self.w(f"{parent_js}.appendChild({anchor});", node.span.start_line)
         iter_js = self.js_expr(node.iter_code, node.iter_line)
         key_js = "undefined"
         if node.key_code:
@@ -184,13 +239,14 @@ class JSGen:
         self.w("  const __frag = document.createDocumentFragment();", node.span.start_line)
         self._scopes.append({node.var: "loop"})
         self._loop_vars.append(node.var)
+        self._mode = "create"
         for child in node.body:
             self.emit(child, "__frag")
+        self._mode = outer_mode
         self._loop_vars.pop()
         self._scopes.pop()
-        self.w("  const __wrap = document.createDocumentFragment();", node.span.start_line)
-        self.w("  __wrap.appendChild(__frag);", node.span.start_line)
-        self.w("  return { el: __wrap };", node.span.start_line)
+        self.w("  const __nodes = Array.from(__frag.childNodes);", node.span.start_line)
+        self.w("  return { els: __nodes };", node.span.start_line)
         self.w("};", node.span.start_line)
         self.w(
             f"PyWeb.liveList({anchor}, () => ({iter_js}), "
@@ -200,8 +256,15 @@ class JSGen:
 
     def emit_cond(self, node: Cond, parent_js: str) -> None:
         anchor = f"__c{node.hid}"
-        self.w(f"const {anchor} = document.createComment('if');", node.span.start_line)
-        self.w(f"{parent_js}.appendChild({anchor});", node.span.start_line)
+        outer_mode = self._mode
+        if outer_mode == "hydrate":
+            if not self._claim(node.hid):
+                self.w(f"/* if hid {node.hid} already hydrated; SSR kept */", node.span.start_line)
+                return
+            self.w(f"const {anchor} = PyWeb.takeover(__app, {node.hid});", node.span.start_line)
+        else:
+            self.w(f"const {anchor} = document.createComment('if');", node.span.start_line)
+            self.w(f"{parent_js}.appendChild({anchor});", node.span.start_line)
         pickers = []
         for idx, branch in enumerate(node.branches):
             if branch.cond_code is None:
@@ -214,10 +277,12 @@ class JSGen:
         for idx, branch in enumerate(node.branches):
             fn = f"__br{node.hid}_{idx}"
             branch_fns.append(fn)
-            self.w(f"function {fn}(__disposers) {{", branch.span.start_line)
+            self.w(f"function {fn}() {{", branch.span.start_line)
             self.w("  const __frag = document.createDocumentFragment();", branch.span.start_line)
+            self._mode = "create"
             for child in branch.body:
                 self.emit(child, "__frag")
+            self._mode = outer_mode
             # collect child nodes into an array for liveIf
             self.w("  return Array.from(__frag.childNodes);", branch.span.start_line)
             self.w("}", branch.span.start_line)
@@ -228,30 +293,63 @@ class JSGen:
 
     def emit_comp(self, node: CompUse, parent_js: str) -> None:
         decl = self.a.components.get(node.name)
-        props_js = []
-        for pname, attr in node.props.items():
-            v = attr.value
-            if isinstance(v, BindRef):
-                props_js.append(f"{pname}: {v.name}.get()")
-            elif isinstance(v, HandlerRef):
-                props_js.append(f"{pname}: {v.name}")
-            elif isinstance(v, Dyn):
-                props_js.append(f"{pname}: ({self.js_expr(v.code, v.line)})")
-            elif isinstance(v, CssDyn):
-                props_js.append(f"{pname}: ({self.js_expr(v.code, v.line)})")
-            else:
-                props_js.append(f"{pname}: {json.dumps(v.text)}")
-        # defaults for missing optional props
+        tmpl = self.templates.get(node.name)
+        if tmpl is None:
+            self.w(f"/* component <{node.name}> has no template; children only */", node.span.start_line)
+            for child in node.children:
+                self.emit(child, parent_js)
+            return
+        # bind props to consts; template prop refs rename to them
+        renames: dict[str, str] = {}
         if decl:
             for pname, spec in decl.props.items():
-                if pname not in node.props and spec.get("default") is not None:
-                    props_js.append(f"{pname}: {spec['default']}")
-        self.w(
-            f"/* component <{node.name}> props {{{', '.join(props_js)}}} (ssr inlined) */",
-            node.span.start_line,
-        )
-        for child in node.children:
-            self.emit(child, parent_js)
+                if pname in node.props:
+                    attr = node.props[pname]
+                    v = attr.value
+                    if isinstance(v, BindRef):
+                        val = f"{v.name}.get()"
+                        line = attr.span.start_line
+                    elif isinstance(v, HandlerRef):
+                        val = v.name
+                        line = attr.span.start_line
+                    elif isinstance(v, Dyn):
+                        val = f"({self.js_expr(v.code, v.line)})"
+                        line = v.line
+                    elif isinstance(v, CssDyn):
+                        val = f"({self.js_expr(v.code, v.line)})"
+                        line = v.line
+                    else:
+                        val = json.dumps(v.text)
+                        line = attr.span.start_line
+                elif spec.get("default") is not None:
+                    val = spec["default"]
+                    line = node.span.start_line
+                else:
+                    val = "undefined"
+                    line = node.span.start_line
+                cname = f"__p{node.hid}_{pname}"
+                renames[pname] = cname
+                self.w(f"const {cname} = ({val});", line)
+        self._renames.append(renames)
+        self._scopes.append({p: "prop" for p in renames})
+        try:
+            for tnode in tmpl:
+                if isinstance(tnode, Slot):
+                    for kid in self._slot_kids(node, tnode.name):
+                        self.emit(kid, parent_js)
+                else:
+                    self.emit(tnode, parent_js)
+        finally:
+            self._scopes.pop()
+            self._renames.pop()
+
+    @staticmethod
+    def _slot_kids(node: CompUse, name: str) -> list:
+        if name in node.slots:
+            return node.slots[name]
+        if name == "default":
+            return node.children
+        return []
 
     # -- expressions -----------------------------------------------------------
     def js_expr(self, code: str, line: int, extra_vars: dict | None = None) -> str:
@@ -260,8 +358,11 @@ class JSGen:
         scope = self.scopes()
         if extra_vars:
             scope = set(scope) | set(extra_vars)
+        renames: dict[str, str] = {}
+        for frame in self._renames:
+            renames.update(frame)
         try:
-            return lowering.to_js(code, scope, set(self.a.signals), set(self._loop_vars))
+            return lowering.to_js(code, scope, set(self.a.signals), set(self._loop_vars), renames)
         except LowerError as e:
             from pyweb.compiler.ast import CompileError, Span
 

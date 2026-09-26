@@ -6,8 +6,20 @@ them and the JS emitter hydrates bind=/onclick= via the same codegen.
 from __future__ import annotations
 
 import html as _html
+import itertools
 
 from pyweb.compiler import ast as _ast
+
+_hids = itertools.count(1)
+
+
+def renumber(nodes: list) -> None:
+    """Assign unique sequential hids across an AST forest."""
+    from pyweb.compiler.ast import iter_nodes
+
+    for n in iter_nodes(nodes):
+        if hasattr(n, "hid"):
+            n.hid = next(_hids)
 
 
 def _to_attr_value(v) -> _ast.AttrValue:
@@ -84,9 +96,11 @@ class El:
                 kids.append(_ast.DynText(c.name, 1))
             else:
                 kids.append(_ast.Text(str(c)))
-        # assign hids lazily (pipeline/tests renumber via parser convention)
         el = _ast.Element(tag=self.tag, attrs=attrs, children=kids)
-        el.hid = id(el) % 100000
+        el.hid = next(_hids)
+        for k in kids:
+            if getattr(k, "hid", 0) == 0:
+                k.hid = next(_hids)
         return el
 
     def render_ssr(self, values: dict | None = None) -> str:

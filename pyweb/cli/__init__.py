@@ -23,8 +23,16 @@ def cmd_inspect(args):
     print("---")
     for name, page in out["pages"].items():
         print(f"page {name} route={page['route']} signals={page['signals']} computeds={list(page['computeds'])}")
+        placement = page.get("placement") or {}
+        for symbol, decision in placement.items():
+            loc, reason = decision if isinstance(decision, tuple) else (decision, "")
+            print(f"  {loc:14s} {symbol}" + (f"  # {reason}" if reason else ""))
     for spec in out["rpc"]:
         print(f"rpc {spec['name']}({', '.join(a['name']+': '+a['type'] for a in spec['args'])}) -> {spec['returns']} [{spec['location']}] line {spec['line']}")
+    if getattr(args, "security", False):
+        from pyweb.security import check_source
+        for finding in check_source(src, args.file):
+            print(f"{finding['kind']} {args.file}:{finding['line']}: {finding['message']}")
 
 
 def cmd_check(args):
@@ -209,7 +217,7 @@ def main(argv=None):
         return 0
     ap = argparse.ArgumentParser(prog="pyweb")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("inspect"); p.add_argument("file"); p.set_defaults(fn=cmd_inspect)
+    p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)

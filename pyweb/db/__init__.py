@@ -221,45 +221,120 @@ class Result:
         return [dict(zip(self.columns, r)) for r in self._rows]
 
 
-class SQLiteDB:
-    """SQLite driver over stdlib sqlite3 with a pooled wrapper + transactions."""
+class TransientDBError(Exception):
+    """Retriable error (deadlock, serialization failure, conn reset)."""
+
+
+class _PooledDB:
+    """Shared DB-API pool: thread-local transactions, prepared statements,
+    streaming cursors, prepared-statement cache, retriable-error mapping.
+
+    Why one base: SQLite/Postgres/MySQL all speak DB-API; the differences
+    are connect(), paramstyle, and error classes. Alternatives considered:
+    SQLAlchemy (heavy dep, hides the SQL we want visible for placement
+    analysis). This keeps ``Query``-built SQL inspectable by the compiler.
+    """
 
     paramstyle = "qmark"
 
-    def __init__(self, path=":memory:", pool_size=5, timeout=10.0):
-        if path == ":memory:":
-            pool_size = 1
-        self.path = path
+    def _connect(self):
+        raise NotImplementedError
+
+    def _is_transient(self, exc: Exception) -> bool:
+        return False
+
+    def __init__(self, pool_size=5, timeout=10.0, statement_cache=128,
+                 connect_kwargs=None):
         self._pool: queue.Queue = queue.Queue()
         for _ in range(max(1, pool_size)):
-            conn = sqlite3.connect(path, check_same_thread=False, timeout=timeout)
-            self._pool.put(conn)
+            self._pool.put(self._connect())
         self._local = threading.local()
+        self._stmt_cache_size = statement_cache
+        self._stmt_cache: dict[str, str] = {}
 
     def _current(self):
         return getattr(self._local, "conn", None)
 
-    def execute(self, sql, params=()):
+    def prepare(self, sql: str) -> str:
+        """Cache/validate a statement; returns the (possibly rewritten) SQL.
+
+        DB-API has no cross-driver prepare handle, so this caches the
+        validated statement text and returns it for ``execute(prepared)``.
+        Drivers that support server-side prepares (psycopg) get them via
+        ``execute(..., prepare=True)``.
+        """
+        cached = self._stmt_cache.get(sql)
+        if cached is not None:
+            return cached
+        if len(self._stmt_cache) >= self._stmt_cache_size:
+            self._stmt_cache.pop(next(iter(self._stmt_cache)))
+        self._stmt_cache[sql] = sql
+        return sql
+
+    def execute(self, sql, params=(), *, prepare=False, attempts=1):
         params = tuple(params)
         conn = self._current()
         owned = conn is None
         if owned:
             conn = self._pool.get()
         try:
-            cur = conn.execute(sql, params)
-            rows = cur.fetchall() if cur.description is not None else []
-            cols = [d[0] for d in cur.description] if cur.description else []
-            res = Result(rows, cols, cur.lastrowid, cur.rowcount)
-            if owned:
-                conn.commit()
-            return res
-        except Exception:
-            if owned:
-                conn.rollback()
-            raise
+            last: Exception | None = None
+            for _ in range(max(1, attempts)):
+                try:
+                    if prepare:
+                        sql = self.prepare(sql)
+                    if hasattr(conn, "execute"):
+                        cur = conn.execute(sql, params)
+                    else:  # psycopg-style cursor protocol
+                        cur = conn.cursor()
+                        cur.execute(sql, params)
+                    rows = cur.fetchall() if cur.description is not None else []
+                    cols = [d[0] for d in cur.description] if cur.description else []
+                    lastrowid = getattr(cur, "lastrowid", None)
+                    res = Result(rows, cols, lastrowid, cur.rowcount)
+                    try:
+                        cur.close()
+                    except Exception:
+                        pass
+                    if owned:
+                        conn.commit()
+                    return res
+                except Exception as exc:  # noqa: BLE001
+                    last = exc
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    if not self._is_transient(exc):
+                        raise
+            raise TransientDBError(
+                f"transient failure after {attempts} attempts: {last}")
         finally:
             if owned:
                 self._pool.put(conn)
+
+    def stream(self, sql, params=(), *, chunksize=1000):
+        """Yield ``Result`` pages without loading the full result set."""
+        conn = self._pool.get()
+        try:
+            cur = conn.cursor() if hasattr(conn, "cursor") else None
+            if cur is None:
+                res = self.execute(sql, params)
+                yield res
+                return
+            cur.execute(sql, tuple(params))
+            cols = [d[0] for d in cur.description] if cur.description else []
+            while True:
+                rows = cur.fetchmany(chunksize)
+                if not rows:
+                    break
+                yield Result(rows, cols, None, len(rows))
+            try:
+                cur.close()
+            except Exception:
+                pass
+        finally:
+            self._pool.put(conn)
 
     @contextmanager
     def transaction(self):
@@ -269,11 +344,18 @@ class SQLiteDB:
         conn = self._pool.get()
         self._local.conn = conn
         try:
-            conn.execute("BEGIN")
+            if hasattr(conn, "execute"):
+                try:
+                    conn.execute("BEGIN")
+                except Exception:
+                    pass
             yield self
             conn.commit()
         except Exception:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             raise
         finally:
             self._local.conn = None
@@ -295,6 +377,24 @@ class SQLiteDB:
             self.close()
         except Exception:
             pass
+
+
+class SQLiteDB(_PooledDB):
+    """SQLite driver over stdlib sqlite3 with a pooled wrapper + transactions."""
+
+    paramstyle = "qmark"
+
+    def __init__(self, path=":memory:", pool_size=5, timeout=10.0, **kw):
+        if path == ":memory:":
+            pool_size = 1
+        self.path = path
+        self._timeout = timeout
+        self._kw = kw
+        super().__init__(pool_size=pool_size, timeout=timeout)
+
+    def _connect(self):
+        return sqlite3.connect(self.path, check_same_thread=False,
+                               timeout=self._timeout)
 
 
 def snapshot(models):
@@ -338,18 +438,137 @@ def apply(db, outdir="migrations", direction="up"):
     return len(statements)
 
 
-class PostgresDB:
-    """Postgres adapter. Requires psycopg; raises a clear error otherwise."""
+class PostgresDB(_PooledDB):
+    """PostgreSQL driver over psycopg (v3) or psycopg2.
+
+    Retries deadlocks (40P01) and serialization failures (40001);
+    autocommits single statements outside explicit transactions.
+    """
 
     paramstyle = "format"
 
-    def __init__(self, dsn=None, **kwargs):
+    TRANSIENT_CODES = frozenset({"40P01", "40001", "55P03", "08006", "08003"})
+
+    def __init__(self, dsn=None, *, pool_size=5, timeout=10.0,
+                 connect=None, **kwargs):
+        if connect is not None:
+            self._factory = connect
+            self._psycopg = None
+        else:
+            try:
+                import psycopg as _pg
+                self._factory = lambda: _pg.connect(dsn or "", **kwargs)
+                self._psycopg = _pg
+            except ImportError:
+                try:
+                    import psycopg2 as _pg2
+                    self._factory = lambda: _pg2.connect(dsn or "", **kwargs)
+                    self._psycopg = _pg2
+                except ImportError as e:
+                    raise RuntimeError(
+                        "PostgresDB requires the 'psycopg' package: "
+                        "pip install \"psycopg[binary]\"") from e
+        super().__init__(pool_size=pool_size, timeout=timeout)
+
+    def _connect(self):
+        conn = self._factory()
         try:
-            import psycopg  # noqa: F401
+            conn.autocommit = True
+        except Exception:
+            pass
+        return conn
+
+    def _is_transient(self, exc):
+        code = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
+        if code in self.TRANSIENT_CODES:
+            return True
+        msg = str(exc).lower()
+        return any(k in msg for k in ("deadlock", "serialization failure",
+                                      "connection reset", "server closed"))
+
+
+class MySQLDB(_PooledDB):
+    """MySQL driver over mysql-connector-python or PyMySQL.
+
+    Retries deadlocks (1213) and lock timeouts (1205).
+    """
+
+    paramstyle = "format"
+
+    TRANSIENT_CODES = frozenset({1213, 1205, 2006, 2013})
+
+    def __init__(self, dsn=None, *, pool_size=5, timeout=10.0,
+                 connect=None, **kwargs):
+        if connect is not None:
+            self._factory = connect
+        else:
+            self._factory = self._default_factory(dsn, kwargs)
+        super().__init__(pool_size=pool_size, timeout=timeout)
+
+    @staticmethod
+    def _default_factory(dsn, kwargs):
+        try:
+            import mysql.connector as _mc
+
+            def make():
+                if dsn:
+                    from urllib.parse import urlparse as _up
+                    u = _up(dsn)
+                    return _mc.connect(
+                        host=u.hostname or "localhost",
+                        port=u.port or 3306,
+                        user=u.username or "",
+                        password=u.password or "",
+                        database=(u.path or "/")[1:] or None,
+                        **kwargs)
+                return _mc.connect(**kwargs)
+            return make
+        except ImportError:
+            pass
+        try:
+            import pymysql as _pm
+
+            def make2():
+                if dsn:
+                    from urllib.parse import urlparse as _up2
+                    u = _up2(dsn)
+                    return _pm.connect(
+                        host=u.hostname or "localhost",
+                        port=u.port or 3306,
+                        user=u.username or "",
+                        password=u.password or "",
+                        database=(u.path or "/")[1:] or None,
+                        **kwargs)
+                return _pm.connect(**kwargs)
+            return make2
         except ImportError as e:
             raise RuntimeError(
-                "PostgresDB requires the 'psycopg' package, which is not "
-                "installed. Install it with: pip install \"psycopg[binary]\""
-            ) from e
-        raise RuntimeError("PostgresDB live connections are not used in tests; "
-                           "pass a real DSN with psycopg installed.")
+                "MySQLDB requires 'mysql-connector-python' or 'PyMySQL': "
+                "pip install mysql-connector-python") from e
+
+    def _connect(self):
+        return self._factory()
+
+    def _is_transient(self, exc):
+        code = getattr(exc, "errno", None)
+        if code in self.TRANSIENT_CODES:
+            return True
+        msg = str(exc).lower()
+        return "deadlock" in msg or "lock wait timeout" in msg
+
+
+def connect(url: str, **kwargs):
+    """Open a database from a URL: ``sqlite://``, ``postgres://``,
+    ``postgresql://``, ``mysql://``. ``:memory:`` SQLite for tests."""
+    from urllib.parse import urlparse as _up
+    if url in (":memory:", "sqlite:///:memory:", "sqlite://"):
+        return SQLiteDB(":memory:")
+    u = _up(url)
+    scheme = u.scheme.lower()
+    if scheme in ("sqlite", "sqlite3", ""):
+        return SQLiteDB(u.path or ":memory:", **kwargs)
+    if scheme in ("postgres", "postgresql"):
+        return PostgresDB(url, **kwargs)
+    if scheme == "mysql":
+        return MySQLDB(url, **kwargs)
+    raise ValueError(f"unknown database scheme: {scheme!r} in {url!r}")

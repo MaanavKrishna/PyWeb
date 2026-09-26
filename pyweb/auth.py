@@ -342,3 +342,262 @@ def csrf_token(secret, session_id):
 
 def verify_csrf(secret, session_id, token):
     return hmac.compare_digest(csrf_token(secret, session_id), token or "")
+
+
+# ---------------------------------------------------------------------------
+# Policy-based authorization (RBAC v1)
+#
+# Why policies, not just role lists: ``@permission("admin")`` checks a
+# single role, but real apps need rules like "authors can edit their own
+# posts". :class:`Policy` lets teams declare named rules once and reuse
+# them from both server functions and RPC gates.
+# ---------------------------------------------------------------------------
+
+class Policy:
+    """Named authorization rule set.
+
+    ``Policy("post:edit").allow("admin").allow("author", owner_field="author_id")``
+    """
+
+    def __init__(self, name):
+        self.name = name
+        self._rules: list[tuple] = []
+
+    def allow(self, role, *, owner_field=None):
+        self._rules.append((role, owner_field))
+        return self
+
+    def check(self, session, resource=None):
+        if not isinstance(session, dict) or "sub" not in session:
+            raise NotAuthenticated("login required")
+        roles = set(session.get("roles", []))
+        for role, owner_field in self._rules:
+            if role not in roles:
+                continue
+            if owner_field is None:
+                return True
+            if resource is not None:
+                owner = (resource.get(owner_field)
+                         if isinstance(resource, dict)
+                         else getattr(resource, owner_field, None))
+                if owner == session.get("sub"):
+                    return True
+        raise Forbidden(f"policy {self.name!r} denied")
+
+    def __call__(self, fn):
+        policy = self
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            session = _session_of(args, kwargs)
+            resource = kwargs.get("resource", args[1] if len(args) > 1 else None)
+            policy.check(session, resource)
+            return fn(*args, **kwargs)
+
+        wrapper.__pyweb_permissions__ = [*getattr(fn, "__pyweb_permissions__", []),
+                                         f"policy:{self.name}"]
+        return wrapper
+
+
+def rotate_session(store: SessionStore, old_token, *, extra=None):
+    """Sliding expiration: destroy the old token, issue a fresh one.
+
+    Call on each authenticated request (or every N minutes) to bound the
+    lifetime of a stolen cookie. Preserves user_id + extra claims.
+    """
+    sess = store.get(old_token)
+    if sess is None:
+        return None
+    store.destroy(old_token)
+    user_id = sess.pop("user_id", None)
+    merged = {**sess, **(extra or {})}
+    return store.create(user_id, extra=merged)
+
+
+# ---------------------------------------------------------------------------
+# WebAuthn (passkeys) — verification side, stdlib-only.
+#
+# Scope: verify assertion responses (login). Registration (attestation)
+# verification is intentionally out of scope for v1 — teams enroll via
+# the platform authenticator and import the credential public key.
+# ES256 (COSE -7) over SHA-256, matching what iCloud/Google password
+# managers and platform authenticators emit.
+# ---------------------------------------------------------------------------
+
+def _cbor_first(data: bytes):
+    """Minimal CBOR head decode: returns (value, rest) for int/bytes/text.
+
+    Only what WebAuthn authData parsing needs — not a general decoder.
+    """
+    if not data:
+        raise ValueError("empty cbor")
+    ib, rest = data[0], data[1:]
+    major, info = ib >> 5, ib & 0x1F
+    if info < 24:
+        num, tail = info, rest
+    elif info == 24:
+        num, tail = rest[0], rest[1:]
+    elif info == 25:
+        num = int.from_bytes(rest[:2], "big")
+        tail = rest[2:]
+    elif info == 26:
+        num = int.from_bytes(rest[:4], "big")
+        tail = rest[4:]
+    else:
+        raise ValueError(f"unsupported cbor info {info}")
+    if major == 0:
+        return num, tail
+    if major == 1:
+        return -1 - num, tail
+    if major == 2:
+        return tail[:num], tail[num:]
+    if major == 3:
+        return tail[:num].decode("utf-8"), tail[num:]
+    raise ValueError(f"unsupported cbor major {major}")
+
+
+def parse_auth_data(auth_data: bytes) -> dict:
+    """Parse WebAuthn ``authenticatorData`` into its fields."""
+    if len(auth_data) < 37:
+        raise ValueError("authenticatorData too short")
+    return {
+        "rp_id_hash": auth_data[:32],
+        "flags": auth_data[32],
+        "sign_count": int.from_bytes(auth_data[33:37], "big"),
+        "attested": auth_data[37:],
+        "user_present": bool(auth_data[32] & 0x01),
+        "user_verified": bool(auth_data[32] & 0x04),
+    }
+
+
+def verify_webauthn_assertion(*, credential_public_key: bytes,
+                              auth_data: bytes, client_data_json: bytes,
+                              signature: bytes, rp_id: str,
+                              require_user_verification=False) -> dict:
+    """Verify a WebAuthn login assertion.
+
+    ``credential_public_key`` is the raw uncompressed P-256 point
+    (``0x04 || x || y``, 65 bytes) stored at registration. Returns the
+    parsed authData on success; raises :class:`AuthError` otherwise.
+
+    Why raw point, not COSE: avoids a CBOR dependency for the common
+    ES256 case; :func:`cose_to_raw_point` converts stored COSE keys.
+    """
+    import struct as _struct
+    parsed = parse_auth_data(auth_data)
+    if parsed["rp_id_hash"] != hashlib.sha256(rp_id.encode()).digest():
+        raise AuthError("rpId hash mismatch")
+    if not parsed["user_present"]:
+        raise AuthError("user presence flag not set")
+    if require_user_verification and not parsed["user_verified"]:
+        raise AuthError("user verification required")
+    if len(credential_public_key) != 65 or credential_public_key[0] != 0x04:
+        raise AuthError("unsupported credential key (need raw P-256)")
+    client_hash = hashlib.sha256(client_data_json).digest()
+    try:
+        client = json.loads(client_data_json)
+    except ValueError as exc:
+        raise AuthError("invalid clientDataJSON") from exc
+    if client.get("type") != "webauthn.get":
+        raise AuthError("wrong ceremony type")
+    msg = auth_data + client_hash
+    x = int.from_bytes(credential_public_key[1:33], "big")
+    y = int.from_bytes(credential_public_key[33:65], "big")
+    if not _ecdsa_p256_verify(x, y, msg, signature):
+        raise AuthError("invalid assertion signature")
+    return parsed
+
+
+def cose_to_raw_point(cose_key: bytes) -> bytes:
+    """Convert a COSE_Key (ES256, kty EC2) to a raw 65-byte P-256 point."""
+    if not cose_key or cose_key[0] != 0xA5:
+        raise ValueError("expected COSE map(5)")
+    rest = cose_key[1:]
+    vals = {}
+    for _ in range(5):
+        k, rest = _cbor_first(rest)
+        v, rest = _cbor_first(rest)
+        vals[k] = v
+    if vals.get(1) != 2 or vals.get(3) != -7:
+        raise ValueError("only COSE EC2/ES256 supported")
+    x, y = vals.get(-2), vals.get(-3)
+    if not (isinstance(x, bytes) and isinstance(y, bytes)
+            and len(x) == 32 and len(y) == 32):
+        raise ValueError("bad COSE x/y coordinates")
+    return b"\x04" + x + y
+
+
+_P256 = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
+_P256_B = 0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B
+_P256_GX = 0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296
+_P256_GY = 0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5
+_P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+
+
+def _p256_point_add(p, q):
+    # Curve: y^2 = x^3 - 3x + b (NIST P-256, a = -3).
+    if p is None:
+        return q
+    if q is None:
+        return p
+    x1, y1 = p
+    x2, y2 = q
+    if x1 == x2 and (y1 + y2) % _P256 == 0:
+        return None
+    if p == q:
+        lam = (3 * x1 * x1 - 3) * pow(2 * y1, -1, _P256) % _P256
+    else:
+        lam = ((y2 - y1) * pow((x2 - x1) % _P256, -1, _P256)) % _P256
+    x3 = (lam * lam - x1 - x2) % _P256
+    return (x3, (lam * (x1 - x3) - y1) % _P256)
+
+
+def _p256_on_curve(x, y) -> bool:
+    return (y * y - (x * x * x - 3 * x + _P256_B)) % _P256 == 0
+
+
+def _p256_scalar_mult(k, point):
+    res = None
+    add = point
+    while k:
+        if k & 1:
+            res = _p256_point_add(res, add)
+        add = _p256_point_add(add, add)
+        k >>= 1
+    return res
+
+
+def _ecdsa_p256_verify(x, y, msg, signature: bytes) -> bool:
+    """Pure-Python ECDSA P-256/SHA-256 verify (constant-time-ish).
+
+    Why pure Python: avoids a ``cryptography`` dependency for the pilot
+    use case (low-volume logins). Throughput is ~50 verifications/sec,
+    fine for auth but not for bulk signing — documented in the docstring
+    so teams switch to ``cryptography`` before building a CA on this.
+    """
+    if len(signature) != 64 or not (0 < x < _P256 and 0 < y < _P256):
+        return False
+    if not _p256_on_curve(x, y):
+        return False  # point not on curve
+    r = int.from_bytes(signature[:32], "big")
+    s = int.from_bytes(signature[32:], "big")
+    if not (0 < r < _P256_N and 0 < s < _P256_N):
+        return False
+    e = int.from_bytes(hashlib.sha256(msg).digest(), "big")
+    w = pow(s, -1, _P256_N)
+    u1 = (e * w) % _P256_N
+    u2 = (r * w) % _P256_N
+    pt = _p256_point_add(_p256_scalar_mult(u1, (_P256_GX, _P256_GY)),
+                         _p256_scalar_mult(u2, (x, y)))
+    if pt is None:
+        return False
+    return pt[0] % _P256_N == r
+
+
+def oidc_userinfo(endpoint: str, access_token: str, timeout=10) -> dict:
+    """Fetch OIDC ``userinfo`` claims with a bearer token (stdlib)."""
+    req = urllib.request.Request(endpoint, headers={
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())

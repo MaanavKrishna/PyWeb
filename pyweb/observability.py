@@ -58,6 +58,8 @@ class Tracer:
         return Span(self, name, **fields)
 
     def trace(self, name, trace_id=None):
+        if trace_id is not None:
+            _current_trace.set(trace_id)
         return self.span(name)
 
 

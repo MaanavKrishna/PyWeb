@@ -94,3 +94,14 @@ def format_error(exc, source_lines=None, filename="<pyweb>"):
                 mark = ">>" if n == i else "  "
                 out.append(f"{mark} {n:4d} | {line}")
     return "\n".join(out)
+
+
+class Timer:
+    def __enter__(self):
+        self._start = time.time()
+        self.elapsed_s = 0.0
+        return self
+
+    def __exit__(self, *exc):
+        self.elapsed_s = time.time() - self._start
+        return False

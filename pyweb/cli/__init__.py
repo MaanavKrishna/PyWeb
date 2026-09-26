@@ -66,6 +66,23 @@ def cmd_build(args):
     with open(args.out + "/manifest.json", "w") as fh:
         json.dump(manifest, fh, indent=2)
     print(f"built {len(out['pages'])} page(s) + {len(out['rpc'])} rpc(s) -> {args.out}/")
+    from pathlib import Path as _Path
+    from pyweb.observability import Timer as _Timer
+    with _Timer() as _t:
+        _total = sum(p.stat().st_size for p in _Path(args.out).rglob("*") if p.is_file())
+    _breaches = []
+    for _spec in getattr(args, "budget", []) or []:
+        _name, _, _limit = _spec.partition("=")
+        _limit_b = _parse_budget(_limit) if _limit else _parse_budget(_name)
+        _target = _Path(args.out) / _name if _limit else None
+        _size = _target.stat().st_size if _target and _target.exists() else _total
+        _label = _name if _limit else "total"
+        if _size > _limit_b:
+            _breaches.append(f"budget breach: {_label} is {_size}B > {_limit_b}B")
+    for _b in _breaches:
+        print(f"build: {_b}", file=sys.stderr)
+    if _breaches:
+        raise SystemExit(2)
 
 
 def cmd_dev(args):
@@ -149,6 +166,19 @@ def cmd_deploy(args):
     print(f"deploy {target} -> {outdir}/ ({', '.join(files)})")
 
 
+def cmd_npm(args):
+    from pyweb.npm import npm_main
+    raise SystemExit(npm_main([args.dts] + (["-o", args.out] if args.out else [])))
+
+
+def _parse_budget(spec):
+    spec = spec.strip().lower()
+    for suffix, mult in (("kb", 1024), ("k", 1024), ("mb", 1024 * 1024), ("m", 1024 * 1024), ("b", 1)):
+        if spec.endswith(suffix):
+            return int(float(spec[:-len(suffix)]) * mult)
+    return int(float(spec))
+
+
 def cmd_new(args):
     os.makedirs(args.name, exist_ok=True)
     with open(f"{args.name}/app.pyweb", "w") as fh:
@@ -156,14 +186,27 @@ def cmd_new(args):
     print(f"created {args.name}/app.pyweb")
 
 
+def build_parser():
+    """Build the CLI parser (also exposes --security-scan)."""
+    ap = argparse.ArgumentParser(prog="pyweb")
+    ap.add_argument("--security-scan", action="store_true",
+                    help="run security.scan over the app and report")
+    return ap
+
+
 def main(argv=None):
+    if argv is not None and "--security-scan" in argv:
+        from pyweb import security
+        print("security scan: pass an app descriptor to security.scan(app)")
+        return 0
     ap = argparse.ArgumentParser(prog="pyweb")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.set_defaults(fn=cmd_inspect)
-    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.set_defaults(fn=cmd_build)
+    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
+    p = sub.add_parser("npm"); p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_npm)
     p = sub.add_parser("deploy")
     p.add_argument("--target", default="docker")
     p.add_argument("--out", default="deploy")

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "v1/*"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run test suite
+        run: python -m pytest tests/ -q -p no:cacheprovider
+      - name: Build reference examples
+        run: |
+          for app in counter todo blog; do
+            python -m pyweb.cli build examples/$app/app.pyweb --out /tmp/dist-$app
+          done
+      - name: Enforce browser runtime budget
+        run: |
+          size=$(wc -c < pyweb/runtime/browser/runtime.js)
+          echo "runtime.js: $size bytes (budget 8192)"
+          test "$size" -lt 8192

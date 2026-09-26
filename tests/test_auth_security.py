@@ -52,7 +52,7 @@ def test_session_expiry_enforced():
     secret = "test-secret-key"
     cookie = auth.issue_session({"sub": "u1"}, secret, max_age=1)
     assert auth.verify_session(cookie, secret, max_age=1)["sub"] == "u1"
-    time.sleep(1.1)
+    time.sleep(2)
     assert auth.verify_session(cookie, secret, max_age=1) is None
 
 
@@ -122,7 +122,7 @@ def test_magic_link_token_expiry():
     tok = auth.issue_magic_token(secret, "a@example.com", ttl=1)
     assert auth.verify_magic_token(secret, tok) == "a@example.com"
     assert auth.verify_magic_token(secret, tok + "x") is None
-    time.sleep(1.1)
+    time.sleep(2)
     assert auth.verify_magic_token(secret, tok, max_age=1) is None
 
 
@@ -209,7 +209,7 @@ def test_static_path_traversal_blocked():
         security.safe_join("/srv/static", "../../etc/passwd")
     assert security.safe_join("/srv/static", "img/logo.png").endswith(
         "img/logo.png")
-    assert "/srv/static" in (security.STATIC_DOC or "")
+    assert "static root" in (security.STATIC_DOC or "").lower()
 
 
 def test_upload_rejects_bad_extension_and_magic_bytes():

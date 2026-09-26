@@ -43,9 +43,10 @@ def _node(n, initial):
                 scope[n.target] = item
                 out.append("".join(_node(c, scope) for c in n.body))
         else:
-            out.append(f"<!--pyweb:for {htmlmod.escape(n.target)} in {htmlmod.escape(n.iterable)}-->")
+            hid = abs(hash((n.target, n.iterable, n.line))) % 100000
+            out.append(f"<!--pw:{hid}-->")
             out.append("".join(_node(c, initial) for c in n.body))
-            out.append("<!--/pyweb:for-->")
+            out.append(f"<!--/pw:{hid}-->")
         return "".join(out)
     if t == "ControlIf":
         val = _eval_static(n.test, initial)

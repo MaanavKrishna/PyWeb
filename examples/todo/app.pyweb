@@ -1,0 +1,37 @@
+from pyweb import signal
+
+@component(props={"item": object})
+def TodoRow():
+    <li>
+        {item}
+    </li>
+
+@page("/todo")
+def todo():
+    items = signal(["buy milk", "write docs"])
+    draft = signal("")
+
+    def add():
+        items.set(items.get() + [draft.get()])
+        draft.set("")
+
+    def clear():
+        items.set([])
+
+    <style>
+        .todo { font-family: sans-serif; max-width: 400px; }
+    </style>
+    <div class="todo">
+        <h1>Todos</h1>
+        <input bind={draft} placeholder="new item" />
+        <button onclick={add}>Add</button>
+        <button onclick={clear}>Clear</button>
+        <ul>
+            for item in items:
+                <TodoRow key={item} item={item} />
+        </ul>
+        if items:
+            <p>Work remaining</p>
+        else:
+            <p>All done!</p>
+    </div>

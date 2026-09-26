@@ -1,0 +1,25 @@
+from pyweb import signal
+
+@page("/")
+def counter():
+    count = signal(0)
+
+    def inc():
+        count.set(count.get() + 1)
+
+    def dec():
+        count.set(count.get() - 1)
+
+    <style>
+        .wrap { font-family: sans-serif; text-align: center; }
+        button { margin: 0 4px; padding: 4px 12px; }
+    </style>
+    <div class="wrap">
+        <h1>{count}</h1>
+        <button onclick={inc}>+</button>
+        <button onclick={dec}>-</button>
+        if count:
+            <p>Count is nonzero!</p>
+        else:
+            <p>Count is zero.</p>
+    </div>

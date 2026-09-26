@@ -1,0 +1,37 @@
+from pyweb import signal
+
+@component(props={"title": str, "body": "untitled"})
+def Post():
+    <article css="border: 1px solid #ccc; padding: 8px;">
+        <h2>{title}</h2>
+        <p>{body}</p>
+        <slot />
+    </article>
+
+@page("/blog")
+def blog():
+    posts = signal([
+        {"id": 1, "title": "Hello", "body": "First post"},
+        {"id": 2, "title": "World", "body": "Second post"},
+    ])
+    show = signal(True)
+
+    def toggle():
+        show.set(not show.get())
+
+    <style>
+        .blog { font-family: sans-serif; max-width: 600px; }
+    </style>
+    <div class="blog">
+        <h1>Blog</h1>
+        <button onclick={toggle}>Toggle posts</button>
+        if show:
+            <div>
+                for post in posts:
+                    <Post key={post.id} title={post.title} body={post.body}>
+                        <span slot="default">Read more</span>
+                    </Post>
+            </div>
+        else:
+            <p>Posts hidden.</p>
+    </div>

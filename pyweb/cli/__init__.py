@@ -46,8 +46,14 @@ def cmd_check(args):
 
 def cmd_build(args):
     from pyweb.compiler import compile_source
+    from pyweb.build import build as _production_build
     src = _load(args.file)
     out = compile_source(src, filename=args.file)
+    if getattr(args, "production", False):
+        manifest = _production_build(out, args.out)
+        print(f"built {len(manifest['pages'])} page(s) + "
+              f"{len(manifest.get('rpc', []))} rpc(s) -> {args.out}/ (production)")
+        return
     os.makedirs(args.out + "/static", exist_ok=True)
     os.makedirs(args.out + "/server", exist_ok=True)
     for name, page in out["pages"].items():
@@ -204,7 +210,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="pyweb")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.set_defaults(fn=cmd_inspect)
-    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.set_defaults(fn=cmd_build)
+    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)

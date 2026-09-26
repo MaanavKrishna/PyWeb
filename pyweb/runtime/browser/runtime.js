@@ -219,22 +219,106 @@ export function on(root, event, handler, id) {
   root.addEventListener(event, (e) => fn(e));
 }
 
+// Typed RPC error: err.code is one of unauthenticated/forbidden/
+// validation_error/not_found/rate_limited/timeout/conflict/csrf_failed/
+// internal. err.status is the HTTP status; err.retryAfter on 429.
+export class RPCError extends Error {
+  constructor(name, code, message, status, details, retryAfter) {
+    super(message || `${name}: ${code}`);
+    this.name = "RPCError";
+    this.rpc = name;
+    this.code = code;
+    this.status = status;
+    this.details = details || {};
+    if (retryAfter) this.retryAfter = retryAfter;
+  }
+}
+
+let _csrf = null;
+export function setCsrfToken(token) { _csrf = token; }
+export function getCsrfToken() {
+  if (_csrf) return _csrf;
+  const m = document.cookie.match(/(?:^|;\s*)pyweb_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+const RETRYABLE = new Set([502, 503, 504]);
+function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
 export async function rpc(name, args = {}, opts = {}) {
-  const ctrl = new AbortController();
-  const timer = opts.timeout ? setTimeout(() => ctrl.abort(), opts.timeout) : null;
-  try {
-    const res = await fetch(`/__pyweb/rpc/${encodeURIComponent(name)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-PyWeb-Trace": String(Date.now()) + "-" + (++_qid) },
-      body: JSON.stringify({ args, trace: _qid }),
-      signal: ctrl.signal,
-      credentials: "same-origin",
-    });
-    if (!res.ok) throw new Error(`RPC ${name} failed: ${res.status}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    return data.result;
-  } finally { if (timer) clearTimeout(timer); }
+  const attempts = Math.max(1, opts.retries ?? opts.attempts ?? 1);
+  const timeout = opts.timeout || 0;
+  const external = opts.signal || null;
+  let lastErr = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    if (external) {
+      if (external.aborted) { const e = new DOMException("aborted", "AbortError"); e.rpc = name; throw e; }
+      external.addEventListener("abort", onAbort, { once: true });
+    }
+    const timer = timeout ? setTimeout(() => ctrl.abort(), timeout) : null;
+    try {
+      const headers = {
+        "Content-Type": "application/json",
+        "X-PyWeb-Trace": String(Date.now()) + "-" + (++_qid),
+        ...(opts.traceparent ? { traceparent: opts.traceparent } : {}),
+      };
+      const csrf = opts.csrf ?? getCsrfToken();
+      if (csrf) headers["X-CSRF-Token"] = csrf;
+      const res = await fetch(`/__pyweb/rpc/${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ args }),
+        signal: ctrl.signal,
+        credentials: "same-origin",
+      });
+      const ctype = res.headers.get("Content-Type") || "";
+      // Streaming RPC: application/x-ndjson, one {"chunk"} per line.
+      if (res.ok && ctype.includes("x-ndjson") && typeof opts.onChunk === "function") {
+        const text = await res.text();
+        let result = null;
+        for (const line of text.split("\n")) {
+          if (!line.trim()) continue;
+          try { const obj = JSON.parse(line); if ("chunk" in obj) { opts.onChunk(obj.chunk); result = obj.chunk; } } catch { /* skip */ }
+        }
+        return result;
+      }
+      let data = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok || (data && data.error)) {
+        const e = (data && data.error) || {};
+        const code = typeof e === "object" ? (e.code || `http_${res.status}`) : "internal";
+        const msg = typeof e === "object" ? (e.message || `RPC ${name} failed: ${res.status}`) : String(e);
+        const retryAfter = res.headers.get("Retry-After");
+        const err = new RPCError(name, code, msg, res.status, (typeof e === "object" && e.details) || {}, retryAfter ? parseInt(retryAfter, 10) : null);
+        const retryable = res.status === 429 || RETRYABLE.has(res.status) || (opts.retryNetwork !== false && (res.status === 0 || res.status >= 500));
+        if (attempt + 1 < attempts && retryable) {
+          lastErr = err;
+          let delay = Math.min(100 * 2 ** attempt, 2000);
+          if (res.status === 429 && retryAfter) delay = parseInt(retryAfter, 10) * 1000 || delay;
+          delay += Math.random() * 100;
+          await _sleep(delay);
+          continue;
+        }
+        throw err;
+      }
+      return data.result;
+    } catch (e) {
+      if (e && e.name === "AbortError") { e.rpc = e.rpc || name; throw e; }
+      if (e instanceof RPCError) throw e;
+      lastErr = e;
+      if (attempt + 1 < attempts && opts.retryNetwork !== false) {
+        await _sleep(Math.min(100 * 2 ** attempt, 2000) + Math.random() * 100);
+        continue;
+      }
+      throw e;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (external) external.removeEventListener("abort", onAbort);
+    }
+  }
+  throw lastErr;
 }
 
 // Realtime: SSE at /__pyweb/events?channel=NAME with poll fallback.

@@ -1,0 +1,19 @@
+{
+  "name": "blog",
+  "description": "SSR blog reference app with SEO meta (Track E).",
+  "routes": ["/", "/blog/hello"],
+  "rpc": [],
+  "expected_nodes": [
+    "<title>Hello - PyWeb blog</title>",
+    "name=\"description\"",
+    "property=\"og:title\"",
+    "<article"
+  ],
+  "hydration_markers": ["data-pw-id", "pw-bind"],
+  "seo": {
+    "route": "/blog/hello",
+    "title": "Hello - PyWeb blog",
+    "description": "Hello post",
+    "og_title": "Hello"
+  }
+}

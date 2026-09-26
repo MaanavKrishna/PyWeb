@@ -1,0 +1,13 @@
+{
+  "name": "todo",
+  "description": "Todo CRUD reference app with binds + list rendering (Track E).",
+  "routes": ["/"],
+  "rpc": ["add_todo", "toggle_todo", "delete_todo"],
+  "expected_nodes": [
+    "data-pw-id=\"todo-list\"",
+    "pw-bind=\"todos\"",
+    "pw-bind=\"title\"",
+    "data-pw-action=\"add_todo\""
+  ],
+  "hydration_markers": ["data-pw-id", "pw-bind"]
+}

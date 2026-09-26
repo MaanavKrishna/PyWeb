@@ -1,0 +1,12 @@
+{
+  "name": "counter",
+  "description": "Reactive counter reference app (Track E).",
+  "routes": ["/"],
+  "rpc": ["increment", "decrement"],
+  "expected_nodes": [
+    "data-pw-id=\"counter-value\"",
+    "pw-bind=\"count\"",
+    "data-pw-action=\"increment\""
+  ],
+  "hydration_markers": ["data-pw-id", "pw-bind"]
+}

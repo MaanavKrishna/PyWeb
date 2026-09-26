@@ -1,0 +1,17 @@
+{
+  "name": "chat",
+  "description": "Realtime chat: SSE path with documented polling fallback (Track E).",
+  "routes": ["/"],
+  "rpc": ["send_message"],
+  "expected_nodes": [
+    "data-pw-id=\"chat-log\"",
+    "pw-bind=\"messages\"",
+    "data-pw-action=\"send_message\""
+  ],
+  "hydration_markers": ["data-pw-id", "pw-bind"],
+  "realtime": {
+    "sse_path": "/__pyweb/events",
+    "poll_path": "/__pyweb/poll",
+    "strategy": "sse-with-poll-fallback"
+  }
+}

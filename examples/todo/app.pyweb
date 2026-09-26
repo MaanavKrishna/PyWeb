@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Todo - PyWeb</title>
+<meta name="description" content="Todo CRUD reference app">
+</head>
+<body>
+<main data-pw-id="todo-app">
+  <h1 data-pw-id="todo-title">Todos</h1>
+  <form data-pw-id="todo-form" data-pw-action="add_todo">
+    <input data-pw-id="todo-input" pw-bind="title" name="title" placeholder="What needs doing?">
+    <button type="submit" data-pw-id="todo-add">Add</button>
+  </form>
+  <ul data-pw-id="todo-list" pw-bind="todos" pw-each="todo">
+    <li data-pw-id="todo-1" pw-bind="todo.title">first todo</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat - PyWeb</title>
+<meta name="description" content="Realtime chat reference app">
+</head>
+<body>
+<main data-pw-id="chat-app">
+  <h1 data-pw-id="chat-title">Chat</h1>
+  <ul data-pw-id="chat-log" pw-bind="messages" pw-stream="/__pyweb/events" pw-poll="/__pyweb/poll">
+    <li data-pw-id="chat-msg-1">hi</li>
+  </ul>
+  <form data-pw-id="chat-form" data-pw-action="send_message">
+    <input data-pw-id="chat-input" pw-bind="draft" name="text" placeholder="message">
+    <button type="submit" data-pw-id="chat-send">Send</button>
+  </form>
+</main>
+</body>
+</html>

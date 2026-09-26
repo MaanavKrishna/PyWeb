@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Counter - PyWeb</title>
+<meta name="description" content="Reactive counter reference app">
+</head>
+<body>
+<main data-pw-id="counter-app">
+  <h1 data-pw-id="counter-title">Counter</h1>
+  <div data-pw-id="counter-value" pw-bind="count">0</div>
+  <button data-pw-id="counter-inc" data-pw-action="increment">+</button>
+  <button data-pw-id="counter-dec" data-pw-action="decrement">-</button>
+</main>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "auth",
+  "description": "Auth dashboard: protected route redirects unauthenticated users to login (Track E).",
+  "routes": ["/", "/login", "/dashboard"],
+  "rpc": ["login", "logout"],
+  "expected_nodes": [
+    "data-pw-id=\"login-form\"",
+    "data-pw-action=\"login\""
+  ],
+  "hydration_markers": ["data-pw-id", "pw-bind"],
+  "auth": {
+    "protected_route": "/dashboard",
+    "login_route": "/login",
+    "expect_redirect": 302
+  }
+}

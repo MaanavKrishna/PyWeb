@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Offline notes - PyWeb</title>
+<meta name="description" content="Offline-first notes with sync contract">
+</head>
+<body>
+<main data-pw-id="notes-app">
+  <h1 data-pw-id="notes-title">Notes</h1>
+  <ul data-pw-id="notes-list" pw-bind="notes" pw-sync="localStorage pw-outbox">
+    <li data-pw-id="note-1">first note</li>
+  </ul>
+  <form data-pw-id="notes-form" data-pw-action="sync_notes">
+    <input data-pw-id="notes-input" pw-bind="draft" name="text" placeholder="new note">
+    <button type="submit" data-pw-id="notes-sync">Sync</button>
+  </form>
+</main>
+</body>
+</html>

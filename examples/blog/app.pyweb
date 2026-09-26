@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hello - PyWeb blog</title>
+<meta name="description" content="Hello post">
+<meta property="og:title" content="Hello">
+</head>
+<body>
+<main data-pw-id="blog-index">
+  <h1 data-pw-id="blog-title">PyWeb blog</h1>
+  <article data-pw-id="blog-post-1" pw-bind="post">
+    <h2><a href="/blog/hello">Hello</a></h2>
+    <p>hello</p>
+  </article>
+</main>
+</body>
+</html>

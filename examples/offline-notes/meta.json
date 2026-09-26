@@ -1,0 +1,17 @@
+{
+  "name": "offline-notes",
+  "description": "Offline notes: documents the client/server sync contract (Track E).",
+  "routes": ["/"],
+  "rpc": ["sync_notes"],
+  "expected_nodes": [
+    "data-pw-id=\"notes-list\"",
+    "pw-bind=\"notes\"",
+    "data-pw-action=\"sync_notes\""
+  ],
+  "hydration_markers": ["data-pw-id", "pw-bind"],
+  "sync_contract": {
+    "push_path": "/__pyweb/rpc/sync_notes",
+    "conflict": "last-write-wins",
+    "queue": "localStorage pw-outbox"
+  }
+}

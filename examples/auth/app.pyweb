@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Login - PyWeb</title>
+<meta name="description" content="Auth dashboard reference app">
+</head>
+<body>
+<main data-pw-id="auth-app">
+  <h1 data-pw-id="auth-title">Sign in</h1>
+  <form data-pw-id="login-form" data-pw-action="login">
+    <input data-pw-id="login-user" pw-bind="username" name="username" placeholder="username">
+    <input data-pw-id="login-pass" pw-bind="password" name="password" type="password" placeholder="password">
+    <button type="submit" data-pw-id="login-submit">Log in</button>
+  </form>
+  <section data-pw-id="dashboard" pw-guard="auth">dashboard</section>
+</main>
+</body>
+</html>

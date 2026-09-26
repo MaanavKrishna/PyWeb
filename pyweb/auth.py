@@ -151,6 +151,62 @@ def can(user_roles, fn):
     return all(p in (user_roles or []) for p in need)
 
 
+SESSION_COOKIE = "pyweb_session"
+LOGIN_URL = "/login"
+
+
+def session_from_request(req, secret: str, max_age: int = 3600):
+    """Extract + verify the session from a ``Request``'s cookies/headers.
+
+    Accepts the ``pyweb_session`` cookie or ``Authorization: Bearer``.
+    Returns the payload dict, or ``None`` when absent/invalid/expired.
+    """
+    raw = ""
+    if getattr(req, "cookies", None) and req.cookies.get(SESSION_COOKIE):
+        raw = req.cookies[SESSION_COOKIE]
+    else:
+        auth = (getattr(req, "headers", None) or {}).get("Authorization", "")
+        if auth.startswith("Bearer "):
+            raw = auth[len("Bearer "):]
+    if not raw:
+        return None
+    return verify_session(raw, secret, max_age)
+
+
+def require_session(req, secret: str, max_age: int = 3600):
+    """Return ``(session, None)`` when authenticated, else ``(None, redirect)``.
+
+    The redirect is a ``302`` to ``/login?next=<path>`` per the QA-006
+    contract: unauthenticated page access redirects; API/RPC callers
+    distinguish the ``Location: /login`` response instead of a 200.
+    """
+    from pyweb.runtime.server import Response
+    session = session_from_request(req, secret, max_age)
+    if session is not None and "sub" in session:
+        return session, None
+    return None, Response(302, "", {"Location": f"{LOGIN_URL}?next={req.path}"})
+
+
+def login_response(user_id, secret: str, *, extra=None, next_url="/",
+                   max_age: int = 3600):
+    """``302`` to ``next_url`` with a ``Set-Cookie: pyweb_session=...``."""
+    from pyweb.runtime.server import Response
+    token = issue_session({"sub": user_id, **(extra or {})}, secret, max_age)
+    return Response(302, "", {
+        "Location": next_url,
+        "Set-Cookie": f"{SESSION_COOKIE}={token}; HttpOnly; Path=/; SameSite=Lax",
+    })
+
+
+def logout_response(next_url="/"):
+    """Clear the session cookie and redirect to ``next_url``."""
+    from pyweb.runtime.server import Response
+    return Response(302, "", {
+        "Location": next_url,
+        "Set-Cookie": f"{SESSION_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax",
+    })
+
+
 def _sign(payload_b64: str, secret: str) -> str:
     return hmac.new(secret.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
 

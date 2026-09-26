@@ -1,5 +1,7 @@
 """Codegen: HTML/JS emitters, IR text, py2js lowering, sourcemaps."""
 
+from pathlib import Path
+
 from pyweb.compiler import compile_source
 from pyweb.compiler.codegen.emit_js import _py2js
 from pyweb.compiler.codegen.ir import to_text
@@ -35,12 +37,12 @@ def test_py2js_keywords():
 
 
 def test_ir_text_lists_placement():
-    out = compile_source(open("examples/counter/app.pyweb").read())
+    out = compile_source(Path("examples/counter/app.pyweb").read_text())
     assert "place count: browser" in out["ir_text"]
 
 
 def test_sourcemap_entries():
-    out = compile_source(open("examples/counter/app.pyweb").read())
+    out = compile_source(Path("examples/counter/app.pyweb").read_text())
     sm = out["pages"]["Home"]["sourcemap"]
     kinds = [k for k, _ in sm]
     assert any(k.startswith("sig ") for k in kinds)

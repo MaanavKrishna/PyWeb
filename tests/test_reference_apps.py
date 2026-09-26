@@ -95,8 +95,11 @@ def _serve(html: str):
     srv = HTTPServer(("127.0.0.1", 0), H)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
-    yield f"http://127.0.0.1:{srv.server_port}"
-    srv.shutdown()
+    try:
+        yield f"http://127.0.0.1:{srv.server_port}"
+    finally:
+        srv.shutdown()
+        srv.server_close()
 
 
 def test_serve_ssr_200():

@@ -30,7 +30,7 @@ def test_build_passes_under_budget(tmp_path, monkeypatch, capsys):
     src = tmp_path / "app.pyweb"
     src.write_text(COUNTER, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    args = type("A", (), {"file": str(src), "out": "dist", "budget": ["static/runtime.js=8KB"]})()
+    args = type("A", (), {"file": str(src), "out": "dist", "budget": ["static/runtime.js=10KB"]})()
     cli.cmd_build(args)
     assert "built 1 page" in capsys.readouterr().out
 

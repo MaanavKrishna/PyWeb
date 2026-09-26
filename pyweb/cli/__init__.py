@@ -122,10 +122,12 @@ def cmd_dev(args):
 
         def do_GET(self):
             if self.path.startswith("/static/"):
-                p = dist + self.path
+                p = dist + self.path.split("?")[0]
                 if os.path.exists(p):
                     self.send_response(200)
                     self.send_header("Content-Type", "text/javascript" if p.endswith(".js") else "text/html")
+                    if "?v=" in self.path:
+                        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
                     self.end_headers()
                     with open(p, "rb") as fh:
                         self.wfile.write(fh.read())

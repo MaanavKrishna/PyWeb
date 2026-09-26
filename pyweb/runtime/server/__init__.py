@@ -90,9 +90,56 @@ class Server:
     def handle(self, req: Request):
         if req.path.startswith("/__pyweb/rpc/"):
             return self.handle_rpc(req)
+        if req.path == "/__pyweb/events" or req.path.startswith("/__pyweb/events?"):
+            return self.handle_events(req)
+        if req.path == "/__pyweb/poll" or req.path.startswith("/__pyweb/poll?"):
+            return self.handle_poll(req)
         for pat, name in self.routes:
             m = pat.match(req.path)
             if m:
                 page = self.compiled["pages"][name]
                 return Response(200, page["html"], {"Content-Type": "text/html", "X-Request-Id": req.id})
         return Response(404, "not found", {"Content-Type": "text/plain"})
+
+    def handle_events(self, req: Request):
+        """SSE stream: GET /__pyweb/events?channel=NAME replays missed frames
+        (via Last-Event-ID) then emits a live snapshot. Real servers hold the
+        connection open; this runtime returns buffered frames so tests and
+        simple deployments work without streaming infrastructure."""
+        from urllib.parse import urlparse, parse_qs
+        from pyweb import realtime as _rt
+        qs = parse_qs(urlparse(req.path).query)
+        channel_name = (qs.get("channel") or [""])[0]
+        if not channel_name:
+            return Response(400, json.dumps({"error": "missing ?channel="}),
+                            {"Content-Type": "application/json"})
+        last_id = int(req.headers.get("Last-Event-ID", "0") or 0)
+        bus = getattr(self, "bus", None) or _rt._default_bus
+        frames = "".join(
+            _rt.sse_format(seq, channel_name, msg)
+            for seq, msg in bus.since(channel_name, last_id))
+        return Response(200, frames, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "X-Channel": channel_name,
+            "X-Last-Id": str(bus._seq),
+        })
+
+    def handle_poll(self, req: Request):
+        """Polling fallback: GET /__pyweb/poll?channel=NAME&since=ID."""
+        from urllib.parse import urlparse, parse_qs
+        from pyweb import realtime as _rt
+        qs = parse_qs(urlparse(req.path).query)
+        channel_name = (qs.get("channel") or [""])[0]
+        if not channel_name:
+            return Response(400, json.dumps({"error": "missing ?channel="}),
+                            {"Content-Type": "application/json"})
+        try:
+            since = int((qs.get("since") or ["0"])[0])
+        except ValueError:
+            since = 0
+        bus = getattr(self, "bus", None) or _rt._default_bus
+        messages = [{"id": seq, "channel": channel_name, "data": msg}
+                    for seq, msg in bus.since(channel_name, since)]
+        return Response(200, json.dumps({"messages": messages, "last_id": bus._seq}),
+                        {"Content-Type": "application/json"})

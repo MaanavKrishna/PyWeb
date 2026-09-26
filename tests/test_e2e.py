@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from pyweb import testing
 from pyweb.compiler import compile_source
@@ -49,7 +50,7 @@ def test_full_stack_blog():
 
 
 def test_checkout_flow_like_spec():
-    src = open("examples/todo/app.pyweb").read()
+    src = Path("examples/todo/app.pyweb").read_text()
     out = compile_source(src)
     client = testing.Client(out)
     page = client.open("/")

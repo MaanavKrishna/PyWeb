@@ -99,3 +99,50 @@ Format per entry: repro + expected behavior.
 - QA impact: auth reference app + `TestAuthApp` pin the stub contract
   (`302 Location: /login` unauthenticated, `200` with `Authorization`
   header). Framework track should confirm or amend.
+
+## Production-v1 fix log (2026-09-26)
+
+Bugs found while hardening tracks to production-grade; each fixed with
+a regression test on main.
+
+### P1: DB pool checkout never returned (deadlock under load)
+
+- Repro: `_PooledDB.execute()` checked a connection out and only
+  returned it on the success path — any exception leaked the checkout;
+  under concurrent errors the pool drained and hung.
+- Fix: `try/finally` return in `pyweb/db/__init__.py`.
+- Test: pool-exhaustion regression in `tests/test_db_production.py`.
+
+### P2: P-256 generator Gy missing final digit
+
+- Repro: `_P256_GY` ended `...C71051F` instead of `...C71051F5`;
+  ECDSA verify failed against OpenSSL ground truth.
+- Fix: corrected constant; verified `openssl ecparam` params +
+  roundtrip in `tests/test_auth_v1.py`.
+
+### P3: P-256 curve `a` ignored in on-curve check and doubling
+
+- Repro: `_p256_on_curve` and `_p256_point_add` used `x^3 + b`,
+  dropping the `a*x` term (P-256 has `a = -3`). G failed on-curve.
+- Fix: `x^3 - 3x + b` in both paths; G on-curve asserted.
+
+### P4: COSE/CBOR negative ints unsupported
+
+- Repro: `_cbor_first` raised `unsupported cbor major 1` on COSE keys
+  `-1..-7` (credential public keys use `-1: kty`, `-3: alg`, ...).
+- Fix: major-1 decoding (`-1-n`) in `pyweb/auth.py`.
+
+### P5: `import pyweb.browser as x` binds the `@browser` decorator
+
+- Repro: package attr `browser` = decorator (bound after the submodule
+  import); `import-as` uses the attr, so users get a function.
+- Fix (contract, not rename): `from pyweb.browser import ...` and
+  `pyweb.browser_api` reach the module; `from pyweb import browser`
+  is the decorator. Locked in `test_user_import_patterns`; documented
+  in `docs/08-browser-apis.md`.
+
+### P6: `Tracer.trace(trace_id=...)` dropped the id
+
+- Repro: refactor to `span()` ignored `trace_id`;
+  `test_tracer_and_metrics` failed.
+- Fix: `trace()` sets the ambient trace before opening the span.

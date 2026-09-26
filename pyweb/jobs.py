@@ -83,6 +83,125 @@ class Queue:
         return job
 
 
+    def save(self, path):
+        """Persist job records to JSON (survives restarts; payload fns excluded)."""
+        import json as _json
+        with self._lock:
+            data = {jid: j.to_dict() for jid, j in self.jobs.items()}
+        with open(path, "w") as fh:
+            _json.dump(data, fh)
+
+    def load(self, path):
+        """Restore job records saved with :meth:`save`."""
+        import json as _json
+        try:
+            with open(path) as fh:
+                data = _json.load(fh)
+        except FileNotFoundError:
+            return 0
+        with self._lock:
+            for jid, rec in data.items():
+                job = Job(jid, rec.get("fn", "?"))
+                job.pending = bool(rec.get("pending", False))
+                job.failed = bool(rec.get("failed", False))
+                job.error = rec.get("error")
+                job.result = rec.get("result")
+                job.progress = float(rec.get("progress", 0.0))
+                self.jobs[jid] = job
+        return len(data)
+
+
+class RedisQueue(Queue):
+    """Cross-process job queue over Redis lists + hashes.
+
+    ``submit`` pushes the job id onto ``<prefix>pending`` and stores the
+    record in ``<prefix>job:<id>``; any process running :meth:`drain`
+    (or a worker loop) can pick it up. Payloads must be JSON-serializable
+    args; the function itself is resolved from a registry so workers do
+    not need the submitting process's memory. Falls back to in-memory
+    execution when Redis is unreachable.
+    """
+
+    def __init__(self, url="redis://localhost:6379/0", client=None,
+                 prefix="pyweb:jobs:"):
+        super().__init__()
+        self._prefix = prefix
+        self._registry: dict[str, object] = {}
+        if client is not None:
+            self._r = client
+        else:
+            try:
+                import redis
+            except ImportError as e:
+                raise RuntimeError(
+                    "RedisQueue requires the 'redis' package: "
+                    "pip install redis") from e
+            self._r = redis.Redis.from_url(url)
+
+    def register(self, fn):
+        self._registry[getattr(fn, "__name__", "fn")] = fn
+        return fn
+
+    def submit(self, fn, *args, retries=0, **kwargs):
+        import json as _json
+        name = getattr(fn, "__name__", "fn")
+        self._registry.setdefault(name, fn)
+        try:
+            payload = _json.dumps({"args": args, "kwargs": kwargs})
+        except (TypeError, ValueError):
+            return super().submit(fn, *args, retries=retries, **kwargs)
+        job = Job(__import__("uuid").uuid4().hex[:12], name)
+        with self._lock:
+            self.jobs[job.id] = job
+        try:
+            self._r.hset(self._prefix + f"job:{job.id}", mapping={
+                "fn": name, "payload": payload, "retries": retries})
+            self._r.rpush(self._prefix + "pending", job.id)
+        except Exception:  # noqa: BLE001 — Redis down: run in-memory
+            return super().submit(fn, *args, retries=retries, **kwargs)
+        return job
+
+    def drain(self, timeout=0):
+        """Run one pending job from the Redis list. Returns job or None."""
+        import json as _json
+        try:
+            item = self._r.blpop(self._prefix + "pending", timeout=timeout)
+        except Exception:
+            return None
+        if not item:
+            return None
+        _, job_id = item
+        job_id = job_id.decode() if isinstance(job_id, bytes) else job_id
+        try:
+            rec = self._r.hgetall(self._prefix + f"job:{job_id}")
+            get = lambda k: (rec.get(k.encode(), b"") or b"").decode() \
+                if isinstance(rec.get(k.encode(), b""), bytes) \
+                else rec.get(k, "")
+            fn = self._registry.get(get("fn"))
+            payload = _json.loads(get("payload") or "{}")
+            retries = int(get("retries") or 0)
+        except Exception:  # noqa: BLE001
+            return self.jobs.get(job_id)
+        job = self.jobs.get(job_id)
+        if job is None:
+            job = Job(job_id, get("fn"))
+            with self._lock:
+                self.jobs[job_id] = job
+        if fn is None:
+            job.pending = False
+            job.failed = True
+            job.error = "unknown function for worker"
+            return job
+        self._run(job, fn, payload.get("args", ()),
+                  payload.get("kwargs", {}), retries)
+        try:
+            self._r.hset(self._prefix + f"job:{job_id}", mapping={
+                "done": "1", "failed": "1" if job.failed else ""})
+        except Exception:
+            pass
+        return job
+
+
 _default_queue = Queue()
 
 
@@ -90,6 +209,9 @@ def task(_fn=None, *, retries=0, queue=None):
     q = queue or _default_queue
 
     def deco(fn):
+        if isinstance(q, RedisQueue):
+            q.register(fn)
+
         def wrapper(*args, **kwargs):
             return q.submit(fn, *args, retries=retries, **kwargs)
         wrapper.__pyweb_location__ = "worker"

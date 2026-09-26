@@ -290,6 +290,12 @@ class SQLiteDB:
             except Exception:
                 pass
 
+    def __del__(self):  # best-effort: never leak pool connections at GC
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 def snapshot(models):
     return {m.__table__: m.schema_sql() for m in models}

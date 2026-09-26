@@ -6,6 +6,35 @@ handoff to the integration/framework tracks.
 
 Format per entry: repro + expected behavior.
 
+## Resolution status (fix-all pass, 2026-09-25)
+
+- **QA-001 — RESOLVED (already fixed on main).** `import pyweb` works;
+  `pyweb` CLI exposes build/dev/new/check/npm/deploy/test/fmt/lint.
+- **QA-002 — RESOLVED (already fixed on main).** `.pyweb` examples exist
+  under `examples/*/`; compiler maps source -> SSR HTML + RPC + hydration
+  markers (`pw-bind`, `data-pw-id`), covered by `test_compiler.py`,
+  `test_codegen.py`, `test_docs_snippets.py`.
+- **QA-003 — RESOLVED (already fixed on main).** `pyweb dev` boots an
+  in-process server (`Server.handle` + `cmd_dev` ephemeral-port serving).
+- **QA-004 — FIXED in this pass.** Compiler now emits versioned script
+  refs (`/static/<page>.js?v=<sha8>`); dev handler strips the query and
+  sends `Cache-Control: immutable` for versioned URLs.
+  Tests: `tests/test_static_hashing.py` (2 tests).
+- **QA-005 — FIXED in this pass.** `GET /__pyweb/events?channel=` streams
+  SSE (`text/event-stream`, `id:`/`event:`/`data:`, `last_id` resume);
+  `GET /__pyweb/poll?channel=&since=` is the JSON fallback; browser
+  `subscribe()` uses SSE with poll fallback.
+  Tests: `tests/test_realtime_transport.py` (8 tests).
+- **QA-006 — FIXED in this pass.** `pyweb.auth` now pins the contract:
+  unauthenticated -> `302 Location: /login?next=<path>`; credentials via
+  `pyweb_session` cookie or `Authorization: Bearer`; `login_response` /
+  `logout_response` manage the `HttpOnly` cookie.
+  Tests: `tests/test_auth_contract.py` (7 tests).
+- **Test-hygiene — FIXED in this pass.** All `ResourceWarning`s eliminated:
+  bare `open().read()` -> `Path.read_text()`; test HTTP servers call
+  `server_close()`; `SQLiteDB` gained a `__del__` pool-drain safety net.
+  Suite passes with `-W error::ResourceWarning` (255 passed).
+
 ## QA-001: `pyweb` framework package absent from main
 
 - Repro: `python3 -c "import pyweb"` on `origin/main` (`f8efd35`) ->

@@ -87,7 +87,9 @@ def compile_source(source, filename="<pyweb>", route="/", title="PyWeb"):
         smap: list = []
         js = emit_js(fn.name, ui, signals, computeds, initial, rpc, handlers=handlers, sourcemap_out=smap)
         html_body = emit_html(ui, initial, computeds=computeds)
-        html = emit_page(route_of, title, ui, initial, js_url=f"/static/{fn.name}.js",
+        import hashlib as _hashlib
+        _v = _hashlib.sha256(js.encode()).hexdigest()[:8]
+        html = emit_page(route_of, title, ui, initial, js_url=f"/static/{fn.name}.js?v={_v}",
                          computeds=computeds)
         artifacts[fn.name] = {"ui": ui, "signals": signals, "computeds": computeds,
                               "placement": placement, "edges": edges, "initial": initial,

@@ -237,6 +237,35 @@ export async function rpc(name, args = {}, opts = {}) {
   } finally { if (timer) clearTimeout(timer); }
 }
 
+// Realtime: SSE at /__pyweb/events?channel=NAME with poll fallback.
+// subscribe(channel, onMsg, {lastId}) returns an unsubscribe function.
+export function subscribe(channel, onMsg, opts = {}) {
+  let stopped = false;
+  let lastId = opts.lastId || 0;
+  if (typeof EventSource !== "undefined" && !opts.poll) {
+    const src = new EventSource(`/__pyweb/events?channel=${encodeURIComponent(channel)}`);
+    src.addEventListener(channel, (e) => {
+      if (e.lastEventId) lastId = e.lastEventId;
+      try { onMsg(JSON.parse(e.data)); } catch { onMsg(e.data); }
+    });
+    src.onerror = () => { src.close(); if (!stopped) poll(); };
+    return () => { stopped = true; src.close(); };
+  }
+  async function poll() {
+    while (!stopped) {
+      try {
+        const res = await fetch(`/__pyweb/poll?channel=${encodeURIComponent(channel)}&since=${lastId}`);
+        if (!res.ok) throw new Error(`poll ${res.status}`);
+        const data = await res.json();
+        for (const m of data.messages || []) { lastId = m.id; onMsg(m.data); }
+      } catch { /* retry below */ }
+      await new Promise((r) => setTimeout(r, opts.interval || 2500));
+    }
+  }
+  poll();
+  return () => { stopped = true; };
+}
+
 // Optimistic mutation: apply local patch, run server call, reconcile/rollback.
 export async function mutate({ apply, server, reconcile, rollback }) {
   const undo = apply ? apply() : null;

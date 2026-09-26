@@ -1,10 +1,12 @@
 """Prototype tests: reactivity (H1), RPC (H3), SSR/placement/security."""
 
+from pathlib import Path
+
 from pyweb.compiler import compile_source
 from pyweb.runtime.server import Request, Server
 
-COUNTER = open("examples/counter/app.pyweb").read()
-TODO = open("examples/todo/app.pyweb").read()
+COUNTER = Path("examples/counter/app.pyweb").read_text()
+TODO = Path("examples/todo/app.pyweb").read_text()
 
 
 def test_counter_reactive_count():
@@ -25,7 +27,7 @@ def test_todo_rpc_and_ssr():
     assert spec["returns"] == "int"
     page = out["pages"]["Home"]
     assert "Todos" in page["html"] and "buy milk" in page["html"]
-    assert "get_count" in page["js"] and "/__pyweb/rpc/" in open("pyweb/runtime/browser/runtime.js").read()
+    assert "get_count" in page["js"] and "/__pyweb/rpc/" in Path("pyweb/runtime/browser/runtime.js").read_text()
 
 
 def test_rpc_validation_and_dispatch():

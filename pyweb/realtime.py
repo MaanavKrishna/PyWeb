@@ -47,6 +47,8 @@ class Bus:
     def __init__(self):
         self.channels: dict[str, Channel] = {}
         self._lock = threading.Lock()
+        self._seq = 0
+        self._log: dict[str, list[tuple[int, object]]] = {}
 
     def channel(self, name):
         with self._lock:
@@ -55,11 +57,29 @@ class Bus:
             return self.channels[name]
 
     def publish(self, channel_name, message):
+        with self._lock:
+            self._seq += 1
+            entry = (self._seq, message)
+            self._log.setdefault(channel_name, []).append(entry)
+            self._log[channel_name] = self._log[channel_name][-100:]
         return self.channel(channel_name).publish(message)
+
+    def since(self, channel_name, last_id=0, limit=50):
+        """Messages on a channel after last_id (poll fallback)."""
+        with self._lock:
+            entries = [e for e in self._log.get(channel_name, []) if e[0] > last_id]
+        return entries[:limit]
 
     def notify_table(self, table, row=None):
         """Fanout for live DB queries watching a table."""
         return self.publish(f"db:{table}", {"table": table, "row": row})
+
+
+def sse_format(seq, channel_name, message):
+    """One SSE frame: id/event/data lines. Client filters by event name."""
+    import json as _json
+    data = message if isinstance(message, str) else _json.dumps(message)
+    return f"id: {seq}\nevent: {channel_name}\ndata: {data}\n\n"
 
 
 _default_bus = Bus()

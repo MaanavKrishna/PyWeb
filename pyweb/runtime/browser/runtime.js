@@ -63,6 +63,126 @@ export function bind_text(root, code, thunk) {
 
 export function bind_attr() {}
 
+// --- Keyed live list: appending one item creates exactly one row; existing
+// rows keep their DOM nodes. Ported from Track A (compiler-runtime).
+function _liveRowEls(row) {
+  if (!row) return [];
+  if (row.els) return row.els;
+  if (row.el) return [row.el];
+  return [];
+}
+
+export function liveList(anchor, getItems, renderRow, keyFn) {
+  keyFn = keyFn || ((item, i) => `i:${i}`);
+  const rows = new Map();
+  let order = [];
+  function makeRow(item, i, key) {
+    const row = renderRow(item, i, key) || { els: [] };
+    row.item = item;
+    row.i = i;
+    return row;
+  }
+  function killRow(key) {
+    const row = rows.get(key);
+    if (!row) return;
+    rows.delete(key);
+    if (row.dispose) { try { row.dispose(); } catch { /* noop */ } }
+    _liveRowEls(row).forEach((e) => { if (e.parentNode) e.parentNode.removeChild(e); });
+  }
+  function sync() {
+    const items = getItems() || [];
+    const parent = anchor.parentNode;
+    const seen = {};
+    const nextOrder = [];
+    for (let i = 0; i < items.length; i++) {
+      const key = String(keyFn(items[i], i));
+      seen[key] = true;
+      nextOrder.push(key);
+      const row = rows.get(key);
+      if (!row) {
+        rows.set(key, makeRow(items[i], i, key));
+      } else if (row.item !== items[i]) {
+        killRow(key);
+        rows.set(key, makeRow(items[i], i, key));
+      }
+    }
+    const victims = [];
+    rows.forEach((_row, key) => { if (!seen[key]) victims.push(key); });
+    victims.forEach(killRow);
+    order = nextOrder;
+    let ref = anchor;
+    for (let j = order.length - 1; j >= 0; j--) {
+      const els = _liveRowEls(rows.get(order[j]));
+      for (let q = els.length - 1; q >= 0; q--) {
+        if (els[q].nextSibling !== ref) parent.insertBefore(els[q], ref);
+        ref = els[q];
+      }
+    }
+  }
+  const dispose = effect(sync);
+  return { sync, dispose };
+}
+
+// --- Live conditional: swaps branch DOM in place.
+export function liveIf(anchor, pick, branches) {
+  const state = { idx: -1, nodes: [] };
+  function sync() {
+    const idx = pick();
+    if (idx === state.idx) return;
+    state.nodes.forEach((n) => { if (n.parentNode) n.parentNode.removeChild(n); });
+    state.nodes = [];
+    state.idx = idx;
+    if (idx < 0 || idx >= branches.length) return;
+    const parent = anchor.parentNode;
+    (branches[idx]() || []).forEach((n) => {
+      parent.insertBefore(n, anchor);
+      state.nodes.push(n);
+    });
+  }
+  const dispose = effect(sync);
+  return { sync, dispose };
+}
+
+// --- SSR handoff: replace <!--pw:hid--> ... <!--/pw:hid--> with a live anchor.
+function _findComment(root, text) {
+  const stack = [root];
+  while (stack.length) {
+    const n = stack.pop();
+    const kids = (n && n.childNodes) || [];
+    for (let i = 0; i < kids.length; i++) {
+      const k = kids[i];
+      if (k.nodeType === 8 && k.nodeValue === text) return k;
+      if (k.childNodes && k.childNodes.length) stack.push(k);
+    }
+  }
+  return null;
+}
+
+export function takeover(parent, hid) {
+  const doc = parent.ownerDocument || document;
+  const anchor = doc.createComment("pw-live");
+  const start = _findComment(parent, `pw:${hid}`);
+  if (!start) {
+    parent.appendChild(anchor);
+    return anchor;
+  }
+  const host = start.parentNode || parent;
+  host.insertBefore(anchor, start);
+  let cur = start;
+  while (cur) {
+    const next = cur.nextSibling;
+    host.removeChild(cur);
+    if (cur.nodeType === 8 && cur.nodeValue === `/pw:${hid}`) break;
+    cur = next;
+  }
+  return anchor;
+}
+
+export function dynText(node, fn) {
+  const sync = () => { if (node) node.textContent = fn() == null ? "" : String(fn()); };
+  return effect(sync);
+}
+
 // SSR emits data-pw-id on interactive elements; resolve handlers/inputs by id.
 const _marks = new Map();
 export function _mark_el(root, id, line) { return _resolve(root, id); }

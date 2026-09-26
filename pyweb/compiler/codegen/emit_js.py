@@ -6,7 +6,7 @@ import json
 
 from ..rpc import client_stub
 
-RUNTIME_IMPORT = "import { sig, computed, bind_text, bind_input, on, rpc, mutate } from './runtime.js';\n"
+RUNTIME_IMPORT = "import { sig, computed, bind_text, bind_input, on, rpc, mutate, liveList, liveIf, takeover, dynText } from './runtime.js';\n"
 
 
 def _js_val(v):
@@ -112,13 +112,42 @@ def _emit_bindings(ui, root_var, signals=()):
                         out.append(f"  bind_input({root_var}, {json.dumps(val[1])}); // line {val[2]}")
             if n.children:
                 out.append(_emit_bindings(n.children, root_var, signals))
-        elif t in ("ControlFor", "ControlIf", "_ControlBox"):
+        elif t == "ControlFor":
+            out.append(_emit_live_for(n, root_var, signals))
+        elif t in ("ControlIf", "_ControlBox"):
             body = getattr(n, "body", [])
             if body:
                 out.append(_emit_bindings(body, root_var, signals))
             for c in getattr(n, "orelse", []):
                 out.append(_emit_bindings([c], root_var, signals))
     return "\n".join(out) if out else "  // static — no bindings"
+
+
+_live_counter = [0]
+
+
+def _emit_live_for(n, root_var, signals=()):
+    """Emit a keyed liveList region for `for x in items` (Track A port).
+
+    SSR keeps the initial rows as static HTML; the browser takes over the
+    region and patches rows fine-grained as the signal changes.
+    """
+    _live_counter[0] += 1
+    hid = _live_counter[0]
+    target, iterable = n.target, n.iterable
+    iter_js = _py2js(iterable, signals)
+    body = _emit_bindings(getattr(n, "body", []), "__frag", signals)
+    key_fn = f"(({target}) => ({_py2js(target, signals)}))"
+    return (
+        f"  // live-for hid {hid} (line {n.line}): SSR rows activate below\n"
+        f"  (() => {{ const __anchor = takeover({root_var}, {hid});\n"
+        f"    const __row = ({target}, __i, __key) => {{\n"
+        f"      const __frag = document.createDocumentFragment();\n"
+        f"{body}\n"
+        f"      return {{ els: Array.from(__frag.childNodes) }}; }};\n"
+        f"    liveList(__anchor, () => ({iter_js}), "
+        f"(__item, __i, __key) => __row(__item, __i, __key), {key_fn}); }})();"
+    )
 
 
 def _py2js(code, signals=()):

@@ -10,6 +10,7 @@ import importlib as _il
 # NOTE: ``pyweb.browser`` the module shares its name with the ``@browser``
 # decorator (``from pyweb import browser``). importlib resolves via
 # sys.modules so this is immune to the package-attr shadowing.
+# Users should prefer ``from pyweb.browser import storage, ...``.
 _b = _il.import_module("pyweb.browser")
 from pyweb import build as _build
 from pyweb import css as _css
@@ -53,6 +54,15 @@ def test_bindings_cover_all_apis():
     for expect in ("storage", "clipboard", "location", "notifications",
                    "camera", "fetch", "idb", "bluetooth", "filesystem"):
         assert expect in names, expect
+
+
+def test_user_import_patterns():
+    """Lock in the import contract documented in docs/08-browser-apis.md."""
+    import pyweb
+    from pyweb.browser import storage  # module from-import works
+    assert storage is _b.storage
+    assert callable(pyweb.browser)  # `from pyweb import browser`: decorator
+    assert pyweb.browser_api is _b  # alias reaches the module
 
 
 def test_css_dict_px_and_unitless():

@@ -104,7 +104,9 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             resp = server_runtime.handle(
                 Request("POST", self.path.split("?")[0], dict(self.headers), body))
             return self._bytes(resp.body, resp.status,
-                               resp.headers.get("Content-Type", "application/json"))
+                               resp.headers.get("Content-Type", "application/json"),
+                               {k: v for k, v in resp.headers.items()
+                                if k not in ("Content-Type", "Content-Length")})
 
         def log_message(self, fmt, *args):  # noqa: N802
             if logger is not None:
@@ -113,11 +115,21 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
     return H
 
 
-def serve(dist, *, host="0.0.0.0", port=8000, app_factory=None, logger=None):
+def serve(dist, *, host="0.0.0.0", port=8000, app_factory=None, logger=None,
+          rate_limit=None, rpc_timeout=30.0):
     """Serve ``dist/`` forever. Returns the server (for tests, use
-    ``serve_in_thread``)."""
+    ``serve_in_thread``).
+
+    RPC protection is on by default: 120 calls/min/IP unless
+    ``rate_limit=`` overrides (``False`` disables — tests only).
+    """
+    from pyweb import rpc as _rpc
     from pyweb.runtime.server import Server
     manifest, static_dir, _ = load_dist(dist)
+    if rate_limit is False:
+        rate_limit = None
+    elif rate_limit is None:
+        rate_limit = _rpc.RateLimiter(max_calls=120, window=60.0)
     runtime = None
     if app_factory:
         mod_name, _, attr = app_factory.partition(":")
@@ -125,7 +137,8 @@ def serve(dist, *, host="0.0.0.0", port=8000, app_factory=None, logger=None):
         mod = importlib.import_module(mod_name or attr and mod_name)
         factory = getattr(mod, attr or "app", None)
         compiled, impls = factory(manifest) if callable(factory) else (None, {})
-        runtime = Server(compiled or {"pages": {}, "rpc": []})
+        runtime = Server(compiled or {"pages": {}, "rpc": []},
+                         rate_limit=rate_limit, rpc_timeout=rpc_timeout)
         for fn in (impls or {}).values():
             runtime.register_rpc(fn)
     handler = make_handler(static_dir=static_dir, server_runtime=runtime,

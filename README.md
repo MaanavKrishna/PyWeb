@@ -52,8 +52,9 @@ button's text node — no virtual DOM, no `useState`, no fetch calls.
 | Plugins, platform targets, benchmarks | ✅ |
 | Docker / K8s / any VM (no cloud lock-in) | ✅ |
 
-Total JS for counter+todo+blog: **2323 bytes**
-(`python -m pyweb.bench`).
+Shipped JS for counter+todo+blog: **~30 KB total (~10 KB/app incl. shared
+runtime, cached across pages)** (`python -m pyweb.bench` — totals include
+the runtime; per-page code is typically under 1 KB).
 
 ## Quickstart
 

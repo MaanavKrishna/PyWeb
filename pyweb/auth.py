@@ -188,22 +188,29 @@ def require_session(req, secret: str, max_age: int = 3600):
 
 
 def login_response(user_id, secret: str, *, extra=None, next_url="/",
-                   max_age: int = 3600):
-    """``302`` to ``next_url`` with a ``Set-Cookie: pyweb_session=...``."""
+                   max_age: int = 3600, secure: bool = False):
+    """``302`` to ``next_url`` with a ``Set-Cookie: pyweb_session=...``.
+
+    ``secure=True`` adds ``Secure`` (required in production HTTPS; off by
+    default so localhost dev over plain HTTP keeps working).
+    """
     from pyweb.runtime.server import Response
     token = issue_session({"sub": user_id, **(extra or {})}, secret, max_age)
+    flags = "HttpOnly; Path=/; SameSite=Lax" + ("; Secure" if secure else "")
     return Response(302, "", {
         "Location": next_url,
-        "Set-Cookie": f"{SESSION_COOKIE}={token}; HttpOnly; Path=/; SameSite=Lax",
+        "Set-Cookie": f"{SESSION_COOKIE}={token}; {flags}",
     })
 
 
-def logout_response(next_url="/"):
+def logout_response(next_url="/", *, secure: bool = False):
     """Clear the session cookie and redirect to ``next_url``."""
     from pyweb.runtime.server import Response
+    flags = ("HttpOnly; Path=/; Max-Age=0; SameSite=Lax"
+             + ("; Secure" if secure else ""))
     return Response(302, "", {
         "Location": next_url,
-        "Set-Cookie": f"{SESSION_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax",
+        "Set-Cookie": f"{SESSION_COOKIE}=; {flags}",
     })
 
 

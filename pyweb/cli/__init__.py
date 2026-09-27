@@ -380,7 +380,9 @@ def main(argv=None):
         print("security scan: pass an app descriptor to security.scan(app)")
         return 0
     ap = argparse.ArgumentParser(prog="pyweb")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    ap.add_argument("--version", action="store_true",
+                    help="print the PyWeb version and exit")
+    sub = ap.add_subparsers(dest="cmd", required=False)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
@@ -402,6 +404,16 @@ def main(argv=None):
     p = sub.add_parser("fmt"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_fmt)
     p = sub.add_parser("lint"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_lint)
     args = ap.parse_args(argv)
+    if args.version:
+        from importlib.metadata import version, PackageNotFoundError
+        try:
+            print(version("pyweb"))
+        except PackageNotFoundError:
+            print("1.0.0")
+        return
+    if not args.cmd:
+        ap.print_help()
+        raise SystemExit(2)
     args.fn(args)
 
 

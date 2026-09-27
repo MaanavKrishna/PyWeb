@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html as _html
 import inspect
 import json
 import re
@@ -226,7 +227,48 @@ class Server:
             if m:
                 page = self.compiled["pages"][name]
                 return Response(200, page["html"], {"Content-Type": "text/html", "X-Request-Id": req.id})
-        return Response(404, "not found", {"Content-Type": "text/plain"})
+        return self.error_page(404, req)
+
+    def error_page(self, status, req=None, *, title=None, message=None):
+        """Branded HTML error shell. Apps override via ``error_pages`` on
+        the compiled dict (``{404: html, 500: html}``) or ``register_error``.
+
+        Overrides may use ``{{path}}`` and ``{{request_id}}`` placeholders.
+        """
+        overrides = (self.compiled.get("error_pages") or {})
+        template = overrides.get(status)
+        request_id = getattr(req, "id", "") if req is not None else ""
+        path = getattr(req, "path", "") if req is not None else ""
+        if template is not None:
+            body = template.replace("{{path}}", _html.escape(path)).replace(
+                "{{request_id}}", _html.escape(request_id))
+            return Response(status, body,
+                            {"Content-Type": "text/html",
+                             "X-Request-Id": request_id})
+        default_title = {404: "Page not found", 500: "Something went wrong"}
+        heading = title or default_title.get(status, f"Error {status}")
+        hint = message or ("The page you're looking for doesn't exist. "
+                           if status == 404 else
+                           "Please try again; the error has been logged. ")
+        body = (
+            "<!doctype html><html lang=en><meta charset=utf-8>"
+            "<meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>{status} {heading}</title>"
+            "<body style='font-family:system-ui,sans-serif;max-width:640px;"
+            "margin:10vh auto;padding:0 20px;color:#111'>"
+            f"<h1>{status} — {heading}</h1><p>{hint}</p>"
+            + (f"<p><a href='/'>Back home</a> · "
+                f"<code>{_html.escape(path)}</code></p>" if status == 404 else "")
+            + (f"<p style='color:#666;font-size:13px'>request id: "
+                f"<code>{_html.escape(request_id)}</code></p>" if request_id else "")
+            + "</body></html>")
+        return Response(status, body, {"Content-Type": "text/html",
+                                       "X-Request-Id": request_id})
+
+    def register_error(self, status, html_template):
+        """Register a custom error shell, e.g. ``register_error(404, ...)``."""
+        pages = self.compiled.setdefault("error_pages", {})
+        pages[status] = html_template
 
     def handle_events(self, req: Request):
         """SSE stream: GET /__pyweb/events?channel=NAME replays missed frames

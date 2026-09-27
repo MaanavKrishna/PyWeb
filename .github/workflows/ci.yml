@@ -18,11 +18,22 @@ jobs:
         run: python -m pytest tests/ -q -p no:cacheprovider
       - name: Build reference examples
         run: |
-          for app in counter todo blog; do
-            python -m pyweb.cli build examples/$app/app.pyweb --out /tmp/dist-$app
+          for app in counter todo blog auth chat showcase; do
+            python -m pyweb.cli build examples/$app/app.pyweb --out /tmp/dist-$app --production
           done
-      - name: Enforce browser runtime budget
+      - name: Enforce shipped-JS budgets
         run: |
-          size=$(wc -c < pyweb/runtime/browser/runtime.js)
-          echo "runtime.js: $size bytes (budget 8192)"
-          test "$size" -lt 8192
+          # Budget what ships: minified runtime bundle in a production build,
+          # not the readable dev source.
+          rt=$(ls /tmp/dist-counter/static/runtime.*.js)
+          size=$(wc -c < "$rt")
+          echo "shipped runtime: $size bytes (budget 12288)"
+          test "$size" -lt 12288
+          total=$(cat /tmp/dist-counter/static/*.js | wc -c)
+          echo "counter total JS: $total bytes (budget 16384)"
+          test "$total" -lt 16384
+      - name: Security gate
+        run: |
+          for app in counter todo blog auth chat showcase; do
+            python -m pyweb.cli check examples/$app/app.pyweb
+          done

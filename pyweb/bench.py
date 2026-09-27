@@ -34,6 +34,20 @@ APPS = {
 }
 
 
+def _runtime_bytes(*, minified=True) -> int:
+    """Shared browser runtime bytes. Counts toward every app's total:
+    excluding it would under-report shipped JS (benchmark theater)."""
+    import os
+    path = os.path.join(os.path.dirname(__file__), "runtime",
+                        "browser", "runtime.js")
+    with open(path) as fh:
+        js = fh.read()
+    if minified:
+        from pyweb.build import minify_js
+        js = minify_js(js)
+    return len(js.encode())
+
+
 def bench_app(name: str, source: str) -> dict:
     from pyweb.compiler import compile_source
     lines = len(source.splitlines())
@@ -41,7 +55,7 @@ def bench_app(name: str, source: str) -> dict:
     out = compile_source(source, filename=f"{name}.pyweb")
     compile_ms = (time.perf_counter() - t0) * 1000
     pages = out["pages"]
-    js_bytes = sum(len(p.get("js", "").encode()) for p in pages.values())
+    page_js = sum(len(p.get("js", "").encode()) for p in pages.values())
     html_bytes = sum(len(p.get("html", "").encode()) for p in pages.values())
     signals = sum(len(p.get("signals", ())) for p in pages.values())
     t0 = time.perf_counter()
@@ -49,7 +63,10 @@ def bench_app(name: str, source: str) -> dict:
         compile_source(source, filename=f"{name}.pyweb")
     ssr_ms = (time.perf_counter() - t0) * 1000 / 20
     return {"app": name, "source_lines": lines,
-            "js_bytes": js_bytes, "html_bytes": html_bytes,
+            "js_bytes": page_js + _runtime_bytes(),  # shipped total
+            "page_js_bytes": page_js,
+            "runtime_js_bytes": _runtime_bytes(),
+            "html_bytes": html_bytes,
             "signals": signals,
             "compile_ms": round(compile_ms, 2),
             "ssr_ms": round(ssr_ms, 3),

@@ -1,0 +1,25 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta name=description content='An honest map of what PyWeb v1 delivers, what is preview, and what is future — no vaporware.'><meta property='og:title' content='Roadmap: what is real - PyWeb'><meta property='og:description' content='An honest map of what PyWeb v1 delivers, what is preview, and what is future — no vaporware.'><meta property='og:type' content='website'><title>Roadmap: what is real - PyWeb</title><link rel=stylesheet href="assets/style.css"><link rel=icon href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27><text y=%27.9em%27 font-size=%2732%27>P</text></svg>"></head><body><a class="skip" href="#main">Skip to content</a><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><span class="ver">v1.0</span><nav class="main" aria-label="Docs"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="styling.html">Styling</a><a href="browser.html">Browser APIs</a><a href="testing.html">Testing</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="api.html">API</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a><a href="roadmap.html" class="on">Roadmap</a></nav><div class="hdr-actions"><input id="site-search" class="searchbox" type="search" placeholder="Search docs…" aria-label="Search docs"><button class="iconbtn" onclick="pwTheme()" title="Toggle theme">☾</button></div></div></header><div class=wrap id=main>
+<section class=block>
+<h2 class=sec>Honest roadmap</h2>
+<table class=spec>
+<tr><th>Status</th><th>Area</th></tr>
+<tr><td><span class="pill real">real</span></td><td>Reactivity, RPC, placement, SSR,
+routing, Postgres/MySQL/SQLite + journaled migrations, auth/RBAC, realtime
+bus, jobs, cache, offline sync core, hashed builds, serve + health,
+importmap, inspect, tests</td></tr>
+<tr><td><span class="pill preview">preview</span></td><td>Mobile/desktop targets (AST
+pruning works, native emitters partial), Tailwind bridge, plugin SDK
+surface</td></tr>
+<tr><td><span class="pill future">future</span></td><td>Streaming SSR, WASM browser
+target, multi-node CRDT sync, managed cloud offering</td></tr>
+</table>
+<div class=warn><b>Rule:</b> uncertain code stays on the server. The compiler
+optimizes only when it can prove safety — correctness first, always.</div>
+<h2 class=sec>How to follow along</h2>
+<ul class=check>
+<li>Read <code>ARCHITECTURE.md</code> for the full design</li>
+<li>Run <code>python -m pyweb.bench</code> to reproduce every number on this site</li>
+<li>Open an issue or PR at <a href="https://github.com/MaanavKrishna/PyWeb">github.com/MaanavKrishna/PyWeb</a></li>
+</ul>
+</section>
+</div><footer><div class=wrap><span>PyWeb — Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</span><span class=sp><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a><a href="roadmap.html">Roadmap</a><a href="benchmarks.html">Benchmarks</a></span></div></footer><script src="assets/site.js"></script></body></html>

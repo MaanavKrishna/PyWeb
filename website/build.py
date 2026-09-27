@@ -687,7 +687,8 @@ cheap = Product.where(stock__gt=0, price__lt=1000).paginate(page=2)
 pyweb db new add_stock_index
 pyweb db migrate --database $DATABASE_URL
 pyweb db status
-pyweb db rollback --to 0003"""
+pyweb db rollback --steps 1          # revert latest applied
+pyweb db rollback --to 0003_add_users  # revert everything after 0003"""
     )
     + """
 <table class=spec>
@@ -713,10 +714,14 @@ add(
     """
 <section class=block>
 <h2 class=sec>Auth is compiler-aware</h2>
-<p class=lead>Signed sessions (HttpOnly, SameSite=Lax), PBKDF2 passwords,
-RBAC policies, session rotation, magic links, TOTP, OAuth/OIDC clients,
-and WebAuthn verification. Security boundaries feed placement: auth-gated
-code stays server-side.</p>
+<p class=lead>Signed sessions (HttpOnly, SameSite=Lax, Max-Age matched to
+the server-side TTL), PBKDF2 passwords, RBAC policies, session rotation,
+magic links, TOTP, OAuth/OIDC clients, and WebAuthn verification. Security
+boundaries feed placement: auth-gated code stays server-side. In
+production behind HTTPS pass <code>secure=True</code> so cookies also
+carry <code>Secure</code> — <code>pyweb serve</code> warns at startup when
+auth is enabled on a non-local host without it
+(<code>PYWEB_COOKIE_SECURE=1</code>).</p>
 """
     + code(
         """@app.page("/dashboard")
@@ -928,7 +933,7 @@ add(
 <h2 class=sec>Operate it like you mean it</h2>
 <table class=spec>
 <tr><th>Concern</th><th>PyWeb answer</th></tr>
-<tr><td>Serving</td><td><code>pyweb serve dist</code>: threaded, immutable asset caching, <code>/healthz</code> (+ <code>/readyz</code>)</td></tr>
+<tr><td>Serving</td><td><code>pyweb serve dist</code>: threaded, immutable asset caching, <code>/healthz</code> (+ <code>/readyz</code>), HEAD, hardened headers (nosniff / same-origin / SAMEORIGIN), 1&nbsp;MiB body cap (413), SIGTERM/SIGINT drain, cookie-parsed sessions via <code>--app mod:factory</code> + <code>PYWEB_AUTH_SECRET</code></td></tr>
 <tr><td>Observability</td><td>W3C traces from button → RPC → DB → worker → DOM; error taxonomy with codes; structured logs; metrics; event log</td></tr>
 <tr><td>Debugging</td><td>Generated JS carries <code>// pyweb-line:N</code> mappings; runtime errors render against original <code>.pyweb</code> source</td></tr>
 <tr><td>Caching</td><td>Memory + Redis, tags, SWR, invalidation that works</td></tr>

@@ -4,7 +4,7 @@
 [![v1.0](https://img.shields.io/badge/v1.0-production--grade-green)](https://maanavkrishna.github.io/PyWeb/roadmap.html)
 [![Tests](https://img.shields.io/badge/tests-324%20passing-green)](https://github.com/MaanavKrishna/PyWeb)
 
-> One language. Every layer. — 🌐 **[Read the docs site](https://maanavkrishna.github.io/PyWeb/)**
+> One language. Every layer. — 🌐 **[Read the docs site](https://maanavkrishna.github.io/PyWeb/)** · [Compiler playground](https://maanavkrishna.github.io/PyWeb/playground.html) · [Examples](https://maanavkrishna.github.io/PyWeb/examples.html) · [Benchmarks](https://maanavkrishna.github.io/PyWeb/benchmarks.html) · [API map](https://maanavkrishna.github.io/PyWeb/api.html)
 
 Write one coherent Python app. PyWeb infers browser/server placement,
 lowers plain variables to fine-grained reactive signals (no VDOM), and
@@ -68,7 +68,28 @@ python -m pytest tests/ -q
 
 ## Docs
 
-`docs/00-quickstart.md` → `docs/01-tutorial-todo.md` for beginners;
+🌐 **Docs site:** [maanavkrishna.github.io/PyWeb](https://maanavkrishna.github.io/PyWeb/) — rebuilt from the real compiler on every site build, so all compiled JS, SSR HTML, placement output, and benchmark numbers shown are actual artifacts, not mockups:
+[Guide](https://maanavkrishna.github.io/PyWeb/guide.html) ·
+[Reactivity](https://maanavkrishna.github.io/PyWeb/reactivity.html) ·
+[RPC & placement](https://maanavkrishna.github.io/PyWeb/rpc.html) ·
+[Compiler playground](https://maanavkrishna.github.io/PyWeb/playground.html) ·
+[Database](https://maanavkrishna.github.io/PyWeb/database.html) ·
+[Auth](https://maanavkrishna.github.io/PyWeb/auth.html) ·
+[Realtime & jobs](https://maanavkrishna.github.io/PyWeb/realtime.html) ·
+[Styling](https://maanavkrishna.github.io/PyWeb/styling.html) ·
+[Browser APIs](https://maanavkrishna.github.io/PyWeb/browser.html) ·
+[Testing](https://maanavkrishna.github.io/PyWeb/testing.html) ·
+[Production](https://maanavkrishna.github.io/PyWeb/production.html) ·
+[Deploy](https://maanavkrishna.github.io/PyWeb/deploy.html) ·
+[API map](https://maanavkrishna.github.io/PyWeb/api.html) ·
+[Examples](https://maanavkrishna.github.io/PyWeb/examples.html) ·
+[Benchmarks](https://maanavkrishna.github.io/PyWeb/benchmarks.html) ·
+[Search](https://maanavkrishna.github.io/PyWeb/search.html) ·
+[Roadmap](https://maanavkrishna.github.io/PyWeb/roadmap.html)
+
+Rebuild it with `python website/build.py` (stdlib only → `website/dist/`).
+
+Markdown sources: `docs/00-quickstart.md` → `docs/01-tutorial-todo.md` for beginners;
 `02-reactivity` through `07-escape-hatches` for the core model;
 `08-browser-apis`, `09-styling`, `10-production-build`,
 `11-observability`, `12-production-services`, `13-plugins-platform`

@@ -1,16 +1,46 @@
-<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Reactivity without VDOM - PyWeb</title><link rel=stylesheet href="assets/style.css"><body><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><nav class="main"><a href="guide.html">Guide</a><a href="reactivity.html" style="color:#fff;font-weight:700">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="roadmap.html">Roadmap</a></nav></div></header><div class=wrap>
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta name=description content='How PyWeb lowers ordinary Python variables into signals and computed values, and patches only the affected DOM nodes.'><meta property='og:title' content='Reactivity without a virtual DOM - PyWeb'><meta property='og:description' content='How PyWeb lowers ordinary Python variables into signals and computed values, and patches only the affected DOM nodes.'><meta property='og:type' content='website'><title>Reactivity without a virtual DOM - PyWeb</title><link rel=stylesheet href="assets/style.css"><link rel=icon href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27><text y=%27.9em%27 font-size=%2732%27>P</text></svg>"></head><body><a class="skip" href="#main">Skip to content</a><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><span class="ver">v1.0</span><nav class="main" aria-label="Docs"><a href="guide.html">Guide</a><a href="reactivity.html" class="on">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="styling.html">Styling</a><a href="browser.html">Browser APIs</a><a href="testing.html">Testing</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="api.html">API</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a><a href="roadmap.html">Roadmap</a></nav><div class="hdr-actions"><input id="site-search" class="searchbox" type="search" placeholder="Search docs…" aria-label="Search docs"><button class="iconbtn" onclick="pwTheme()" title="Toggle theme">☾</button></div></div></header><div class=wrap id=main>
 <section class=block>
 <h2 class=sec>Normal variables become signals</h2>
-<p class=lead>Stages: parse markup, compute_reactive finds locals read by
-UI and mutated by handlers, each becomes a signal, computed values form a
-dependency graph, JS updates only bound nodes.</p>
-<pre><code>price = 100
+<p class=lead>Stages: parse markup → <code>compute_reactive</code> finds
+locals read by UI and mutated by handlers → each becomes a signal →
+computed values form a dependency graph → generated JS updates only bound
+nodes.</p>
+<div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>price = 100
 quantity = 2
 total = price * quantity   # compiler: computed(price, quantity)
 
 &lt;p&gt;{total}&lt;/p&gt;             # one text-node binding; a price change
-                           # patches that node only</code></pre>
-<p class=lead>Explicit primitives exist for advanced use -
-Signal / Computed / Resource / Effect - but basic apps never need them.
-Time-travel: the event log records every transition for replay.</p></section>
-</div><footer><div class=wrap>PyWeb - Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</div></footer></body></html>
+                           # patches that node only</code></pre></div>
+<div class="graph" role="img" aria-label="Dependency graph: price and quantity flow into total, which updates one text node">
+<svg viewBox="0 0 640 210" width="640" height="210">
+<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#6b7d99" stroke-width="1.4"/></marker></defs>
+<text class="glab" x="20" y="18">pyweb compiler · reactive dependency graph</text>
+<rect class="gnode" x="20" y="50" width="130" height="52" rx="10"/><text class="gtxt" x="34" y="72">price = 100</text><text class="glab" x="34" y="90">signal · browser</text>
+<rect class="gnode" x="20" y="130" width="130" height="52" rx="10"/><text class="gtxt" x="34" y="152">quantity = 2</text><text class="glab" x="34" y="170">signal · browser</text>
+<rect class="gnode" x="255" y="90" width="150" height="52" rx="10"/><text class="gtxt" x="269" y="112">total = price*qty</text><text class="glab" x="269" y="130">computed</text>
+<rect class="gnode" x="490" y="90" width="130" height="52" rx="10"/><text class="gtxt" x="504" y="112">&lt;p&gt;{total}&lt;/p&gt;</text><text class="glab" x="504" y="130">1 text node</text>
+<line class="gedge" x1="150" y1="76" x2="248" y2="104"/><line class="gedge" x1="150" y1="156" x2="248" y2="122"/><line class="gedge" x1="405" y1="116" x2="483" y2="116"/>
+</svg></div>
+
+<p class=lead>When <code>price</code> changes, only the <code>{total}</code>
+text node updates — the component never rerenders. Compare with the
+framework norm:</p>
+<div class=compare>
+<div class=vs-no><b>Typical VDOM framework</b><br>state change → rerender component → diff tree → patch DOM. O(tree) work per update; memoization is manual.</div>
+<div class=vs-yes><b>PyWeb</b><br>signal change → notify exactly the bindings that read it → patch those nodes. O(bindings) work; dependencies are compiler-derived.</div>
+</div>
+<h2 class=sec>Explicit primitives (advanced)</h2>
+<p class=lead>Basic apps never need these, but they exist and the compiler
+lowers plain code into them:</p>
+<table class=spec>
+<tr><th>Primitive</th><th>Use</th></tr>
+<tr><td><span class=k>Signal(x)</span></td><td>Explicit mutable state with subscribers</td></tr>
+<tr><td><span class=k>Computed(f)</span></td><td>Cached derived value, recomputed when deps change</td></tr>
+<tr><td><span class=k>Resource(loader)</span></td><td>Async data with pending / error / result</td></tr>
+<tr><td><span class=k>Effect(f)</span></td><td>Side effect re-run on dependency change</td></tr>
+</table>
+<div class=ok><b>Time-travel:</b> the runtime event log records every signal
+transition with timestamps, so DevTools can replay state — possible only
+because the compiler owns the reactive graph.</div>
+</section>
+</div><footer><div class=wrap><span>PyWeb — Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</span><span class=sp><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a><a href="roadmap.html">Roadmap</a><a href="benchmarks.html">Benchmarks</a></span></div></footer><script src="assets/site.js"></script></body></html>

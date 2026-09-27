@@ -1,0 +1,66 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta name=description content='Source, compiled JS, SSR HTML, and placement for the blog reference app.'><meta property='og:title' content='Example: blog - PyWeb'><meta property='og:description' content='Source, compiled JS, SSR HTML, and placement for the blog reference app.'><meta property='og:type' content='website'><title>Example: blog - PyWeb</title><link rel=stylesheet href="assets/style.css"><link rel=icon href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27><text y=%27.9em%27 font-size=%2732%27>P</text></svg>"></head><body><a class="skip" href="#main">Skip to content</a><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><span class="ver">v1.0</span><nav class="main" aria-label="Docs"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="styling.html">Styling</a><a href="browser.html">Browser APIs</a><a href="testing.html">Testing</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="api.html">API</a><a href="examples.html" class="on">Examples</a><a href="benchmarks.html">Benchmarks</a><a href="roadmap.html">Roadmap</a></nav><div class="hdr-actions"><input id="site-search" class="searchbox" type="search" placeholder="Search docs…" aria-label="Search docs"><button class="iconbtn" onclick="pwTheme()" title="Toggle theme">☾</button></div></div></header><div class=wrap id=main>
+<section class=block>
+<h2 class=sec>Example: blog</h2>
+<p class=lead>28 lines · 2 signal(s) · 1 RPC function(s) ·
+route <span class=k>/</span></p>
+<div class="tabset"><div class="tabs" role="tablist"><button class="tabbtn" role="tab" aria-selected="true">app.pyweb</button><button class="tabbtn" role="tab" aria-selected="false">compiled JS · 1325 B</button><button class="tabbtn" role="tab" aria-selected="false">SSR HTML</button></div><div class="tabbody on"><div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>from pyweb import App, server
+from pyweb import Model
+
+app = App()
+
+class Post(Model):
+    title: str
+
+@server
+def latest() -&gt; str:
+    return &quot;hello&quot;
+
+@app.page(&quot;/&quot;)
+def Home():
+    title = &quot;&quot;
+    posts = Post.all()
+
+    def publish():
+        Post.create(title=title)
+        title = &quot;&quot;
+
+    &lt;main&gt;
+        &lt;h1&gt;Blog&lt;/h1&gt;
+        &lt;input bind={title} placeholder=&quot;Post...&quot; /&gt;
+        &lt;button onclick={publish}&gt;Publish&lt;/button&gt;
+        for post in posts:
+            &lt;article&gt;{post}&lt;/article&gt;
+    &lt;/main&gt;
+</code></pre></div></div><div class="tabbody"><div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>import { sig, computed, bind_text, bind_input, on, rpc, mutate, liveList, liveIf, takeover, dynText } from &#x27;./runtime.js&#x27;;
+
+export const post = sig(null); // pyweb:post
+export const title = sig(&quot;&quot;); // pyweb:title
+export const posts = computed(() =&gt; (Post.all())); // deps Post
+export function publish(e) { Post.create(title(title())); title(&#x27;&#x27;) } // pyweb-line:18
+async function latest() {
+  return rpc(&#x27;latest&#x27;, {});
+} // rpc:latest pyweb-line:10
+window.__pyweb_scope = { post, posts, publish, title };
+export function mount(root=document) {
+  // static — no bindings
+  bind_input(root, &quot;title&quot;, &#x27;pw00001&#x27;); // line 24
+  on(root, &#x27;click&#x27;, publish, &#x27;pw00002&#x27;); // line 25
+  // static — no bindings
+  // live-for hid 23 (line 26): SSR rows activate below
+  (() =&gt; { const __anchor = takeover(root, 23);
+    const __row = (post, __i, __key) =&gt; {
+      const __frag = document.createDocumentFragment();
+  bind_text(__frag, &quot;post&quot;, () =&gt; (post())); // line 27
+      return { els: Array.from(__frag.childNodes) }; };
+    liveList(__anchor, () =&gt; (posts), (__item, __i, __key) =&gt; __row(__item, __i, __key), ((post) =&gt; (post()))); })();
+}
+if (typeof document !== &#x27;undefined&#x27;) {
+  if (document.readyState === &#x27;loading&#x27;) {
+    document.addEventListener(&#x27;DOMContentLoaded&#x27;, () =&gt; mount(document));
+  } else { mount(document); }
+}
+</code></pre></div></div><div class="tabbody"><div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>&lt;main&gt;&lt;h1&gt;Blog&lt;/h1&gt;&lt;input data-pw-id=&quot;pw00001&quot; placeholder=&quot;Post...&quot;&gt;&lt;button data-pw-id=&quot;pw00002&quot;&gt;Publish&lt;/button&gt;&lt;!--pw:50396--&gt;&lt;article&gt;&lt;span pw-bind=&quot;post&quot;&gt;&lt;/span&gt;&lt;/article&gt;&lt;!--/pw:50396--&gt;&lt;/main&gt;</code></pre></div></div></div>
+<p class=lead style="margin-top:14px">Placement:<br><span class=k>publish</span> → <b>browser</b> <span style='color:var(--faint)'>event handler reachable from UI, browser-safe deps</span><br><span class=k>post</span> → <b>browser</b> <span style='color:var(--faint)'>reactive UI state read by markup, mutated by events</span><br><span class=k>title</span> → <b>browser</b> <span style='color:var(--faint)'>reactive UI state read by markup, mutated by events</span><br><span class=k>posts</span> → <b>browser</b> <span style='color:var(--faint)'>pure derivation of [&#x27;Post&#x27;], all inputs local</span><br><span class=k>__page__</span> → <b>browser+server</b> <span style='color:var(--faint)'>SSR initial HTML on server, activation in browser</span></p>
+<p class=lead><a href="examples.html">← all examples</a></p>
+</section>
+</div><footer><div class=wrap><span>PyWeb — Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</span><span class=sp><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a><a href="roadmap.html">Roadmap</a><a href="benchmarks.html">Benchmarks</a></span></div></footer><script src="assets/site.js"></script></body></html>

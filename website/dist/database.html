@@ -1,10 +1,11 @@
-<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Database - PyWeb</title><link rel=stylesheet href="assets/style.css"><body><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><nav class="main"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html" style="color:#fff;font-weight:700">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="roadmap.html">Roadmap</a></nav></div></header><div class=wrap>
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta name=description content='Models, parameterized queries, pooling, streaming, retries, and versioned migrations with a journal and rollback.'><meta property='og:title' content='Database: Postgres-first, honest everywhere - PyWeb'><meta property='og:description' content='Models, parameterized queries, pooling, streaming, retries, and versioned migrations with a journal and rollback.'><meta property='og:type' content='website'><title>Database: Postgres-first, honest everywhere - PyWeb</title><link rel=stylesheet href="assets/style.css"><link rel=icon href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27><text y=%27.9em%27 font-size=%2732%27>P</text></svg>"></head><body><a class="skip" href="#main">Skip to content</a><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><span class="ver">v1.0</span><nav class="main" aria-label="Docs"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html" class="on">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="styling.html">Styling</a><a href="browser.html">Browser APIs</a><a href="testing.html">Testing</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="api.html">API</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a><a href="roadmap.html">Roadmap</a></nav><div class="hdr-actions"><input id="site-search" class="searchbox" type="search" placeholder="Search docs…" aria-label="Search docs"><button class="iconbtn" onclick="pwTheme()" title="Toggle theme">☾</button></div></div></header><div class=wrap id=main>
 <section class=block>
 <h2 class=sec>Postgres-first, honest everywhere</h2>
 <p class=lead>Parameterized queries only (values never touch SQL text),
 pooling, prepared statements, streaming cursors, transient-error retries,
-pagination. connect(DATABASE_URL) opens sqlite / postgres / mysql.</p>
-<pre><code>class Product(Model):
+pagination. <code>connect(DATABASE_URL)</code> opens sqlite / postgres /
+mysql. Models are optional — SQLAlchemy and raw SQL keep working.</p>
+<div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>class Product(Model):
     name: str
     price: Decimal
     stock: int
@@ -14,6 +15,18 @@ cheap = Product.where(stock__gt=0, price__lt=1000).paginate(page=2)
 # migrations are versioned + journaled
 pyweb db new add_stock_index
 pyweb db migrate --database $DATABASE_URL
-pyweb db status</code></pre>
+pyweb db status
+pyweb db rollback --to 0003</code></pre></div>
+<table class=spec>
+<tr><th>Concern</th><th>Answer</th></tr>
+<tr><td>Injection</td><td>Values are always bound parameters; SQL text is built from an allow-list of operators</td></tr>
+<tr><td>Pool exhaustion</td><td>Bounded pool, prepared statements, streaming cursors for large scans</td></tr>
+<tr><td>Flaky networks</td><td>Transient-error retries with backoff; idempotency keys on writes</td></tr>
+<tr><td>Schema drift</td><td>Versioned migrations + append-only journal; <code>status</code> shows applied vs pending; <code>rollback</code> reverts</td></tr>
+<tr><td>Live UI</td><td><code>live(Model.where(...))</code> re-queries on notify and pushes minimal patches — see <a href="realtime.html">realtime</a></td></tr>
+</table>
+<div class=warn><b>No lock-in:</b> Postgres remains Postgres. Migrations emit
+plain SQL you can run without PyWeb; the data is never wrapped in a
+proprietary store.</div>
 </section>
-</div><footer><div class=wrap>PyWeb - Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</div></footer></body></html>
+</div><footer><div class=wrap><span>PyWeb — Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</span><span class=sp><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a><a href="roadmap.html">Roadmap</a><a href="benchmarks.html">Benchmarks</a></span></div></footer><script src="assets/site.js"></script></body></html>

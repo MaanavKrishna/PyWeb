@@ -11,8 +11,12 @@ def dockerfile(python="3.13-slim", port=8000):
         f"FROM python:{python}\n"
         "WORKDIR /app\nCOPY pyproject.toml .\nRUN pip install --no-cache-dir .\n"
         "COPY . .\n"
+        "RUN python -m pyweb.cli build app.pyweb --out dist --production\n"
         f"EXPOSE {port}\n"
-        'CMD ["python", "-m", "pyweb.cli", "dev", "app.pyweb", "--port", '
+        'HEALTHCHECK --interval=30s --timeout=5s CMD python -c '
+        '"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('
+        f"'http://127.0.0.1:{port}/healthz').status==200 else 1)\"\n"
+        'CMD ["python", "-m", "pyweb.cli", "serve", "dist", "--port", '
         f'"{port}"]\n'
     )
 
@@ -49,6 +53,16 @@ def k8s_manifest(app="pyweb", image="pyweb:latest", port=8000, replicas=2):
         f"        image: {image}\n"
         "        ports:\n"
         f"        - containerPort: {port}\n"
+        "        livenessProbe:\n"
+        "          httpGet:\n"
+        "            path: /healthz\n"
+        f"            port: {port}\n"
+        "          periodSeconds: 30\n"
+        "        readinessProbe:\n"
+        "          httpGet:\n"
+        "            path: /healthz\n"
+        f"            port: {port}\n"
+        "          periodSeconds: 5\n"
         "        env:\n"
         "        - name: PORT\n"
         f'          value: "{port}"\n'

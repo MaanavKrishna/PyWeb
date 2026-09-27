@@ -60,8 +60,12 @@ def fields_for(model):
     return fields
 
 
-def render_form(model, *, action="", method="post", submit="Submit"):
+def render_form(model, *, action="", method="post", submit="Submit",
+                csrf_token=None):
     parts = [f'<form action="{_html.escape(action)}" method="{method}">']
+    if csrf_token:
+        parts.append(f'<input type="hidden" name="csrf_token" '
+                     f'value="{_html.escape(csrf_token)}" />')
     for f in fields_for(model):
         if f["kind"] == "checkbox":
             parts.append(f'<label><input type="checkbox" name="{f["name"]}" /> {f["name"]}</label>')

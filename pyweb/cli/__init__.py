@@ -158,12 +158,176 @@ def cmd_dev(args):
             pass
 
     print("PyWeb\n\n\xe2\x9c\x93 compiler\n\xe2\x9c\x93 server\n\xe2\x9c\x93 debugger\n\nLocal: http://localhost:8000")
-    with socketserver.TCPServer(("127.0.0.1", args.port), H) as httpd:
+    try:
+        from pyweb.serve import ThreadedServer
+        server_cls = ThreadedServer
+    except ImportError:  # pragma: no cover - serve module ships with pyweb
+        server_cls = socketserver.TCPServer
+    with server_cls(("127.0.0.1", args.port), H) as httpd:
+        if not getattr(args, "no_reload", False):
+            _watch_and_rebuild(args.file, dist, server)
         httpd.serve_forever()
+
+
+def _watch_and_rebuild(path, dist, server):
+    """Poll ``path`` mtime; recompile in place on change (hot reload).
+
+    The browser picks changes up on next navigation/asset fetch because
+    dev assets are served fresh from disk on every request. stdlib-only
+    polling keeps ``pyweb dev`` dependency-free; typical latency <1s.
+    """
+    import threading
+    import time
+
+    try:
+        last = os.path.getmtime(path)
+    except OSError:
+        return
+
+    def recompile():
+        from pyweb.compiler import compile_source
+        from pyweb.runtime.server import Server as _Server
+        src = _load(path)
+        fresh = compile_source(src, filename=path)
+        server.compiled = fresh
+        server.routes = _Server(fresh).routes
+        for name, page in fresh.get("pages", {}).items():
+            with open(os.path.join(dist, "static", f"{name}.js"), "w") as fh:
+                fh.write(page["js"])
+        print(f"reloaded {path} ({len(fresh.get('pages', {}))} page(s))",
+              flush=True)
+
+    def poll():
+        nonlocal last
+        while True:
+            time.sleep(0.5)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if mtime != last:
+                last = mtime
+                try:
+                    recompile()
+                except Exception as exc:  # noqa: BLE001 - stay alive on error
+                    print(f"reload failed: {exc}", flush=True)
+
+    thread = threading.Thread(target=poll, daemon=True, name="pyweb-reload")
+    thread.start()
+
+
+def cmd_serve(args):
+    from pyweb import serve as _serve
+    from pyweb import observability as _obs
+    httpd = _serve.serve(args.dir, host=args.host, port=args.port,
+                         app_factory=args.app, logger=_obs.Logger("serve"))
+    addr = httpd.server_address
+    print(f"serving {args.dir} on http://{addr[0]}:{addr[1]} "
+          f"(health: /healthz)")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+def cmd_test(args):
+    import subprocess
+    import sys as _sys
+    cmd = [_sys.executable, "-m", "pytest", "tests/", "-q"]
+    if getattr(args, "path", None):
+        cmd = [_sys.executable, "-m", "pytest", args.path, "-q"]
+    raise SystemExit(subprocess.call(cmd))
+
+
+def cmd_fmt(args):
+    """Format: ruff if available, else a stdlib py_compile sanity pass."""
+    import subprocess
+    import sys as _sys
+    targets = [args.path] if getattr(args, "path", None) else ["pyweb", "tests"]
+    try:
+        raise SystemExit(subprocess.call(
+            [_sys.executable, "-m", "ruff", "format", *targets]))
+    except FileNotFoundError:
+        pass
+    import py_compile
+    count, failed = 0, []
+    for target in targets:
+        for root, _dirs, files in os.walk(target):
+            if "__pycache__" in root:
+                continue
+            for fn in files:
+                if fn.endswith(".py"):
+                    p = os.path.join(root, fn)
+                    try:
+                        py_compile.compile(p, doraise=True)
+                        count += 1
+                    except py_compile.PyCompileError:
+                        failed.append(p)
+    print(f"fmt: {count} file(s) compile-clean"
+          + (f", FAILED: {failed}" if failed else " (ruff not installed; "
+             "install ruff for real formatting)"))
+    raise SystemExit(1 if failed else 0)
+
+
+def cmd_lint(args):
+    import subprocess
+    import sys as _sys
+    targets = [args.path] if getattr(args, "path", None) else ["pyweb", "tests"]
+    try:
+        raise SystemExit(subprocess.call(
+            [_sys.executable, "-m", "ruff", "check", *targets]))
+    except FileNotFoundError:
+        pass
+    import ast as _ast
+    issues = []
+    for target in targets:
+        for root, _dirs, files in os.walk(target):
+            if "__pycache__" in root:
+                continue
+            for fn in files:
+                if fn.endswith(".py"):
+                    p = os.path.join(root, fn)
+                    with open(p) as fh:
+                        src = fh.read()
+                    try:
+                        _ast.parse(src)
+                    except SyntaxError as exc:
+                        issues.append(f"{p}:{exc.lineno}: syntax {exc.msg}")
+                    for i, line in enumerate(src.splitlines(), 1):
+                        if len(line) > 120:
+                            issues.append(f"{p}:{i}: line too long ({len(line)})")
+    for issue in issues[:50]:
+        print(issue)
+    print(f"lint: {len(issues)} issue(s) (ruff not installed; "
+          "install ruff for full lint)")
+    raise SystemExit(1 if issues else 0)
+
+
+def cmd_db(args):
+    from pyweb.db import migrate as _migrate
+    action = args.db_action
+    if action == "migrate":
+        applied = _migrate.migrate(args.database or os.environ.get("DATABASE_URL", ":memory:"),
+                                   args.migrations)
+        print(f"applied {len(applied)} migration(s): "
+              + (", ".join(applied) if applied else "already up to date"))
+    elif action == "new":
+        path = _migrate.new_migration(args.migrations, args.name)
+        print(f"created {path}")
+    elif action == "status":
+        rows = _migrate.status(args.database or os.environ.get("DATABASE_URL", ":memory:"),
+                               args.migrations)
+        for name, applied in rows:
+            print(f"[{'x' if applied else ' '}] {name}")
+    else:
+        raise SystemExit(f"unknown db action {action!r}")
 
 
 def cmd_deploy(args):
     from pyweb import deploy as D
+    if not getattr(args, "db_url", None) and not os.environ.get("DATABASE_URL"):
+        print("note: no DATABASE_URL set (--db-url or env); "
+              "deploying with embedded sqlite", file=sys.stderr)
     target = (args.target or "docker").lower()
     outdir = args.out
     os.makedirs(outdir, exist_ok=True)
@@ -219,7 +383,9 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
-    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.set_defaults(fn=cmd_dev)
+    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
+    p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("db"); p.add_argument("db_action", choices=["migrate", "new", "status"]); p.add_argument("--database", default=None); p.add_argument("--migrations", default="migrations"); p.add_argument("--name", default="migration"); p.set_defaults(fn=cmd_db)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
     p = sub.add_parser("npm"); p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_npm)
@@ -232,8 +398,9 @@ def main(argv=None):
     p.add_argument("--app", default="pyweb")
     p.add_argument("--image", default="pyweb:latest")
     p.set_defaults(fn=cmd_deploy)
-    for name in ("test", "fmt", "lint"):
-        pp = sub.add_parser(name); pp.set_defaults(fn=lambda a, n=name: print(f"pyweb {n}: not yet implemented in prototype"))
+    p = sub.add_parser("test"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_test)
+    p = sub.add_parser("fmt"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_fmt)
+    p = sub.add_parser("lint"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_lint)
     args = ap.parse_args(argv)
     args.fn(args)
 

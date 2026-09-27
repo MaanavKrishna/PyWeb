@@ -59,10 +59,23 @@ def test_login_response_sets_cookie_and_redirects():
     assert res.headers["Location"] == "/dashboard"
     cookie = res.headers["Set-Cookie"]
     assert cookie.startswith("pyweb_session=") and "HttpOnly" in cookie
+    assert "Max-Age=3600" in cookie and "SameSite=Lax" in cookie
+    assert "Secure" not in cookie  # localhost dev default
+    secure_cookie = auth.login_response(
+        "u1", SECRET, secure=True).headers["Set-Cookie"]
+    assert "Max-Age=3600" in secure_cookie and "; Secure" in secure_cookie
     token = cookie.split("=", 1)[1].split(";", 1)[0]
     session, redirect = auth.require_session(
         _req("/dashboard", cookies={"pyweb_session": token}), SECRET)
     assert session["sub"] == "u1" and redirect is None
+
+
+def test_warn_if_insecure_cookies():
+    assert auth.warn_if_insecure_cookies(True, host="example.com") is None
+    assert auth.warn_if_insecure_cookies(False, host="127.0.0.1") is None
+    assert auth.warn_if_insecure_cookies(False, host="localhost") is None
+    warning = auth.warn_if_insecure_cookies(False, host="0.0.0.0")
+    assert warning is not None and "Secure" in warning
 
 
 def test_logout_clears_cookie():

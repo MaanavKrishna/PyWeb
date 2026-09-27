@@ -94,14 +94,28 @@ def migrate(db_or_url, outdir="migrations"):
     return applied
 
 
-def rollback(db_or_url, outdir="migrations", *, steps=1):
-    """Apply ``*.down.sql`` for the latest applied migration(s)."""
+def rollback(db_or_url, outdir="migrations", *, steps=1, to=None):
+    """Apply ``*.down.sql`` for the latest applied migration(s).
+
+    ``steps=N`` rolls back the N most recent applied migrations (default
+    1). ``to=<label>`` rolls back everything applied *after* ``label``,
+    keeping ``label`` itself; unknown labels raise ``ValueError`` without
+    touching the database.
+    """
     from pyweb.db import connect
     db = connect(db_or_url) if isinstance(db_or_url, str) else db_or_url
     done = _applied(db)
     ordered = [f"{v}_{n}" for v, n in _discover(outdir) if f"{v}_{n}" in done]
+    if to is not None:
+        if to not in ordered:
+            raise ValueError(
+                f"rollback --to {to!r}: not an applied migration; "
+                f"applied: {', '.join(ordered) or 'none'}")
+        targets = ordered[ordered.index(to) + 1:]
+    else:
+        targets = ordered[max(len(ordered) - max(steps, 0), 0):]
     rolled = []
-    for label in reversed(ordered[-steps:]):
+    for label in reversed(targets):
         version, name = label.split("_", 1)
         with db.transaction():
             for stmt in _read(outdir, version, name, "down"):

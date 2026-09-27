@@ -191,16 +191,31 @@ def login_response(user_id, secret: str, *, extra=None, next_url="/",
                    max_age: int = 3600, secure: bool = False):
     """``302`` to ``next_url`` with a ``Set-Cookie: pyweb_session=...``.
 
-    ``secure=True`` adds ``Secure`` (required in production HTTPS; off by
-    default so localhost dev over plain HTTP keeps working).
+    The cookie carries ``Max-Age`` matching the server-side session TTL so
+    browsers discard stale tokens instead of hoarding them. ``secure=True``
+    adds ``Secure`` — always set it in production behind HTTPS; it stays
+    off by default only so localhost dev over plain HTTP keeps working.
     """
     from pyweb.runtime.server import Response
     token = issue_session({"sub": user_id, **(extra or {})}, secret, max_age)
-    flags = "HttpOnly; Path=/; SameSite=Lax" + ("; Secure" if secure else "")
+    flags = (f"HttpOnly; Path=/; Max-Age={int(max_age)}; SameSite=Lax"
+             + ("; Secure" if secure else ""))
     return Response(302, "", {
         "Location": next_url,
         "Set-Cookie": f"{SESSION_COOKIE}={token}; {flags}",
     })
+
+
+def warn_if_insecure_cookies(secure: bool, *, host: str = "") -> str | None:
+    """Return a warning when session cookies would go out without ``Secure``
+    on a non-local host. ``pyweb serve`` logs it at startup."""
+    if secure:
+        return None
+    if (host or "").split(":")[0] in ("127.0.0.1", "localhost", "::1", ""):
+        return None
+    return ("auth cookies lack the Secure flag on a non-local host "
+            f"({host!r}): pass secure=True (login_response) and serve "
+            "behind HTTPS, or sessions are exposed to network sniffing")
 
 
 def logout_response(next_url="/", *, secure: bool = False):

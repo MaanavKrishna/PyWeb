@@ -136,8 +136,14 @@ def cmd_dev(args):
 
         def do_GET(self):
             if self.path.startswith("/static/"):
-                p = dist + self.path.split("?")[0]
-                if os.path.exists(p):
+                from pyweb.security import safe_join, PathTraversalError
+                try:
+                    p = safe_join(os.path.join(dist, "static"),
+                                  self.path[len("/static/"):].split("?")[0])
+                except PathTraversalError:
+                    self.send_response(403); self.end_headers()
+                    return
+                if os.path.isfile(p):
                     self.send_response(200)
                     self.send_header("Content-Type", "text/javascript" if p.endswith(".js") else "text/html")
                     if "?v=" in self.path:
@@ -224,10 +230,13 @@ def cmd_serve(args):
     addr = httpd.server_address
     print(f"serving {args.dir} on http://{addr[0]}:{addr[1]} "
           f"(health: /healthz)")
+    _serve.install_shutdown_handlers(httpd, logger=_obs.Logger("serve"))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        httpd.server_close()
 
 
 def cmd_test(args):
@@ -319,6 +328,14 @@ def cmd_db(args):
                                args.migrations)
         for name, applied in rows:
             print(f"[{'x' if applied else ' '}] {name}")
+    elif action == "rollback":
+        try:
+            rolled = _migrate.rollback(
+                args.database or os.environ.get("DATABASE_URL", ":memory:"),
+                args.migrations, steps=args.steps, to=args.to)
+        except ValueError as exc:
+            raise SystemExit(f"error: {exc}")
+        print("rolled back: " + (", ".join(rolled) if rolled else "nothing to roll back"))
     else:
         raise SystemExit(f"unknown db action {action!r}")
 
@@ -387,7 +404,7 @@ def main(argv=None):
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.set_defaults(fn=cmd_serve)
-    p = sub.add_parser("db"); p.add_argument("db_action", choices=["migrate", "new", "status"]); p.add_argument("--database", default=None); p.add_argument("--migrations", default="migrations"); p.add_argument("--name", default="migration"); p.set_defaults(fn=cmd_db)
+    p = sub.add_parser("db"); p.add_argument("db_action", choices=["migrate", "new", "status", "rollback"]); p.add_argument("--database", default=None); p.add_argument("--migrations", default="migrations"); p.add_argument("--name", default="migration"); p.add_argument("--steps", type=int, default=1, help="rollback: how many applied migrations to revert"); p.add_argument("--to", default=None, help="rollback: revert everything applied after this label"); p.set_defaults(fn=cmd_db)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
     p = sub.add_parser("npm"); p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_npm)
@@ -405,11 +422,8 @@ def main(argv=None):
     p = sub.add_parser("lint"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_lint)
     args = ap.parse_args(argv)
     if args.version:
-        from importlib.metadata import version, PackageNotFoundError
-        try:
-            print(version("pyweb"))
-        except PackageNotFoundError:
-            print("1.0.0")
+        from pyweb import __version__
+        print(__version__)
         return
     if not args.cmd:
         ap.print_help()

@@ -14,5 +14,8 @@ dependencies = []
 [project.scripts]
 pyweb = "pyweb.cli:main"
 
+[tool.setuptools.packages.find]
+include = ["pyweb*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

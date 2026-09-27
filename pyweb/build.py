@@ -103,13 +103,54 @@ def build(compiled: dict, out: str, *, minifier=None,
             "signals": page.get("signals", []),
             "computeds": list(page.get("computeds", []))}
 
+    npm = detect_npm(compiled)
+    if npm:
+        importmap = {"imports": {
+            name: f"https://esm.sh/{name}@{ver}" for name, ver in npm.items()}}
+        for name, page in compiled["pages"].items():
+            shell = f"{out}/server/{name}.html"
+            with open(shell) as fh:
+                html = fh.read()
+            tag = ('<script type="importmap">' + json.dumps(importmap)
+                   + "</script></head>")
+            html = html.replace("</head>", tag)
+            with open(shell, "w") as fh:
+                fh.write(html)
     manifest = {"pages": manifest_pages, "rpc": compiled.get("rpc", []),
                 "ir": compiled.get("ir_text", ""),
-                "runtime": rt_name}
+                "runtime": rt_name, "npm": npm}
     with open(f"{out}/manifest.json", "w") as fh:
         json.dump(manifest, fh, indent=2)
     write_dockerfile(f"{out}/deploy/Dockerfile")
     return manifest
+
+
+def detect_npm(compiled: dict) -> dict:
+    """Collect ``{package: version}`` from ``package(\"name[@ver]\")`` calls
+    and ``from npm[.x] import ...`` lines in page sources.
+
+    The mapping flows into the SSR importmap and ``manifest["npm"]`` so
+    deployments pin exactly what the browser loads (default: latest).
+    """
+    def split_spec(spec):
+        # "@scope/name@ver" keeps its scope; "name@ver" splits once.
+        if spec.startswith("@"):
+            head, _, tail = spec[1:].partition("@")
+            name = "@" + head
+            ver = tail
+        else:
+            name, _, ver = spec.partition("@")
+        return name or spec, ver or "latest"
+
+    found: dict[str, str] = {}
+    for page in compiled.get("pages", {}).values():
+        src = page.get("source") or ""
+        for m in re.finditer(r"""package\(\s*['"]([^'"]+)['"]""", src):
+            name, ver = split_spec(m.group(1))
+            found.setdefault(name, ver)
+        for m in re.finditer(r"""from\s+npm\.([\w-]+)\s+import""", src):
+            found.setdefault(m.group(1), "latest")
+    return found
 
 
 def write_dockerfile(path: str) -> None:

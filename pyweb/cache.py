@@ -50,7 +50,9 @@ class MemoryCache(Cache):
         return value if hit else default
 
     def set(self, key, value, ttl=None, tags=(), **kw):
-        ttl = kw.get("minutes", ttl * 60 if isinstance(ttl, (int, float)) and ttl and False else ttl)
+        # ``ttl`` is seconds; ``minutes=`` is the human-friendly alias.
+        if "minutes" in kw and kw["minutes"] is not None:
+            ttl = kw["minutes"] * 60
         expires = None if ttl is None else self._now() + ttl
         with self._lock:
             old = self._store.get(key)

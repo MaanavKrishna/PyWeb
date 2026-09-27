@@ -95,7 +95,8 @@ def compile_source(source, filename="<pyweb>", route="/", title="PyWeb"):
                               "placement": placement, "edges": edges, "initial": initial,
                               "js": js, "html": html, "html_body": html_body,
                               "lineno": fn.lineno, "params": params, "route": route_of,
-                              "sourcemap": smap, "handlers": handlers}
+                              "sourcemap": smap, "handlers": handlers,
+                              "source": ast.get_source_segment(source, fn) or ""}
         all_signals.update({s: initial.get(s) for s in signals})
         all_computeds.update(computeds)
         all_place.update(placement)

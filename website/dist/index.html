@@ -1,0 +1,102 @@
+<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Python from browser to database - PyWeb</title><link rel=stylesheet href="assets/style.css"><body><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><nav class="main"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="roadmap.html">Roadmap</a></nav></div></header><div class=wrap>
+<section class=hero>
+<h1>One language. <span>Every layer.</span></h1>
+<p class=tag>Write one coherent Python app. PyWeb infers what runs in the
+browser vs the server, turns plain variables into fine-grained reactive
+state, and generates typed RPC - no manual APIs, no state library, no
+bundler config.</p>
+<div class=cta>
+<a class="btn p" href="guide.html">Get started in 5 minutes</a>
+<a class="btn s" href="https://github.com/MaanavKrishna/PyWeb">GitHub</a>
+</div></section>
+
+<section class=block>
+<h2 class=sec>Plain variables are reactive</h2>
+<p class=lead>No Signal(0), no hooks. The compiler sees count read by
+markup and mutated by an event, and lowers it to a signal. Updates patch
+only the affected text node - no virtual DOM.</p>
+<pre><code>from pyweb import App
+
+app = App()
+
+@app.page(&quot;/&quot;)
+def Home():
+    count = 0
+
+    def increment():
+        count += 1
+
+    &lt;main&gt;
+        &lt;h1&gt;Counter&lt;/h1&gt;
+        &lt;button onclick={increment}&gt;
+            Count: {count}
+        &lt;/button&gt;
+    &lt;/main&gt;
+</code></pre>
+</section>
+
+<section class=block>
+<h2 class=sec>Server calls feel local</h2>
+<p class=lead>Annotate with @server; call it like any function. PyWeb
+generates the endpoint, typed stub, serialization, validation, auth
+propagation, CSRF, retries, and tracing.</p>
+<pre><code>from pyweb import App
+
+app = App()
+
+class Todo(Model):
+    title: str
+    done: bool = False
+
+@app.page(&quot;/&quot;)
+def Home():
+    text = &quot;&quot;
+    todos = Todo.all()          # server query, serialized once
+
+    @server
+    def add(title: str):        # normal call -&gt; typed RPC
+        Todo.create(title=title)
+
+    def submit():
+        add(text)               # stub: validation, auth,
+                                # CSRF, retries, tracing
+
+    &lt;main&gt;
+        &lt;input bind={text} /&gt;
+        &lt;button onclick={submit}&gt;Add&lt;/button&gt;
+        for todo in todos:
+            &lt;label&gt;{todo.title}&lt;/label&gt;
+    &lt;/main&gt;
+</code></pre>
+</section>
+
+<section class=block>
+<h2 class=sec>Why PyWeb</h2>
+<div class=grid3>
+<div class=card><h3>Tiny browser runtime</h3><p>Signals, DOM bindings,
+events, RPC transport. Benchmark apps ship ~2.3 KB total JS; static pages
+ship near-zero JS.</p></div>
+<div class=card><h3>Secure by default</h3><p>Parameterized SQL only, escaped
+templates, signed sessions, secret-leak compiler errors, upload validation.
+pyweb check gates CI.</p></div>
+<div class=card><h3>Every magic is inspectable</h3><p>pyweb inspect shows
+placement decisions and reasons per symbol - browser vs server, and
+why.</p></div>
+<div class=card><h3>Realtime + offline</h3><p>Live queries push minimal
+patches over SSE/WebSocket; offline queue replays with LWW conflicts and
+optimistic UI.</p></div>
+<div class=card><h3>Real databases</h3><p>Postgres/MySQL/SQLite, pooling,
+prepared statements, streaming, retries, versioned migrations with journal
+and rollback.</p></div>
+<div class=card><h3>Deploy anywhere</h3><p>pyweb build --production emits
+hashed assets + manifest; pyweb serve runs threaded with /healthz;
+Dockerfile/k8s generated. No lock-in.</p></div>
+</div></section>
+
+<section class=block>
+<div class=warn><b>Honest scope (v1.0):</b> streaming SSR, WASM browser
+target, and native mobile renderers are roadmap - see the
+<a href="roadmap.html">roadmap page</a> for what is real, preview, and
+future. No vaporware.</div>
+</section>
+</div><footer><div class=wrap>PyWeb - Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</div></footer></body></html>

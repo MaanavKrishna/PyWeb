@@ -1,6 +1,10 @@
 # PyWeb — Python from browser to database
 
-> One language. Every layer.
+[![Docs](https://img.shields.io/badge/docs-pyweb.dev-blue)](https://maanavkrishna.github.io/PyWeb/)
+[![v1.0](https://img.shields.io/badge/v1.0-production--grade-green)](https://maanavkrishna.github.io/PyWeb/roadmap.html)
+[![Tests](https://img.shields.io/badge/tests-324%20passing-green)](https://github.com/MaanavKrishna/PyWeb)
+
+> One language. Every layer. — 🌐 **[Read the docs site](https://maanavkrishna.github.io/PyWeb/)**
 
 Write one coherent Python app. PyWeb infers browser/server placement,
 lowers plain variables to fine-grained reactive signals (no VDOM), and

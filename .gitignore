@@ -11,3 +11,6 @@ venv/
 node_modules/
 .DS_Store
 .agent_tmp/
+
+# Pages payload (rebuilt via website/build.py)
+!website/dist/

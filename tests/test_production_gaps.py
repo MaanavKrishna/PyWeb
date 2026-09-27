@@ -140,6 +140,15 @@ def test_body_cap_and_head_and_security_headers(tmp_path):
             headers={"Content-Type": "application/json"})
         assert big_status == 413
         assert b"body-too-large" in big_raw
+        # 2 MiB oversize (multi-chunk drain): client must receive the 413
+        # instead of a broken pipe, and the connection must stay usable.
+        huge_status, _, huge_raw = raw(
+            "POST", "/__pyweb/rpc/anything", data=b"x" * (2 * 1024 * 1024),
+            headers={"Content-Type": "application/json"})
+        assert huge_status == 413
+        assert b"body-too-large" in huge_raw
+        again, _, _ = raw("GET", "/healthz")
+        assert again == 200
     finally:
         httpd.shutdown()
 

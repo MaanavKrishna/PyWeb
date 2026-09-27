@@ -129,6 +129,24 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             # Static fallback: pre-rendered page shell if present.
             return self._bytes("not found", 404)
 
+        def _drain(self, n, limit=16_777_216):
+            """Discard up to ``n`` request-body bytes in bounded chunks.
+
+            HTTP/1.1 keep-alive requires the server to consume the declared
+            body before responding on the same connection; answering 413
+            while bytes are still in flight RSTs the socket and the client
+            sees a broken pipe instead of the rejection. Discarding (not
+            buffering) keeps memory flat. Beyond ``limit`` (16 MiB) the
+            client is told to go away with the connection closed.
+            """
+            left = min(n, limit)
+            while left > 0:
+                chunk = self.rfile.read(min(65536, left))
+                if not chunk:
+                    break
+                left -= len(chunk)
+            return n <= limit
+
         def _read_body(self):
             """Read the request body, enforcing ``max_body``. Returns bytes,
             or sends 413 and returns None."""
@@ -139,10 +157,17 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             if n < 0:
                 n = 0
             if n > max_body:
+                clean = self._drain(n)
+                extra = {} if clean else {"Connection": "close"}
                 self._bytes(json.dumps(
                     {"ok": False, "error": "body-too-large",
                      "message": f"request body exceeds {max_body} bytes"}),
-                    413, "application/json")
+                    413, "application/json", extra)
+                if not clean:
+                    try:
+                        self.close_connection = True
+                    except AttributeError:
+                        pass
                 return None
             return self.rfile.read(n) if n else b""
 

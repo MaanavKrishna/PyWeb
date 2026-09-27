@@ -1,0 +1,17 @@
+<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Realtime, jobs, offline - PyWeb</title><link rel=stylesheet href="assets/style.css"><body><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><nav class="main"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html" style="color:#fff;font-weight:700">Realtime & Jobs</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="roadmap.html">Roadmap</a></nav></div></header><div class=wrap>
+<section class=block>
+<h2 class=sec>Live data without plumbing</h2>
+<p class=lead>Live queries track row dependencies and push minimal patches
+(SSE with Last-Event-ID replay, WebSocket where open, polling fallback).
+Background @task jobs persist on Redis with retries and progress;
+@cache(minutes=5) + SWR covers reads.</p>
+<pre><code>msgs = live(Message.where(room=current_room))
+
+@task
+def generate_report(user: User): ...
+job = generate_report(user)
+if job.pending: &lt;Spinner /&gt;</code></pre>
+<p class=lead>Offline: queued mutations replay on reconnect with
+last-writer-wins + tombstones and conflict reports; optimistic UI rolls
+back on failure.</p></section>
+</div><footer><div class=wrap>PyWeb - Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</div></footer></body></html>

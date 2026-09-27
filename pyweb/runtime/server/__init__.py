@@ -39,9 +39,13 @@ def _coerce(value, ann):
 
 
 class Server:
+    #: Default cap for RPC request bodies (1 MiB). Bodies beyond this
+    #: are rejected with ``413 body-too-large`` before JSON parsing.
+    MAX_BODY = 1_048_576
+
     def __init__(self, compiled, *, auth_secret=None, csrf_secret=None,
                  rate_limit=None, rpc_timeout=None, tracer=None,
-                 logger=None):
+                 logger=None, max_body=None):
         self.compiled = compiled
         self.rpc_impls: dict[str, object] = {}
         self.routes: list[tuple[re.Pattern, str]] = []
@@ -53,6 +57,7 @@ class Server:
         self.csrf_secret = csrf_secret
         self.rate_limit = rate_limit  # RateLimiter or None
         self.rpc_timeout = rpc_timeout  # seconds or None
+        self.max_body = self.MAX_BODY if max_body is None else max_body
         self.tracer = tracer
         self.logger = logger
 
@@ -73,9 +78,10 @@ class Server:
             body = {"error": {"code": code, "message": message,
                               "details": details or {}}}
             status = _rpc.status_for(code)
-        else:  # legacy numeric path kept for compat
+        else:  # numeric status with the same envelope shape
+            body = {"error": {"code": f"http_{code}", "message": message,
+                              "details": details or {}}}
             status = code
-            body = {"error": message}
         headers = {"Content-Type": "application/json"}
         if trace_id:
             headers["X-Request-Id"] = trace_id
@@ -154,6 +160,9 @@ class Server:
                 gate.headers.setdefault("X-Request-Id", trace_id)
                 gate.headers["traceparent"] = traceparent
                 return gate
+            if self.max_body is not None and len(req.body or b"") > self.max_body:
+                return self._err(413, "request body too large",
+                                 trace_id=trace_id, traceparent=traceparent)
             try:
                 payload = json.loads(req.body or b"{}")
             except json.JSONDecodeError:
@@ -246,10 +255,10 @@ class Server:
                             {"Content-Type": "text/html",
                              "X-Request-Id": request_id})
         default_title = {404: "Page not found", 500: "Something went wrong"}
-        heading = title or default_title.get(status, f"Error {status}")
-        hint = message or ("The page you're looking for doesn't exist. "
-                           if status == 404 else
-                           "Please try again; the error has been logged. ")
+        heading = _html.escape(title or default_title.get(status, f"Error {status}"))
+        hint = _html.escape(message or ("The page you're looking for doesn't exist. "
+                                        if status == 404 else
+                                        "Please try again; the error has been logged. "))
         body = (
             "<!doctype html><html lang=en><meta charset=utf-8>"
             "<meta name=viewport content='width=device-width,initial-scale=1'>"

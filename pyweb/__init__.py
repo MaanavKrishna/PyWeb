@@ -57,4 +57,27 @@ __all__ = [
     "platform",
 ]
 
-__version__ = "0.1.0"
+def _version():
+    """Single source of truth: installed dist metadata, else pyproject."""
+    try:
+        from importlib.metadata import version, PackageNotFoundError
+        try:
+            return version("pyweb")
+        except PackageNotFoundError:
+            pass
+    except ImportError:  # pragma: no cover - ancient Python
+        pass
+    import os
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        with open(os.path.join(root, "pyproject.toml")) as fh:
+            m = re.search(r'^version\s*=\s*"([^"]+)"', fh.read(), re.M)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return "0.0.0+unknown"
+
+
+__version__ = _version()

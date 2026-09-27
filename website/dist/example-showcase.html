@@ -1,0 +1,104 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta name=description content='Source, compiled JS, SSR HTML, and placement for the showcase reference app.'><meta property='og:title' content='Example: showcase - PyWeb'><meta property='og:description' content='Source, compiled JS, SSR HTML, and placement for the showcase reference app.'><meta property='og:type' content='website'><title>Example: showcase - PyWeb</title><link rel=stylesheet href="assets/style.css"><link rel=icon href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27><text y=%27.9em%27 font-size=%2732%27>P</text></svg>"></head><body><a class="skip" href="#main">Skip to content</a><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><span class="ver">v1.0</span><nav class="main" aria-label="Docs"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="styling.html">Styling</a><a href="browser.html">Browser APIs</a><a href="testing.html">Testing</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="api.html">API</a><a href="examples.html" class="on">Examples</a><a href="benchmarks.html">Benchmarks</a><a href="roadmap.html">Roadmap</a></nav><div class="hdr-actions"><input id="site-search" class="searchbox" type="search" placeholder="Search docs…" aria-label="Search docs"><button class="iconbtn" onclick="pwTheme()" title="Toggle theme">☾</button></div></div></header><div class=wrap id=main>
+<section class=block>
+<h2 class=sec>Example: showcase</h2>
+<p class=lead>56 lines · 2 signal(s) · 1 RPC function(s) ·
+route <span class=k>/</span></p>
+<div class="tabset"><div class="tabs" role="tablist"><button class="tabbtn" role="tab" aria-selected="true">app.pyweb</button><button class="tabbtn" role="tab" aria-selected="false">compiled JS · 1526 B</button><button class="tabbtn" role="tab" aria-selected="false">SSR HTML</button></div><div class="tabbody on"><div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>from pyweb import App, server
+
+app = App()
+
+@server
+def search_products(q: str) -&gt; str:
+    return q
+
+@app.page(&quot;/&quot;)
+def Home():
+    count = 0
+    q = &quot;&quot;
+    price = 100
+    quantity = 2
+    total = price * quantity
+
+    def increment():
+        count += 1
+
+    def reset():
+        count = 0
+
+    &lt;main class=&quot;wrap&quot;&gt;
+        &lt;nav class=&quot;nav&quot;&gt;
+            &lt;span class=&quot;logo&quot;&gt;PyWeb&lt;/span&gt;
+            &lt;span class=&quot;tag&quot;&gt;Python from browser to database&lt;/span&gt;
+        &lt;/nav&gt;
+        &lt;section class=&quot;hero&quot;&gt;
+            &lt;h1&gt;One language. Every layer.&lt;/h1&gt;
+            &lt;p&gt;Plain Python variables become reactive state. No useState, no fetch, no API routes.&lt;/p&gt;
+        &lt;/section&gt;
+        &lt;section class=&quot;card&quot;&gt;
+            &lt;h2&gt;Reactive counter&lt;/h2&gt;
+            &lt;button onclick={increment} class=&quot;btn&quot;&gt;
+                Count: {count}
+            &lt;/button&gt;
+            &lt;button onclick={reset} class=&quot;btn ghost&quot;&gt;
+                Reset
+            &lt;/button&gt;
+            &lt;p class=&quot;hint&quot;&gt;Signal count updates only its own text node. No virtual DOM.&lt;/p&gt;
+        &lt;/section&gt;
+        &lt;section class=&quot;card&quot;&gt;
+            &lt;h2&gt;Computed value&lt;/h2&gt;
+            &lt;p&gt;Total {total}&lt;/p&gt;
+            &lt;p class=&quot;hint&quot;&gt;total = price * quantity is a Computed node. Only its text node updates.&lt;/p&gt;
+        &lt;/section&gt;
+        &lt;section class=&quot;card&quot;&gt;
+            &lt;h2&gt;Two-way binding + server RPC&lt;/h2&gt;
+            &lt;input bind={q} placeholder=&quot;Search products...&quot; /&gt;
+            &lt;p&gt;Type to filter locally. Server echoes it back:&lt;/p&gt;
+            &lt;p class=&quot;echo&quot;&gt;Query: {q}&lt;/p&gt;
+        &lt;/section&gt;
+        &lt;footer class=&quot;foot&quot;&gt;
+            &lt;span&gt;Built with PyWeb. SSR HTML plus a tiny signals runtime.&lt;/span&gt;
+        &lt;/footer&gt;
+    &lt;/main&gt;
+</code></pre></div></div><div class="tabbody"><div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>import { sig, computed, bind_text, bind_input, on, rpc, mutate, liveList, liveIf, takeover, dynText } from &#x27;./runtime.js&#x27;;
+
+export const count = sig(0); // pyweb:count
+export const q = sig(&quot;&quot;); // pyweb:q
+const price = 100; // pyweb:const
+const quantity = 2; // pyweb:const
+export const total = computed(() =&gt; (price * quantity)); // deps price,quantity
+export function increment(e) { count(count() + 1) } // pyweb-line:17
+export function reset(e) { count(0) } // pyweb-line:20
+async function search_products(q) {
+  return rpc(&#x27;search_products&#x27;, {q});
+} // rpc:search_products pyweb-line:6
+window.__pyweb_scope = { count, increment, q, reset, total };
+export function mount(root=document) {
+  // static — no bindings
+  // static — no bindings
+  // static — no bindings
+  // static — no bindings
+  // static — no bindings
+  on(root, &#x27;click&#x27;, increment, &#x27;pw00001&#x27;); // line 34
+  bind_text(root, &quot;count&quot;, () =&gt; (count())); // line 35
+  on(root, &#x27;click&#x27;, reset, &#x27;pw00002&#x27;); // line 37
+  // static — no bindings
+  // static — no bindings
+  // static — no bindings
+  bind_text(root, &quot;total&quot;, () =&gt; (total)); // line 44
+  // static — no bindings
+  // static — no bindings
+  bind_input(root, &quot;q&quot;, &#x27;pw00003&#x27;); // line 49
+  // static — no bindings
+  bind_text(root, &quot;q&quot;, () =&gt; (q())); // line 51
+  // static — no bindings
+}
+if (typeof document !== &#x27;undefined&#x27;) {
+  if (document.readyState === &#x27;loading&#x27;) {
+    document.addEventListener(&#x27;DOMContentLoaded&#x27;, () =&gt; mount(document));
+  } else { mount(document); }
+}
+</code></pre></div></div><div class="tabbody"><div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>&lt;main class=&quot;wrap&quot;&gt;&lt;nav class=&quot;nav&quot;&gt;&lt;span class=&quot;logo&quot;&gt;PyWeb&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;Python from browser to database&lt;/span&gt;&lt;/nav&gt;&lt;section class=&quot;hero&quot;&gt;&lt;h1&gt;One language. Every layer.&lt;/h1&gt;&lt;p&gt;Plain Python variables become reactive state. No useState, no fetch, no API routes.&lt;/p&gt;&lt;/section&gt;&lt;section class=&quot;card&quot;&gt;&lt;h2&gt;Reactive counter&lt;/h2&gt;&lt;button data-pw-id=&quot;pw00001&quot; class=&quot;btn&quot;&gt;Count:&lt;span pw-bind=&quot;count&quot;&gt;0&lt;/span&gt;&lt;/button&gt;&lt;button data-pw-id=&quot;pw00002&quot; class=&quot;btn ghost&quot;&gt;Reset&lt;/button&gt;&lt;p class=&quot;hint&quot;&gt;Signal count updates only its own text node. No virtual DOM.&lt;/p&gt;&lt;/section&gt;&lt;section class=&quot;card&quot;&gt;&lt;h2&gt;Computed value&lt;/h2&gt;&lt;p&gt;Total&lt;span pw-bind=&quot;total&quot;&gt;200&lt;/span&gt;&lt;/p&gt;&lt;p class=&quot;hint&quot;&gt;total = price * quantity is a Computed node. Only its text node updates.&lt;/p&gt;&lt;/section&gt;&lt;section class=&quot;card&quot;&gt;&lt;h2&gt;Two-way binding + server RPC&lt;/h2&gt;&lt;input data-pw-id=&quot;pw00003&quot; placeholder=&quot;Search products...&quot;&gt;&lt;p&gt;Type to filter locally. Server echoes it back:&lt;/p&gt;&lt;p class=&quot;echo&quot;&gt;Query:&lt;span pw-bind=&quot;q&quot;&gt;&lt;/span&gt;&lt;/p&gt;&lt;/section&gt;&lt;footer class=&quot;foot&quot;&gt;&lt;span&gt;Built with PyWeb. SSR HTML plus a tiny signals runtime.&lt;/span&gt;&lt;/footer&gt;&lt;/main&gt;</code></pre></div></div></div>
+<p class=lead style="margin-top:14px">Placement:<br><span class=k>increment</span> → <b>browser</b> <span style='color:var(--faint)'>event handler reachable from UI, browser-safe deps</span><br><span class=k>reset</span> → <b>browser</b> <span style='color:var(--faint)'>event handler reachable from UI, browser-safe deps</span><br><span class=k>count</span> → <b>browser</b> <span style='color:var(--faint)'>reactive UI state read by markup, mutated by events</span><br><span class=k>q</span> → <b>browser</b> <span style='color:var(--faint)'>reactive UI state read by markup, mutated by events</span><br><span class=k>total</span> → <b>browser</b> <span style='color:var(--faint)'>pure derivation of [&#x27;price&#x27;, &#x27;quantity&#x27;], all inputs local</span><br><span class=k>__page__</span> → <b>browser+server</b> <span style='color:var(--faint)'>SSR initial HTML on server, activation in browser</span></p>
+<p class=lead><a href="examples.html">← all examples</a></p>
+</section>
+</div><footer><div class=wrap><span>PyWeb — Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</span><span class=sp><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a><a href="roadmap.html">Roadmap</a><a href="benchmarks.html">Benchmarks</a></span></div></footer><script src="assets/site.js"></script></body></html>

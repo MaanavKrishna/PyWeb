@@ -1,0 +1,21 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta name=description content='Bundle sizes, SSR latency, and compile times for the reference apps, regenerated from the real compiler every time this site builds.'><meta property='og:title' content='Benchmarks: measured, not assumed - PyWeb'><meta property='og:description' content='Bundle sizes, SSR latency, and compile times for the reference apps, regenerated from the real compiler every time this site builds.'><meta property='og:type' content='website'><title>Benchmarks: measured, not assumed - PyWeb</title><link rel=stylesheet href="assets/style.css"><link rel=icon href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27><text y=%27.9em%27 font-size=%2732%27>P</text></svg>"></head><body><a class="skip" href="#main">Skip to content</a><header class="top"><div class="wrap"><a class="logo" href="index.html">Py<span>Web</span></a><span class="ver">v1.0</span><nav class="main" aria-label="Docs"><a href="guide.html">Guide</a><a href="reactivity.html">Reactivity</a><a href="rpc.html">RPC & Placement</a><a href="database.html">Database</a><a href="auth.html">Auth</a><a href="realtime.html">Realtime & Jobs</a><a href="styling.html">Styling</a><a href="browser.html">Browser APIs</a><a href="testing.html">Testing</a><a href="production.html">Production</a><a href="deploy.html">Deploy</a><a href="api.html">API</a><a href="examples.html">Examples</a><a href="benchmarks.html" class="on">Benchmarks</a><a href="roadmap.html">Roadmap</a></nav><div class="hdr-actions"><input id="site-search" class="searchbox" type="search" placeholder="Search docs…" aria-label="Search docs"><button class="iconbtn" onclick="pwTheme()" title="Toggle theme">☾</button></div></div></header><div class=wrap id=main>
+<section class=block>
+<h2 class=sec>Benchmarks: measured, not assumed</h2>
+<p class=lead>Generated at site build time by <code>python -m
+pyweb.bench</code> against the real compiler. Totals <b>include the shared
+runtime</b> — per-page code is the small slice. Budgets
+(<code>runtime &lt; 12 KB minified</code>) are enforced in CI so these
+numbers cannot silently regress.</p>
+<p class=stamp><span class=live-dot></span>Live build-time numbers ·
+minified shared runtime: 9,182 B</p>
+<div class="bench"><div class="brow"><span class="bl">counter</span><span class="btrack"><span class="bfill tiny" style="display:block;width:95%"></span></span><span class="bv">9,801 B</span></div><div class="brow"><span class="bl">todo</span><span class="btrack"><span class="bfill " style="display:block;width:100%"></span></span><span class="bv">10,343 B</span></div><div class="brow"><span class="bl">blog</span><span class="btrack"><span class="bfill " style="display:block;width:94%"></span></span><span class="bv">9,725 B</span></div></div>
+<table class=spec>
+<tr><th>App</th><th>Source lines</th><th>Shipped JS</th><th>SSR time</th><th>Signals</th><th>RPC fns</th></tr>
+<tr><td><span class=k>counter</span></td><td>12</td><td>9,801 B <span style='color:var(--faint)'>(page 619 + runtime 9,182)</span></td><td>0.784 ms</td><td>1</td><td>0</td></tr><tr><td><span class=k>todo</span></td><td>14</td><td>10,343 B <span style='color:var(--faint)'>(page 1,161 + runtime 9,182)</span></td><td>1.081 ms</td><td>3</td><td>0</td></tr><tr><td><span class=k>blog</span></td><td>9</td><td>9,725 B <span style='color:var(--faint)'>(page 543 + runtime 9,182)</span></td><td>0.53 ms</td><td>1</td><td>0</td></tr>
+</table>
+<div class=info><b>Reading these honestly:</b> the runtime (~9.0 KB
+minified) is downloaded once and cached across pages. A static page ships
+near-zero JS. Compare workloads, not slogans — the harness and baselines
+live in-repo at <code>pyweb/bench.py</code>.</div>
+</section>
+</div><footer><div class=wrap><span>PyWeb — Python from browser to database. Core open source (MIT). Self-host anywhere; no mandatory cloud.</span><span class=sp><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a><a href="roadmap.html">Roadmap</a><a href="benchmarks.html">Benchmarks</a></span></div></footer><script src="assets/site.js"></script></body></html>

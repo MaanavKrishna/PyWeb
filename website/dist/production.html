@@ -3,7 +3,7 @@
 <h2 class=sec>Operate it like you mean it</h2>
 <table class=spec>
 <tr><th>Concern</th><th>PyWeb answer</th></tr>
-<tr><td>Serving</td><td><code>pyweb serve dist</code>: threaded, immutable asset caching, <code>/healthz</code> (+ <code>/readyz</code>)</td></tr>
+<tr><td>Serving</td><td><code>pyweb serve dist</code>: threaded, immutable asset caching, <code>/healthz</code> (+ <code>/readyz</code>), HEAD, hardened headers (nosniff / same-origin / SAMEORIGIN), 1&nbsp;MiB body cap (413), SIGTERM/SIGINT drain, cookie-parsed sessions via <code>--app mod:factory</code> + <code>PYWEB_AUTH_SECRET</code></td></tr>
 <tr><td>Observability</td><td>W3C traces from button → RPC → DB → worker → DOM; error taxonomy with codes; structured logs; metrics; event log</td></tr>
 <tr><td>Debugging</td><td>Generated JS carries <code>// pyweb-line:N</code> mappings; runtime errors render against original <code>.pyweb</code> source</td></tr>
 <tr><td>Caching</td><td>Memory + Redis, tags, SWR, invalidation that works</td></tr>

@@ -16,7 +16,8 @@ cheap = Product.where(stock__gt=0, price__lt=1000).paginate(page=2)
 pyweb db new add_stock_index
 pyweb db migrate --database $DATABASE_URL
 pyweb db status
-pyweb db rollback --to 0003</code></pre></div>
+pyweb db rollback --steps 1          # revert latest applied
+pyweb db rollback --to 0003_add_users  # revert everything after 0003</code></pre></div>
 <table class=spec>
 <tr><th>Concern</th><th>Answer</th></tr>
 <tr><td>Injection</td><td>Values are always bound parameters; SQL text is built from an allow-list of operators</td></tr>

@@ -174,8 +174,9 @@ propagation, CSRF, retries, and tracing.</p>
 <h2 class=sec>Why PyWeb</h2>
 <div class=grid3>
 <div class=card><h3>Tiny browser runtime</h3><p>Signals, DOM bindings,
-events, RPC transport. Benchmark apps ship ~2.3 KB total JS; static pages
-ship near-zero JS.</p></div>
+events, RPC transport. Benchmark apps ship ~10 KB each incl. shared
+runtime (cached across pages; per-page code is typically under 1 KB);
+static pages ship near-zero JS.</p></div>
 <div class=card><h3>Secure by default</h3><p>Parameterized SQL only, escaped
 templates, signed sessions, secret-leak compiler errors, upload validation.
 pyweb check gates CI.</p></div>

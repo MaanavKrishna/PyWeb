@@ -2,7 +2,7 @@
 
 [![Docs](https://img.shields.io/badge/docs-pyweb.dev-blue)](https://maanavkrishna.github.io/PyWeb/)
 [![v1.0](https://img.shields.io/badge/v1.0-production--grade-green)](https://maanavkrishna.github.io/PyWeb/roadmap.html)
-[![Tests](https://img.shields.io/badge/tests-346%20passing-green)](https://github.com/MaanavKrishna/PyWeb)
+[![Tests](https://img.shields.io/badge/tests-353%20passing-green)](https://github.com/MaanavKrishna/PyWeb)
 
 > One language. Every layer. — 🌐 **[Read the docs site](https://maanavkrishna.github.io/PyWeb/)** · [Compiler playground](https://maanavkrishna.github.io/PyWeb/playground.html) · [Examples](https://maanavkrishna.github.io/PyWeb/examples.html) · [Benchmarks](https://maanavkrishna.github.io/PyWeb/benchmarks.html) · [API map](https://maanavkrishna.github.io/PyWeb/api.html)
 

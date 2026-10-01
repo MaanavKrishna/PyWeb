@@ -58,20 +58,20 @@ TODO_SRC, TODO_OUT, TODO_PAGE = EXAMPLES["todo"]
 
 CSS = """\
 :root{
---bg:#14111b;--bg2:#1a1623;--panel:#1f1a2b;--panel2:#292234;--line:#3b324e;
---txt:#f3edfb;--dim:#b7a9d1;--faint:#8577a3;
---acc:#f0a840;--acc-ink:#2a1503;--acc2:#a78bfa;--ok:#6ee7a0;
---warn:#ffcf6b;--err:#ff8fa3;--code:#181422;
---grad:linear-gradient(135deg,#f0a840 0%,#e0655f 52%,#a78bfa 100%);
---radius:14px;--max:1200px;--side:250px;
+--bg:#0a0f16;--bg2:#0d1420;--panel:#111a29;--panel2:#182437;--line:#233350;
+--txt:#e9eef7;--dim:#9dabc3;--faint:#67778f;
+--acc:#34d399;--acc-ink:#05281c;--acc2:#7dd3fc;--ok:#34d399;
+--warn:#fbbf24;--err:#fb7185;--code:#0c1220;
+--grad:linear-gradient(135deg,#34d399 0%,#2dd4bf 50%,#7dd3fc 100%);
+--radius:14px;
 --sans:system-ui,-apple-system,"Segoe UI",Roboto,Inter,"Helvetica Neue",sans-serif;
 --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 }
 [data-theme=light]{
---bg:#faf6ee;--bg2:#fffdf7;--panel:#ffffff;--panel2:#f3ead9;--line:#e2d3b8;
---txt:#2c2233;--dim:#6a5a70;--faint:#9a8a9e;
---acc:#b3541e;--acc-ink:#fff8ef;--acc2:#6d3fd4;--ok:#0a7a44;
---warn:#9a5a00;--err:#c81e3a;--code:#f4ecdd;
+--bg:#f6f8fb;--bg2:#ffffff;--panel:#ffffff;--panel2:#eaf0f7;--line:#d7e1ee;
+--txt:#0f1c2e;--dim:#4c6076;--faint:#7d90a8;
+--acc:#047857;--acc-ink:#ffffff;--acc2:#0369a1;--ok:#047857;
+--warn:#92400e;--err:#be123c;--code:#eef3f9;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -82,60 +82,9 @@ a:hover{text-decoration:underline}
 a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--acc2);outline-offset:2px;border-radius:6px}
 .skip{position:absolute;left:-999px;top:0;background:var(--acc);color:var(--acc-ink);padding:8px 14px;z-index:99;border-radius:0 0 8px 0;font-weight:700}
 .skip:focus{left:0}
-.wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
-/* ---------- top bar ---------- */
-header.top{border-bottom:1px solid var(--line);background:var(--bg2);position:sticky;top:0;z-index:50}
-header.top .wrap{display:flex;gap:12px;align-items:center;padding:10px 24px}
-.logo{font-weight:800;font-size:18px;color:var(--txt);white-space:nowrap;letter-spacing:-.3px}
-.logo:hover{text-decoration:none}
-.logo .mark{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--grad);color:#fff;font-size:14px;font-weight:900;margin-right:8px;vertical-align:-6px}
-.ver{font-size:11px;font-weight:700;background:var(--panel2);color:var(--ok);border:1px solid var(--line);border-radius:99px;padding:2px 10px;white-space:nowrap}
-nav.main{display:flex;gap:2px;align-items:center;font-size:13px;margin-left:auto}
-nav.main a{color:var(--dim);padding:6px 9px;border-radius:8px;white-space:nowrap}
-nav.main a:hover{color:var(--txt);background:var(--panel2);text-decoration:none}
-nav.main a.on{color:var(--txt);font-weight:700;background:var(--panel2)}
-nav.main .div{width:1px;height:20px;background:var(--line);margin:0 6px}
-.hdr-actions{display:flex;gap:8px;align-items:center}
-.iconbtn{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:7px 12px;font-size:13px;cursor:pointer;font-family:var(--sans)}
-.iconbtn:hover{border-color:var(--acc)}
-.ghbtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:9px;padding:7px 13px;font-size:13px;font-weight:600}
-.ghbtn:hover{border-color:var(--acc);text-decoration:none}
-.searchbox{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:7px 12px;font-size:13px;width:170px;font-family:var(--sans)}
-.searchbox::placeholder{color:var(--faint)}
-/* ---------- docs layout with sidebar ---------- */
-.layout{display:grid;grid-template-columns:var(--side) minmax(0,1fr);gap:36px;align-items:start}
-.side{position:sticky;top:66px;max-height:calc(100vh - 86px);overflow:auto;padding:28px 0 40px;font-size:14px}
-.sg{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:20px 0 6px}
-.sg:first-child{margin-top:0}
-.side nav a{display:block;color:var(--dim);padding:6px 12px;border-radius:8px;border-left:2px solid transparent}
-.side nav a:hover{color:var(--txt);background:var(--panel);text-decoration:none}
-.side nav a.on{color:var(--txt);font-weight:700;background:var(--panel);border-left-color:var(--acc)}
-.doc{min-width:0;padding-bottom:20px}
-/* ---------- hero ---------- */
-.hero{position:relative;text-align:center;padding:96px 0 64px;overflow:hidden}
-.hero::before,.hero::after{content:"";position:absolute;border-radius:50%;filter:blur(90px);opacity:.32;pointer-events:none}
-.hero::before{width:480px;height:480px;left:-140px;top:-160px;background:#f0a840}
-.hero::after{width:520px;height:520px;right:-160px;top:-120px;background:#a78bfa}
-[data-theme=light] .hero::before,[data-theme=light] .hero::after{opacity:.2}
-.hero>*{position:relative}
-.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--dim);border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:5px 15px;margin-bottom:20px}
-.eyebrow .dot{width:8px;height:8px;border-radius:99px;background:var(--grad)}
-.hero h1{font-size:clamp(40px,6.4vw,68px);margin:0 0 14px;letter-spacing:-2.5px;line-height:1.02;font-weight:850}
-.hero h1 span{color:var(--acc2)}
-.hero h1 span.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.tag{color:var(--dim);font-size:clamp(16px,2.2vw,20px);max-width:720px;margin:0 auto 30px}
-.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:13px 28px;border-radius:12px;font-weight:700;font-size:15.5px;border:1px solid transparent}
-.btn.p{background:var(--grad);color:#fff;box-shadow:0 8px 28px -10px #e0655f}
-.btn.p:hover{filter:brightness(1.07);text-decoration:none;transform:translateY(-1px)}
-.btn.s{border-color:var(--line);color:var(--txt);background:var(--panel)}
-.btn.s:hover{border-color:var(--acc);text-decoration:none}
-.hero-stats,.statband{display:flex;justify-content:center;gap:0;flex-wrap:wrap;margin:44px auto 0;max-width:920px;border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden}
-.hstat{flex:1 1 160px;padding:18px 12px;text-align:center}
-.hstat+.hstat{border-left:1px solid var(--line)}
-.hstat b{display:block;font-size:23px;letter-spacing:-.5px}
-.hstat b em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.hstat span{font-size:12px;color:var(--faint)}
+/* Hero ambient glows (positioned with Tailwind; themed opacity here) */
+.glow{filter:blur(100px);opacity:.22;pointer-events:none;border-radius:9999px}
+[data-theme=light] .glow{opacity:.13}
 /* ---------- content ---------- */
 section.block{margin:54px 0;counter-increment:pwsec}
 h2.sec{font-size:clamp(23px,3.2vw,30px);margin:0 0 8px;letter-spacing:-.6px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -149,10 +98,8 @@ p.stamp{font-size:13px;color:var(--faint)}
 .grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:26px 0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;position:relative;transition:border-color .15s,transform .15s}
 a.card:hover{border-color:var(--acc);text-decoration:none;transform:translateY(-2px)}
-.card .step-n{position:absolute;top:14px;right:16px;font-family:var(--mono);font-size:11.5px;font-weight:800;color:var(--faint)}
 .card h3{margin:0 0 8px;font-size:16.5px}
 .card p{margin:0;color:var(--dim);font-size:14.5px}
-.card .ico{font-size:22px}
 pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:18px;overflow:auto;font-size:13.8px;line-height:1.6;position:relative}
 code{font-family:var(--mono)}
 p code,li code,td code{font-size:.85em;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:1px 7px}
@@ -176,23 +123,23 @@ table.spec th,table.spec td{text-align:left;padding:10px 12px;border-bottom:1px 
 table.spec th{color:var(--faint);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.6px}
 table.spec tr:hover td{background:var(--panel)}
 .warn,.ok,.info{border-radius:12px;padding:14px 18px;font-size:14.5px;margin:18px 0;border:1px solid}
-.warn{background:rgba(240,168,64,.08);border-color:rgba(240,168,64,.35)}
-.ok{background:rgba(110,231,160,.07);border-color:rgba(110,231,160,.32)}
-.info{background:rgba(167,139,250,.09);border-color:rgba(167,139,250,.38)}
-[data-theme=light] .warn{background:#fff4e2;border-color:#e0b26a}
+.warn{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.35)}
+.ok{background:rgba(52,211,153,.07);border-color:rgba(52,211,153,.32)}
+.info{background:rgba(125,211,252,.09);border-color:rgba(125,211,252,.38)}
+[data-theme=light] .warn{background:#fff7e6;border-color:#d9a441}
 [data-theme=light] .ok{background:#e6f6ec;border-color:#7cc79c}
-[data-theme=light] .info{background:#efe8fd;border-color:#b9a3f2}
+[data-theme=light] .info{background:#e8f4fd;border-color:#a5cdf0}
 .k{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-size:12.5px;font-family:var(--mono)}
 .pill{display:inline-block;border-radius:99px;padding:1px 11px;font-size:12px;font-weight:700}
-.pill.real{background:rgba(110,231,160,.12);color:var(--ok);border:1px solid rgba(110,231,160,.4)}
-.pill.preview{background:rgba(240,168,64,.12);color:var(--warn);border:1px solid rgba(240,168,64,.4)}
+.pill.real{background:rgba(52,211,153,.12);color:var(--ok);border:1px solid rgba(52,211,153,.4)}
+.pill.preview{background:rgba(251,191,36,.12);color:var(--warn);border:1px solid rgba(251,191,36,.4)}
 .pill.future{background:var(--panel2);color:var(--faint);border:1px solid var(--line)}
 .bench{margin:14px 0}
 .brow{display:grid;grid-template-columns:110px 1fr 130px;gap:12px;align-items:center;margin:9px 0;font-size:13.5px}
 .brow .bl{font-family:var(--mono);color:var(--dim)}
 .btrack{background:var(--panel2);border-radius:7px;height:16px;overflow:hidden}
-.bfill{height:100%;border-radius:7px;background:linear-gradient(90deg,#e0655f,#f0a840)}
-.bfill.tiny{background:linear-gradient(90deg,#a78bfa,#6ee7a0)}
+.bfill{height:100%;border-radius:7px;background:linear-gradient(90deg,#34d399,#7dd3fc)}
+.bfill.tiny{background:linear-gradient(90deg,#2dd4bf,#34d399)}
 .brow .bv{font-family:var(--mono);text-align:right;color:var(--dim)}
 .graph{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:22px;overflow:auto;margin:16px 0}
 .graph svg{max-width:100%;height:auto}
@@ -205,18 +152,6 @@ table.spec tr:hover td{background:var(--panel)}
 .pg-step{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;position:relative;counter-increment:pg}
 .pg-step::after{content:counter(pg,decimal-leading-zero);position:absolute;top:14px;right:16px;font-family:var(--mono);font-size:12px;font-weight:800;color:var(--faint)}
 .pg-step h4{margin:0 0 4px;font-size:13px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
-footer{border-top:1px solid var(--line);color:var(--dim);font-size:13.5px;padding:44px 0 52px;margin-top:70px;background:var(--bg2)}
-footer .wrap{display:block}
-.footgrid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:28px}
-@media(max-width:860px){.footgrid{grid-template-columns:1fr 1fr}}
-.footgrid h5{margin:0 0 10px;font-size:11.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint)}
-.footgrid ul{list-style:none;margin:0;padding:0}
-.footgrid li{margin:6px 0}
-.footgrid a{color:var(--dim)}
-.footgrid a:hover{color:var(--txt)}
-.footbase{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:30px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint)}
-.footbase .sp{margin-left:auto;display:flex;gap:16px}
-footer .sp{margin-left:auto;display:flex;gap:16px}
 ol.steps{padding-left:22px}ol.steps li{margin:10px 0}
 ol.steps li::marker{color:var(--acc);font-weight:800}
 ul.check{list-style:none;padding:0}ul.check li{margin:7px 0;padding-left:28px;position:relative}
@@ -235,22 +170,7 @@ ul.check li::before{content:"✓";position:absolute;left:2px;color:var(--ok);fon
 .pager small{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--faint)}
 .pager .next{text-align:right}
 .pager .only{grid-column:1/-1}
-@media(max-width:960px){
-.layout{grid-template-columns:1fr}
-.side{position:static;max-height:none;padding:14px 0 0;overflow:visible}
-.side .sg{display:none}
-.side nav{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px}
-.side nav a{white-space:nowrap;border:1px solid var(--line)}
-.side nav a.on{border-color:var(--acc)}
-.searchbox{width:120px}
-.ghbtn .ghl{display:none}
-}
-@media(max-width:640px){
-nav.main .hideable{display:none}
-.hstat+.hstat{border-left:none;border-top:1px solid var(--line)}
-.hero{padding:64px 0 48px}
-}
-@media print{header.top,.side,footer,.cta,.tabs,.copybtn,.hdr-actions,.pager{display:none}.layout{grid-template-columns:1fr}}
+@media print{header,aside,footer,.tabs,.copybtn,.pager{display:none}}
 """
 
 JS = """\
@@ -302,35 +222,92 @@ NAV_INDEX = {href: i for i, (_, href) in enumerate(NAV)}
 SEARCH_TEXTS = {}
 
 
-def _top_links(active=""):
-    """Compact header links: first few pages + active page stay visible."""
-    keep = {"guide.html", "playground.html", "rpc.html", "benchmarks.html"}
-    parts = []
-    for i, (label, href) in enumerate(NAV):
-        hide = href not in keep and href != active and i > 5
-        parts.append(
-            '<a href="%s"%s%s>%s</a>'
-            % (
-                href,
-                ' class="on"' if href == active else "",
-                ' class="hideable"' if hide else "",
-                label,
-            )
-        )
-    return "".join(parts)
+TOP_LINKS = [
+    ("Guide", "guide.html"),
+    ("Playground", "playground.html"),
+    ("Examples", "examples.html"),
+    ("Benchmarks", "benchmarks.html"),
+    ("API", "api.html"),
+]
+
+_GH_SVG = (
+    "<svg width=14 height=14 viewBox='0 0 16 16' fill='currentColor' aria-hidden=true>"
+    "<path d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 "
+    "0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 "
+    "1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 "
+    "0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 "
+    "2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 "
+    "3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z'/></svg>"
+)
+
+_LINK_BASE = (
+    "whitespace-nowrap rounded-lg px-2.5 py-1.5 hover:bg-panel2 "
+    "hover:text-ink hover:no-underline"
+)
 
 
 def nav_html(active=""):
+    items = "".join(
+        '<a href="%s" class="%s %s">%s</a>'
+        % (
+            href,
+            "bg-panel2 font-bold text-ink" if href == active else "text-mut",
+            _LINK_BASE,
+            label,
+        )
+        for label, href in TOP_LINKS
+    )
+    return (
+        '<a class="skip" href="#main">Skip to content</a>'
+        '<header class="sticky top-0 z-50 border-b border-line bg-base2">'
+        '<div class="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-3 gap-y-2 px-6 py-2.5">'
+        '<a class="flex items-center gap-2 text-[18px] font-extrabold tracking-tight '
+        'text-ink hover:no-underline" href="index.html">'
+        '<span class="grid h-[26px] w-[26px] place-items-center rounded-lg '
+        'bg-gradient-to-br from-emerald-400 to-sky-400 text-[14px] font-black text-white">P</span>'
+        "PyWeb</a>"
+        '<span class="whitespace-nowrap rounded-full border border-line bg-panel2 '
+        'px-2.5 py-0.5 text-[11px] font-bold text-okc">v1.0</span>'
+        '<nav class="ml-auto hidden items-center gap-0.5 text-[13px] md:flex" '
+        'aria-label="Docs">%s</nav>'
+        '<div class="ml-auto flex items-center gap-2 md:ml-0">'
+        '<input id="site-search" type="search" placeholder="Search docs…" aria-label="Search docs" '
+        'class="hidden w-[150px] rounded-lg border border-line bg-panel px-3 py-1.5 '
+        'text-[13px] text-ink placeholder:text-faint sm:block xl:w-[170px]">'
+        '<button onclick="pwTheme()" title="Toggle theme" '
+        'class="rounded-lg border border-line bg-panel px-3 py-1.5 text-[13px] '
+        'text-ink hover:border-acc">☾</button>'
+        '<a href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub" '
+        'class="hidden items-center gap-1.5 rounded-lg border border-line bg-panel '
+        'px-3 py-1.5 text-[13px] font-semibold text-ink hover:border-acc '
+        'hover:no-underline sm:inline-flex">%s<span>GitHub</span></a>'
+        "</div></div></header>" % (items, _GH_SVG)
+    )
+
+
+def side_html(active=""):
     groups = "".join(
-        '<div class=sg>%s</div><nav aria-label="%s">%s</nav>'
+        '<div class="shrink-0 lg:mb-5">'
+        '<div class="mb-1.5 hidden text-[11px] font-extrabold uppercase '
+        'tracking-[1px] text-faint lg:block">%s</div>'
+        '<nav aria-label="%s" class="flex gap-2 overflow-x-auto pb-1 lg:block '
+        'lg:overflow-visible lg:pb-0">%s</nav></div>'
         % (
             html.escape(gname),
             html.escape(gname),
             "".join(
-                '<a href="%s"%s>%s</a>'
+                '<a href="%s" class="%s">%s</a>'
                 % (
                     href,
-                    ' class="on"' if href == active else "",
+                    "mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 "
+                    "hover:bg-panel hover:text-ink hover:no-underline "
+                    "border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 "
+                    "lg:border-transparent"
+                    if href != active
+                    else "mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 "
+                    "hover:bg-panel hover:text-ink hover:no-underline "
+                    "border-acc text-ink lg:mb-1 lg:border-0 lg:border-l-2 "
+                    "lg:bg-panel lg:font-bold",
                     html.escape(label),
                 )
                 for label, href in items
@@ -339,48 +316,10 @@ def nav_html(active=""):
         for gname, items in NAV_GROUPS
     )
     return (
-        '<a class="skip" href="#main">Skip to content</a>'
-        '<header class="top"><div class="wrap">'
-        '<a class="logo" href="index.html"><span class="mark">P</span>PyWeb</a>'
-        '<span class="ver">v1.0</span>'
-        '<nav class="main" aria-label="Docs">%s</nav>'
-        '<span class=div aria-hidden=true></span>'
-        '<div class="hdr-actions">'
-        '<input id="site-search" class="searchbox" type="search" '
-        'placeholder="Search docs…" aria-label="Search docs">'
-        '<button class="iconbtn" onclick="pwTheme()" title="Toggle theme">☾</button>'
-        '<a class="ghbtn" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub">'
-        "<svg width=14 height=14 viewBox='0 0 16 16' fill='currentColor' aria-hidden=true>"
-        "<path d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 "
-        "0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 "
-        "1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 "
-        "0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 "
-        "2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 "
-        "3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z'/></svg>"
-        '<span class="ghl">GitHub</span></a>'
-        "</div></div></header>" % _top_links(active)
+        '<aside class="flex gap-6 overflow-x-auto py-3 lg:sticky lg:top-[62px] '
+        'lg:block lg:max-h-[calc(100vh_-_86px)] lg:overflow-auto lg:py-7">%s</aside>'
+        % groups
     )
-
-
-def side_html(active=""):
-    groups = "".join(
-        '<div class=sg>%s</div><nav aria-label="%s">%s</nav>'
-        % (
-            html.escape(gname),
-            html.escape(gname),
-            "".join(
-                '<a href="%s"%s>%s</a>'
-                % (
-                    href,
-                    ' class="on"' if href == active else "",
-                    html.escape(label),
-                )
-                for label, href in items
-            ),
-        )
-        for gname, items in NAV_GROUPS
-    )
-    return '<aside class="side">%s</aside>' % groups
 
 
 def pager_html(active=""):
@@ -408,55 +347,98 @@ def pager_html(active=""):
     return '<nav class="pager" aria-label="Pages">%s%s</nav>' % (prev_html, next_html)
 
 
-def page(name, title, desc, body, active=""):
+TAILWIND_HEAD = (
+    '<script src="https://cdn.tailwindcss.com"></script>'
+    "<script>tailwind.config={corePlugins:{preflight:!1},theme:{extend:{"
+    'colors:{base:"var(--bg)",base2:"var(--bg2)",panel:"var(--panel)",'
+    'panel2:"var(--panel2)",line:"var(--line)",ink:"var(--txt)",'
+    'mut:"var(--dim)",faint:"var(--faint)",acc:"var(--acc)",'
+    'acc2:"var(--acc2)",okc:"var(--ok)"},'
+    'fontFamily:{sans:["system-ui","-apple-system","Segoe UI","Roboto",'
+    '"Inter","sans-serif"],mono:["ui-monospace","SFMono-Regular","Menlo",'
+    '"Consolas","monospace"]}}}}</script>'
+)
+
+_FOOT_COLS = (
+    ("Learn", [("5-minute guide", "guide.html"), ("Compiler playground", "playground.html"),
+               ("Reactivity", "reactivity.html"), ("RPC & placement", "rpc.html")]),
+    ("Build", [("Database", "database.html"), ("Auth", "auth.html"),
+               ("Realtime & jobs", "realtime.html"), ("Deploy", "deploy.html")]),
+    ("Project", [("GitHub", "https://github.com/MaanavKrishna/PyWeb"),
+                 ("Benchmarks", "benchmarks.html"), ("API map", "api.html"),
+                 ("Roadmap", "roadmap.html")]),
+)
+
+
+def foot_html():
+    cols = "".join(
+        '<div><h5 class="mb-2.5 text-[11.5px] font-bold uppercase '
+        'tracking-[0.8px] text-faint">%s</h5>'
+        '<ul class="m-0 list-none p-0">%s</ul></div>'
+        % (
+            h,
+            "".join(
+                '<li class="my-1.5"><a class="text-mut hover:text-ink" '
+                'href="%s">%s</a></li>' % (href, label)
+                for label, href in links
+            ),
+        )
+        for h, links in _FOOT_COLS
+    )
+    return (
+        '<footer class="mt-[70px] border-t border-line bg-base2 py-11 '
+        'text-[13.5px] text-mut">'
+        '<div class="mx-auto w-full max-w-7xl px-6">'
+        '<div class="grid gap-7 md:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">'
+        '<div><h5 class="mb-2.5 text-[11.5px] font-bold uppercase '
+        'tracking-[0.8px] text-faint">PyWeb</h5>'
+        '<p class="m-0 max-w-[340px]">One language. Every layer. '
+        "Python from browser to database — compiler, reactivity, RPC, auth, realtime, and "
+        "deploy-anywhere builds. Core open source (MIT).</p></div>"
+        "%s</div>"
+        '<div class="mt-7 flex flex-wrap items-center gap-4 border-t '
+        'border-line pt-5 text-[12.5px] text-faint">'
+        "<span>PyWeb — Python from browser to database. "
+        "Self-host anywhere; no mandatory cloud.</span>"
+        '<span class="ml-auto flex gap-4">'
+        '<a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a>'
+        '<a href="roadmap.html">Roadmap</a>'
+        '<a href="benchmarks.html">Benchmarks</a></span></div>'
+        "</div></footer>" % cols
+    )
+
+
+def page(name, title, desc, body, active="", wide=False):
     text = re.sub(r"<[^>]+>", " ", body)
     text = html.unescape(re.sub(r"\s+", " ", text)).strip()[:6000]
     SEARCH_TEXTS[name] = {"title": title, "text": text}
-    return (
+    if wide:
+        content = (
+            '<main id="main" class="mx-auto w-full max-w-6xl px-6">%s</main>'
+            % body
+        )
+    else:
+        content = (
+            '<div id="main" class="mx-auto w-full max-w-7xl gap-9 px-6 '
+            'lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">%s'
+            '<div class="min-w-0 pb-5">%s%s</div></div>'
+            % (side_html(active), body, pager_html(active))
+        )
+    shell = (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
         "<meta name=description content='%s'>"
         "<meta property='og:title' content='%s - PyWeb'>"
         "<meta property='og:description' content='%s'>"
         "<meta property='og:type' content='website'>"
-        "<meta name=theme-color content='#14111b'>"
-        "<title>%s - PyWeb</title>"
+        "<meta name=theme-color content='#0a0f16'>"
+        "<title>%s - PyWeb</title>" + TAILWIND_HEAD +
         '<link rel=stylesheet href="assets/style.css">'
         '<link rel=icon href="data:image/svg+xml,<svg xmlns=%s viewBox=%s><text y=%s font-size=%s>P</text></svg>">'
-        "</head><body>%s"
-        '<div class="wrap layout" id=main>%s<div class="doc">%s%s</div></div>'
-        "<footer><div class=wrap>"
-        '<div class="footgrid">'
-        "<div><h5>PyWeb</h5><p style='margin:0;max-width:340px'>One language. Every layer. "
-        "Python from browser to database — compiler, reactivity, RPC, auth, realtime, and "
-        "deploy-anywhere builds. Core open source (MIT).</p></div>"
-        "<div><h5>Learn</h5><ul>"
-        '<li><a href="guide.html">5-minute guide</a></li>'
-        '<li><a href="playground.html">Compiler playground</a></li>'
-        '<li><a href="reactivity.html">Reactivity</a></li>'
-        '<li><a href="rpc.html">RPC &amp; placement</a></li>'
-        "</ul></div>"
-        "<div><h5>Build</h5><ul>"
-        '<li><a href="database.html">Database</a></li>'
-        '<li><a href="auth.html">Auth</a></li>'
-        '<li><a href="realtime.html">Realtime &amp; jobs</a></li>'
-        '<li><a href="deploy.html">Deploy</a></li>'
-        "</ul></div>"
-        "<div><h5>Project</h5><ul>"
-        '<li><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a></li>'
-        '<li><a href="benchmarks.html">Benchmarks</a></li>'
-        '<li><a href="api.html">API map</a></li>'
-        '<li><a href="roadmap.html">Roadmap</a></li>'
-        "</ul></div>"
-        "</div>"
-        '<div class="footbase"><span>PyWeb — Python from browser to database. '
-        "Self-host anywhere; no mandatory cloud.</span>"
-        '<span class=sp><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a>'
-        '<a href="roadmap.html">Roadmap</a>'
-        '<a href="benchmarks.html">Benchmarks</a></span></div>'
-        "</div></footer>"
+        "</head>" + '<body class="m-0 bg-base font-sans text-ink">%s%s%s'
         '<script src="assets/site.js"></script></body></html>'
-        % (
+    )
+    return shell % (
             html.escape(desc, quote=True),
             html.escape(title),
             html.escape(desc, quote=True),
@@ -466,11 +448,9 @@ def page(name, title, desc, body, active=""):
             "%27.9em%27",
             "%2732%27",
             nav_html(active),
-            side_html(active),
-            body,
-            pager_html(active),
+            content,
+            foot_html(),
         )
-    )
 
 
 def code(s, lang=""):
@@ -522,8 +502,8 @@ def bench_bars(rows, unit="B", scale=None):
 PAGES = {}
 
 
-def add(name, title, desc, body, active=""):
-    PAGES[name] = (title, desc, body, active or name)
+def add(name, title, desc, body, active="", wide=False):
+    PAGES[name] = (title, desc, body, active or name, wide)
 # --------------------------------------------------------------------------
 # Home page — hero, live-compiled demo, stats, feature map
 # --------------------------------------------------------------------------
@@ -549,24 +529,27 @@ add(
     "Python: fine-grained reactivity, automatic RPC, real databases, auth, "
     "realtime, offline, and deploy-anywhere builds.",
     """
-<section class=hero>
-<div class=eyebrow><span class=dot></span>v1.0 &middot; production-grade &middot; MIT open source</div>
-<h1>One language. <span class=grad>Every layer.</span></h1>
-<p class=tag>Write one coherent Python app. PyWeb infers what runs in the
+<section class="relative overflow-hidden px-6 py-24 text-center sm:py-28">
+<div aria-hidden="true" class="glow absolute -left-36 -top-40 h-[480px] w-[480px] bg-emerald-400"></div>
+<div aria-hidden="true" class="glow absolute -right-40 -top-32 h-[520px] w-[520px] bg-sky-400"></div>
+<div class="relative">
+<div class="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-panel px-4 py-1 text-[12.5px] font-bold text-mut"><span class="h-2 w-2 rounded-full bg-gradient-to-br from-emerald-400 to-sky-400"></span>v1.0 &middot; production-grade &middot; MIT open source</div>
+<h1 class="mx-auto max-w-3xl text-5xl font-extrabold leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl">One language. <span class="bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 bg-clip-text text-transparent">Every layer.</span></h1>
+<p class="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-mut sm:text-xl">Write one coherent Python app. PyWeb infers what runs in the
 browser vs the server, turns plain variables into fine-grained reactive
 state, and generates typed RPC &mdash; no manual APIs, no state library, no
 bundler config.</p>
-<div class=cta>
-<a class="btn p" href="guide.html">Get started in 5 minutes &rarr;</a>
-<a class="btn s" href="playground.html">See the compiler work</a>
-<a class="btn s" href="examples.html">Browse examples</a>
+<div class="mt-8 flex flex-wrap justify-center gap-3">
+<a class="rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 px-7 py-3.5 text-[15.5px] font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:-translate-y-px hover:brightness-110 hover:no-underline" href="guide.html">Get started in 5 minutes &rarr;</a>
+<a class="rounded-xl border border-line bg-panel px-7 py-3.5 text-[15.5px] font-bold text-ink hover:border-acc hover:no-underline" href="playground.html">See the compiler work</a>
+<a class="rounded-xl border border-line bg-panel px-7 py-3.5 text-[15.5px] font-bold text-ink hover:border-acc hover:no-underline" href="examples.html">Browse examples</a>
 </div>
-<div class=hero-stats>
-<div class=hstat><b>~<em>{rt}</em> KB</b><span>shared browser runtime (minified)</span></div>
-<div class=hstat><b>&lt;<em>1</em> KB</b><span>typical per-page JS (counter: {cj} B)</span></div>
-<div class=hstat><b><em>{ssr}</em> ms</b><span>SSR compile (counter)</span></div>
-<div class=hstat><b><em>0</em></b><span>hand-written API routes for RPC</span></div>
-</div></section>
+<div class="mx-auto mt-12 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line lg:grid-cols-4">
+<div class="bg-panel px-3 py-5 text-center"><div class="text-[23px] font-extrabold tracking-tight">~{rt} KB</div><div class="mt-1 text-[12px] text-faint">shared browser runtime (minified)</div></div>
+<div class="bg-panel px-3 py-5 text-center"><div class="text-[23px] font-extrabold tracking-tight">&lt;1 KB</div><div class="mt-1 text-[12px] text-faint">typical per-page JS (counter: {cj} B)</div></div>
+<div class="bg-panel px-3 py-5 text-center"><div class="text-[23px] font-extrabold tracking-tight">{ssr} ms</div><div class="mt-1 text-[12px] text-faint">SSR compile (counter)</div></div>
+<div class="bg-panel px-3 py-5 text-center"><div class="text-[23px] font-extrabold tracking-tight">0</div><div class="mt-1 text-[12px] text-faint">hand-written API routes for RPC</div></div>
+</div></div></section>
 
 <section class=block>
 <h2 class=sec>Plain variables are reactive</h2>
@@ -597,10 +580,10 @@ generated when this site was built:</p>
 <h2 class=sec>How a request flows</h2>
 <p class=lead>One mental model, five stages. Click a stage to read its guide:</p>
 <div class=grid4>
-<a class=card href="reactivity.html"><span class=step-n>01</span><div class=ico>⚡</div><h3>React</h3><p>Signals, computed values, effects — inferred from plain Python.</p></a>
-<a class=card href="rpc.html"><span class=step-n>02</span><div class=ico>🔌</div><h3>Place + call</h3><p>Browser/server partitioning with reasons; typed RPC stubs.</p></a>
-<a class=card href="database.html"><span class=step-n>03</span><div class=ico>🗄</div><h3>Persist</h3><p>Postgres-first models, pooling, journaled migrations.</p></a>
-<a class=card href="production.html"><span class=step-n>04</span><div class=ico>📈</div><h3>Operate</h3><p>Traces, error codes, budgets, health checks, deploys.</p></a>
+<a class=card href="reactivity.html"><span class="absolute right-4 top-3.5 font-mono text-[11.5px] font-extrabold text-faint">01</span><div class="text-[22px]">⚡</div><h3>React</h3><p>Signals, computed values, effects — inferred from plain Python.</p></a>
+<a class=card href="rpc.html"><span class="absolute right-4 top-3.5 font-mono text-[11.5px] font-extrabold text-faint">02</span><div class="text-[22px]">🔌</div><h3>Place + call</h3><p>Browser/server partitioning with reasons; typed RPC stubs.</p></a>
+<a class=card href="database.html"><span class="absolute right-4 top-3.5 font-mono text-[11.5px] font-extrabold text-faint">03</span><div class="text-[22px]">🗄</div><h3>Persist</h3><p>Postgres-first models, pooling, journaled migrations.</p></a>
+<a class=card href="production.html"><span class="absolute right-4 top-3.5 font-mono text-[11.5px] font-extrabold text-faint">04</span><div class="text-[22px]">📈</div><h3>Operate</h3><p>Traces, error codes, budgets, health checks, deploys.</p></a>
 </div></section>
 
 <section class=block>
@@ -634,6 +617,7 @@ target, and native mobile renderers are roadmap — see the
 future. No vaporware.</div>
 </section>
 """.format(total=_total_js, n=len(BENCH)),
+    wide=True,
 )
 # --------------------------------------------------------------------------
 # Guide, reactivity, RPC/placement, playground
@@ -1375,7 +1359,7 @@ add(
 <h2 class=sec>Search docs</h2>
 <p class=lead>Type below — results rank title matches first. (Static index,
 no tracking, no server.)</p>
-<p><input id="q" class="searchbox" style="width:100%;max-width:480px;padding:10px 14px;font-size:15px" type="search" placeholder="e.g. migrations, CSRF, placement…" aria-label="Search docs"></p>
+<p><input id="q" type="search" placeholder="e.g. migrations, CSRF, placement…" aria-label="Search docs" class="w-full max-w-[480px] rounded-xl border border-line bg-panel px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint"></p>
 <div id="results"></div>
 <script>
 var IDX = __INDEX__;
@@ -1463,19 +1447,19 @@ def build():
         fh.write(JS)
     # Render content pages first: page() populates SEARCH_TEXTS as a
     # side effect, so the search index must be built after, not before.
-    for name, (title, desc, body, active) in PAGES.items():
+    for name, (title, desc, body, active, wide) in PAGES.items():
         if name == "search.html":
             continue
         with open(os.path.join(OUT, name), "w") as fh:
-            fh.write(page(name, title, desc, body, active))
+            fh.write(page(name, title, desc, body, active, wide))
     index = [
         {"name": name, "title": entry["title"], "text": entry["text"]}
         for name, entry in SEARCH_TEXTS.items()
     ]
-    title, desc, body, active = PAGES["search.html"]
+    title, desc, body, active, wide = PAGES["search.html"]
     body = body.replace("__INDEX__", json.dumps(index))
     with open(os.path.join(OUT, "search.html"), "w") as fh:
-        fh.write(page("search.html", title, desc, body, active))
+        fh.write(page("search.html", title, desc, body, active, wide))
     with open(os.path.join(OUT, "search_index.json"), "w") as fh:
         json.dump(index, fh)
     urls = "".join(

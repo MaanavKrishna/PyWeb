@@ -10,7 +10,11 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = []
-authors = [{ name = "Maanav Krishna" }]
+authors = [
+    { name = "MaanavKrishna" },
+    { name = "Claude", email = "noreply@anthropic.com" },
+]
+maintainers = [{ name = "MaanavKrishna" }]
 keywords = ["web", "framework", "full-stack", "reactive", "rpc", "ssr", "compiler"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

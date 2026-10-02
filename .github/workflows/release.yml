@@ -2,7 +2,7 @@ name: Release
 
 # Push a tag like v0.1.0 to publish. PyPI publishing uses Trusted
 # Publishing: on pypi.org add a (pending) trusted publisher for the
-# `pyweb-framework` project with owner MaanavKrishna, repository PyWeb,
+# `pyweb-stack` project with owner MaanavKrishna, repository PyWeb,
 # workflow release.yml and environment pypi. No API token is needed.
 
 on:

@@ -46,7 +46,7 @@ app = create_app("dist")          # or "app.pyweb" to compile at startup
 ```
 
 ```bash
-pip install "pyweb-framework[asgi]"
+pip install "pyweb-stack[asgi]"
 uvicorn asgi:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 

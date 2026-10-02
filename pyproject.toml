@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyweb-framework"
+name = "pyweb-stack"
 version = "0.1.0"
 description = "Full-stack web apps in one Python file: server-rendered pages, reactive browser UI, typed RPC."
 readme = "README.md"

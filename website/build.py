@@ -506,7 +506,7 @@ def landing(bench, demo_gz):
     with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
         readme = fh.read()
     sample = re.search(r"```pyweb\n(.*?)```", readme, re.S).group(1)
-    install = code_block("pip install pyweb-framework\npyweb new myapp && cd myapp\npyweb dev app.pyweb", "bash")
+    install = code_block("pip install pyweb-stack\npyweb new myapp && cd myapp\npyweb dev app.pyweb", "bash")
     rt_gz = bench["counter"]["runtime_js_gzip"]
     counter_gz = bench["counter"]["page_js_gzip"]
     render_ms = bench["todo"]["ssr_ms"]

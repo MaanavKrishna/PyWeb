@@ -1,0 +1,111 @@
+"""Accounts: password hashing, signed-cookie sessions, protected pages."""
+
+from pyweb import App, RPCError, redirect, server, session
+from pyweb.auth import hash_password, verify_password
+
+app = App(title="Accounts", stylesheets=["/static/app.css"])
+
+# In-memory user store keeps the example self-contained; use a database
+# table (see examples/blog) in a real app.
+USERS = {}
+
+
+@server
+def register(email: str, name: str, password: str) -> bool:
+    email = email.strip().lower()
+    if "@" not in email or len(password) < 8:
+        raise RPCError("validation_error", "Use a valid email and a password of 8+ characters.")
+    if email in USERS:
+        raise RPCError("conflict", "That email is already registered.")
+    USERS[email] = {"name": name.strip() or email, "hash": hash_password(password)}
+    session.login(email, name=USERS[email]["name"])
+    return True
+
+
+@server
+def login(email: str, password: str) -> bool:
+    user = USERS.get(email.strip().lower())
+    if user is None or not verify_password(password, user["hash"]):
+        return False
+    session.login(email.strip().lower(), name=user["name"])
+    return True
+
+
+@server
+def logout() -> None:
+    session.logout()
+
+
+@app.page("/", title="Sign in")
+def Login():
+    if session.user():
+        return redirect("/account")
+    email = ""
+    password = ""
+    error = ""
+
+    def submit():
+        if login(email, password):
+            window.location.href = "/account"
+        else:
+            error = "Wrong email or password."
+
+    <main>
+        <h1>Sign in</h1>
+        <form onsubmit={submit}>
+            <div style={{"flex": "1"}}>
+                <input id="email" type="email" bind={email} placeholder="Email" />
+                <input id="password" type="password" bind={password} placeholder="Password" />
+                <p class="error" id="error">{error}</p>
+                <button id="login" class="primary">Sign in</button>
+            </div>
+        </form>
+        <p class="muted">No account? <a href="/register">Create one</a>.</p>
+    </main>
+
+
+@app.page("/register", title="Create account")
+def Register():
+    email = ""
+    name = ""
+    password = ""
+    error = ""
+
+    def submit():
+        try:
+            register(email, name, password)
+            window.location.href = "/account"
+        except RPCError as e:
+            error = str(e)
+
+    <main>
+        <h1>Create account</h1>
+        <form onsubmit={submit}>
+            <div style={{"flex": "1"}}>
+                <input id="name" bind={name} placeholder="Name" />
+                <input id="email" type="email" bind={email} placeholder="Email" />
+                <input id="password" type="password" bind={password} placeholder="Password (8+ characters)" />
+                <p class="error" id="error">{error}</p>
+                <button id="register" class="primary">Create account</button>
+            </div>
+        </form>
+    </main>
+
+
+@app.page("/account", title="Your account")
+def Account():
+    user = session.user()
+    if not user:
+        return redirect("/")
+    name = user["name"]
+    email = user["sub"]
+
+    def sign_out():
+        logout()
+        window.location.href = "/"
+
+    <main>
+        <h1>Hello, {name}</h1>
+        <p class="muted">Signed in as {email}</p>
+        <button id="logout" onclick={sign_out}>Sign out</button>
+    </main>

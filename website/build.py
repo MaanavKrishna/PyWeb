@@ -36,6 +36,7 @@ DOCS = [
     ("01-introduction.md", "introduction", "Introduction", "Start"),
     ("02-quickstart.md", "quickstart", "Quickstart", "Start"),
     ("03-tutorial.md", "tutorial", "Tutorial", "Start"),
+    ("17-ai-assistants.md", "ai-assistants", "AI assistants & MCP", "Start"),
     ("04-pyweb-files.md", "language", "The .pyweb language", "Language"),
     ("05-reactivity.md", "reactivity", "State & reactivity", "Language"),
     ("07-browser-python.md", "browser-python", "Python in the browser", "Language"),
@@ -506,6 +507,8 @@ def landing(bench, demo_gz):
     with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
         readme = fh.read()
     sample = re.search(r"```pyweb\n(.*?)```", readme, re.S).group(1)
+    mcp_setup = code_block("pip install pyweb-stack\nclaude mcp add pyweb -- pyweb mcp", "bash", "Claude Code") + \
+        code_block('{\n  "mcpServers": {\n    "pyweb": { "command": "pyweb", "args": ["mcp"] }\n  }\n}', "text", "Cursor, Claude Desktop, VS Code")
     install = code_block("pip install pyweb-stack\npyweb new myapp && cd myapp\npyweb dev app.pyweb", "bash")
     rt_gz = bench["counter"]["runtime_js_gzip"]
     counter_gz = bench["counter"]["page_js_gzip"]
@@ -577,6 +580,16 @@ def landing(bench, demo_gz):
   </ol>
 </section>
 <section class="feats">{feat_html}</section>
+<section class="band ai">
+  <div class="band-text">
+    <h2>Built for AI assistants</h2>
+    <p>One file, plain Python, and a compiler that answers mistakes with a line number and a fix. The built-in MCP
+    server lets Claude Code, Cursor and other assistants scaffold apps, check them, see what runs where, render
+    pages and call server functions. New projects include <code>AGENTS.md</code> and <code>CLAUDE.md</code>.</p>
+    <p><a href="ai-assistants.html">Set it up →</a></p>
+  </div>
+  <div>{mcp_setup}</div>
+</section>
 <section class="compare">
   <h2>Where it fits</h2>
   <p>PyWeb is for Python developers building internal tools, dashboards, CRUD apps and small products who want a real web
@@ -708,7 +721,35 @@ def build(out=None):
     urls = "".join(f"<url><loc>{SITE}/{p if p != 'index.html' else ''}</loc></url>" for p in pages)
     write("sitemap.xml", f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n')
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {SITE}/sitemap.xml\n")
+    write_llms_txt()
     return pages
+
+
+def write_llms_txt():
+    """llms.txt (index) and llms-full.txt (AI guide + every docs page) for AI tools."""
+    with open(os.path.join(ROOT, "pyweb", "ai", "guide.md"), encoding="utf-8") as fh:
+        guide = fh.read()
+    index = ["# PyWeb", "",
+             "> Full-stack web apps in one Python file: server-rendered pages, reactive UI compiled from "
+             "Python to JavaScript, and typed RPC to @server functions. Install with `pip install pyweb-stack`; "
+             "import `pyweb`; command `pyweb`. MCP server: `pyweb mcp`.", "",
+             "## Start here", "",
+             f"- [AI guide (all rules in one page)]({SITE}/llms-full.txt): read this before writing .pyweb code", ""]
+    full = [guide.rstrip(), ""]
+    for group in GROUPS:
+        index += [f"## {group}", ""]
+        for fname, slug, title, grp in DOCS:
+            if grp != group:
+                continue
+            with open(os.path.join(ROOT, "docs", fname), encoding="utf-8") as fh:
+                text = fh.read()
+            first = next((ln for ln in text.split("\n")[1:] if ln.strip() and not ln.startswith(("#", "`", "|"))), "")
+            index.append(f"- [{title}]({SITE}/{slug}.html): {first.strip()}")
+            full += ["", "---", "", text.rstrip()]
+        index.append("")
+    index += ["## Examples", ""] + [f"- [{t}]({SITE}/example-{n}.html): {b}" for n, t, b, _ in EXAMPLES]
+    write("llms.txt", "\n".join(index) + "\n")
+    write("llms-full.txt", "\n".join(full) + "\n")
 
 
 if __name__ == "__main__":

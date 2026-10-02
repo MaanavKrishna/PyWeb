@@ -6,6 +6,24 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.2.0]
+
+Tools for building PyWeb apps with AI assistants.
+
+### Added
+- `pyweb mcp`: a Model Context Protocol server (stdio, standard library
+  only) for Claude Code, Cursor, Claude Desktop, VS Code and other MCP
+  clients. Tools: `pyweb_guide`, `pyweb_new_app`, `pyweb_check` (errors
+  with line numbers and fix hints), `pyweb_inspect`, `pyweb_compiled`,
+  `pyweb_render` and `pyweb_call` (session cookies persist between calls);
+  resources for the guide and templates; a `build_pyweb_app` prompt.
+  Tested against the official MCP Python SDK.
+- An AI-oriented guide to writing `.pyweb` apps, shipped in the package.
+- `pyweb new --template blank|counter|todo|blog|auth|chat`; new projects
+  include `AGENTS.md` and `CLAUDE.md` for coding agents.
+- The docs site publishes `llms.txt` and `llms-full.txt`, and has a new
+  "AI assistants & MCP" page.
+
 ## [0.1.0]
 
 The first public release, published on PyPI as `pyweb-stack`. The

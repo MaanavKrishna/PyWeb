@@ -1,0 +1,83 @@
+"""Chat rooms: route parameters, server state, polling for new messages."""
+
+import itertools
+import threading
+
+from pyweb import App, RPCError, server
+
+app = App(title="Chat", stylesheets=["/static/app.css"])
+
+ROOMS = ["general", "python", "random"]
+_messages = {room: [] for room in ROOMS}
+_ids = itertools.count(1)
+_lock = threading.Lock()
+
+
+def _room(room):
+    if room not in _messages:
+        raise RPCError("not_found", f"no room named {room!r}")
+    return _messages[room]
+
+
+@server
+def history(room: str, after: int = 0) -> list:
+    return [m for m in _room(room) if m["id"] > after][-100:]
+
+
+@server
+def send(room: str, author: str, text: str) -> None:
+    text = text.strip()
+    if not text:
+        return
+    with _lock:
+        _room(room).append({"id": next(_ids), "author": author.strip() or "guest", "text": text[:500]})
+
+
+@app.page("/", title="Chat rooms")
+def Lobby():
+    <main>
+        <h1>Rooms</h1>
+        <ul>
+            for room in ROOMS:
+                <li><a href={"/chat/" + room}>#{room}</a></li>
+        </ul>
+    </main>
+
+
+@app.page("/chat/{room}", title="Chat")
+def Room(room: str):
+    messages = history(room)
+    last_id = messages[-1]["id"] if messages else 0
+    author = "guest"
+    draft = ""
+
+    def poll():
+        fresh = history(room, last_id)
+        if fresh:
+            messages = messages + fresh
+            last_id = fresh[-1]["id"]
+
+    def on_mount():
+        setInterval(poll, 1000)
+
+    def submit():
+        if draft.strip():
+            send(room, author, draft)
+            draft = ""
+            poll()
+
+    <main>
+        <p><a href="/">← Rooms</a></p>
+        <h1>#{room}</h1>
+        <div id="messages">
+            for m in messages:
+                <div class="msg"><b>{m["author"]}</b>{m["text"]}</div>
+            if not messages:
+                <p class="empty">No messages yet. Say hi!</p>
+        </div>
+        <form onsubmit={submit}>
+            <input id="author" bind={author} style={{"flex": "0 0 120px"}} />
+            <input id="draft" bind={draft} placeholder="Message" />
+            <button id="send">Send</button>
+        </form>
+    </main>

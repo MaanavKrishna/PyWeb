@@ -1,0 +1,215 @@
+# PyWeb guide for AI assistants
+
+PyWeb (`pip install pyweb-stack`, `import pyweb`, command `pyweb`) builds a
+full-stack web app from ONE `.pyweb` file: Python plus HTML-like markup.
+Pages render on the server; event handlers compile to JavaScript; functions
+marked `@server` run on the server and are called from the browser over RPC.
+
+Follow these rules exactly. When unsure, run the `pyweb_check` tool (or
+`pyweb check app.pyweb`) and fix what it reports.
+
+## 1. Skeleton
+
+```pyweb
+from pyweb import App, server
+
+app = App(title="My app", stylesheets=["/static/app.css"])
+
+
+@server
+def save_item(text: str) -> list:      # runs on the server; called over RPC
+    ITEMS.append(text)
+    return ITEMS
+
+
+ITEMS = []
+
+
+@app.page("/")
+def Home():
+    items = list(ITEMS)                # computed on the server per request
+    draft = ""                         # browser state (bound below)
+
+    def add():                         # event handler -> compiled to JavaScript
+        items = save_item(draft)       # server call: awaited automatically
+        draft = ""
+
+    <main>
+        <h1>Items ({len(items)})</h1>
+        <form onsubmit={add}>
+            <input bind={draft} placeholder="New item" />
+            <button disabled={not draft.strip()}>Add</button>
+        </form>
+        <ul>
+            for item in items:
+                <li>{item}</li>
+        </ul>
+    </main>
+```
+
+Run: `pyweb dev app.pyweb` (http://localhost:8000, live reload).
+Static files go in `static/` next to `app.pyweb`, served at `/static/...`.
+
+## 2. What runs where (most important rules)
+
+| Code | Runs |
+|---|---|
+| imports, classes, DB connections, module objects | server only |
+| `NAME = <literal>` at module level | both (inlined into browser JS) |
+| `@server` functions | server; browser calls become RPC |
+| undecorated module functions | server; compiled to JS only if browser code calls them |
+| page function body (top to the markup) | server, every request |
+| nested `def` inside a page (handlers) | browser (JavaScript) |
+| `{expressions}` in markup | server (first render) and browser (updates) |
+
+Consequences:
+- Handlers must NOT use imports, DB handles, files, `os`, models, or other
+  server-only names. Put that work in an `@server` function and call it.
+- Markup expressions must not call `@server` functions. Load data into a
+  page variable instead (`rows = load_rows()` at the top of the page).
+- Never put secrets in page variables read by markup or handlers; the
+  compiler rejects names like `token`, `secret`, `password`, `api_key`
+  that would reach the browser (an empty `password = ""` bound to an input
+  is fine).
+- Everything the browser reads (markup, JS, page state) is public.
+  Authorize inside `@server` functions with `session.require(...)`.
+
+## 3. State
+
+Plain local variables in a page are the state. No `useState`, no `nonlocal`.
+
+- A variable assigned/mutated in a handler, or used with `bind={x}`, is a
+  **signal**: reactive, updating only the DOM that reads it.
+- A variable computed from signals and never assigned in a handler is
+  **computed**: `total = price * quantity`.
+- Everything else is a constant.
+- Inside handlers, assigning a page variable updates the page:
+  `count += 1`, `draft = ""`, `items.append(x)`, `items[i]["done"] = True`,
+  `del items[i]`, `items = [x for x in items if ...]` all work.
+- You cannot assign to a computed value or constant from a handler.
+- Initial values that call functions, read the session, or depend on
+  page-level logic are computed on the server; only values browser code
+  reads are sent to the browser.
+
+## 4. Markup
+
+- A line starting with `<tag` is markup; tags may span lines; every
+  non-void tag must be closed. Lowercase = HTML, Capitalized = component.
+- `{expr}` inserts a value (None renders nothing). Text is escaped.
+- Attributes: `class="x"` (literal), `href={url}` (expression),
+  `disabled={flag}` (True/False toggles), `class={{"done": t["done"]}}`
+  (dict of classes), `style={{"color": c}}` (dict of CSS).
+- Events: `onclick={handler}`, `onclick={lambda: remove(item)}`, or
+  `onclick={remove(item)}` (runs when clicked). `onsubmit` prevents the
+  default submit. Any `on<event>` works: `oninput`, `onchange`, `onkeydown`.
+- Binding: `bind={name}` on input/textarea/select; checkbox binds a bool;
+  `type="number"` with a numeric initial value binds a number.
+- Control flow lines inside markup: `for x in xs:`, `if c:`, `elif c:`,
+  `else:` with markup bodies indented below.
+- Whitespace between separate lines is dropped (like JSX); keep text that
+  needs a space on one line.
+- Literal braces: `{"{"}`.
+
+## 5. Components
+
+```pyweb
+from pyweb import App, component
+
+app = App()
+
+
+@component
+def Card(title, subtitle="", children=None):
+    <section class="card">
+        <h2>{title}</h2>
+        if subtitle:
+            <p>{subtitle}</p>
+        {children}
+    </section>
+
+
+@app.page("/")
+def Home():
+    <Card title="Hello"><p>Body</p></Card>
+```
+
+Props are parameters (defaults = optional). Pass callbacks as props
+(`on_delete={lambda: delete(i)}`) and use them as handlers inside
+(`onclick={on_delete}`). Components must be in the same file and their
+initial state must be computable in the browser (pass server data as props).
+
+## 6. Server functions, sessions, routing
+
+```python
+from pyweb import App, RPCError, NotFound, redirect, request, server, session
+
+@server
+def update(item_id: int, title: str) -> dict:     # annotations validate/coerce args
+    user = session.require()                       # 401 if not signed in
+    if not title.strip():
+        raise RPCError("validation_error", "Title is required.")   # browser: except RPCError as e: str(e)
+    ...
+
+@app.page("/items/{item_id}")                      # typed route param; bad int -> 404
+def Item(item_id: int):
+    if not session.user():
+        return redirect("/login")
+    row = find(item_id)
+    if row is None:
+        raise NotFound()
+    ...
+```
+
+- `session.login(user_id, **claims)`, `session.user()`, `session.logout()`,
+  `session.require("admin")`.
+- `pyweb.auth.hash_password` / `verify_password` for passwords.
+- Database: `from pyweb.db import connect; db = connect("sqlite:///app.db")`;
+  `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
+  parameters; `with db.transaction(): ...`.
+- In handlers, navigate with `window.location.href = "/path"`.
+- Run code after load with a handler named `on_mount` (e.g.
+  `setInterval(refresh, 2000)` for polling).
+
+## 7. Python that compiles to the browser
+
+Supported in handlers/markup: literals, f-strings (with format specs),
+arithmetic with Python semantics, comparisons, `in`, `and/or/not` with
+Python truthiness, comprehensions, lambdas, slicing/negative indexes,
+`if/for/while/try/except/raise/return/del`, builtins (`len str int float
+bool abs min max sum round range sorted reversed enumerate zip list dict
+set tuple any all isinstance print`), common str/list/dict/set methods.
+JS globals are available directly: `window`, `document`, `localStorage`,
+`console`, `setTimeout`, `setInterval`, `fetch`, `Math`, `JSON`, `Date`.
+
+Not supported in browser code: classes, imports, `with`, generators,
+walrus, `*args/**kwargs` parameters, slice assignment, keyword arguments to
+JS functions, server-only names. Move such code into `@server` functions.
+
+## 8. Errors and fixes
+
+| Error text contains | Fix |
+|---|---|
+| `only exists on the server` | Move that logic into an `@server` function and call it from the handler. |
+| `is not defined in browser code` | Define it at module level (literal or helper function), pass it in, or use an `@server` function. |
+| `markup expressions must be synchronous` | Assign the server call's result to a page variable or call it in a handler. |
+| `cannot assign to ... derived/read-only` | Assign to a variable the handler owns (make it state), not a computed/constant. |
+| `server secret ... would be sent to the browser` | Keep the value inside `@server` functions; don't read it in markup/handlers. |
+| `bind={x} must name a local variable` | Declare `x = ""` (or a number/bool) in the page before the markup. |
+| `unknown component <X>` | Define `def X(...)` with markup in the same file (capitalized). |
+| `mismatched </tag>` / `is never closed` | Close every tag; void tags (`input`, `img`, `br`) need no close (`<input ... />`). |
+| `... is not supported in browser code` | Rewrite with supported constructs or move it to `@server`. |
+
+## 9. Workflow for agents
+
+1. Start from a template: `pyweb new NAME --template todo` (or the
+   `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, auth, chat.
+2. Edit `app.pyweb`. After every edit run `pyweb check app.pyweb`
+   (MCP: `pyweb_check`) and fix errors by line number.
+3. Use `pyweb inspect` (MCP: `pyweb_inspect`) to confirm what runs in the
+   browser vs server and what is sent to the browser.
+4. Verify behaviour: render pages (`pyweb_render`) and call server
+   functions (`pyweb_call`), or write tests with `pyweb.testing.TestClient`.
+5. Ship: `pyweb build app.pyweb --out dist --production` then
+   `pyweb serve dist` (set `PYWEB_AUTH_SECRET` in production).
+
+Full docs: https://maanavkrishna.github.io/PyWeb/

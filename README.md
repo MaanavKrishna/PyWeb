@@ -86,11 +86,31 @@ browser (use Pyodide/PyScript). See the
 [comparison](https://maanavkrishna.github.io/PyWeb/introduction.html)
 and [current limitations](docs/16-limitations-roadmap.md).
 
+## Build it with AI
+
+PyWeb ships an MCP server so AI assistants can scaffold, check, inspect,
+render and test your app, with errors that come back as line numbers and
+fix hints:
+
+```bash
+claude mcp add pyweb -- pyweb mcp          # Claude Code
+```
+
+```json
+{ "mcpServers": { "pyweb": { "command": "pyweb", "args": ["mcp"] } } }
+```
+
+(the JSON is for Cursor, Claude Desktop, VS Code and other MCP clients).
+`pyweb new myapp --template todo` also writes `AGENTS.md` and `CLAUDE.md`
+so coding agents follow PyWeb's rules, and the docs site publishes
+[`llms-full.txt`](https://maanavkrishna.github.io/PyWeb/llms-full.txt).
+See [AI assistants & MCP](docs/17-ai-assistants.md).
+
 ## Documentation
 
 | | |
 |---|---|
-| Start | [Introduction](docs/01-introduction.md) · [Quickstart](docs/02-quickstart.md) · [Tutorial](docs/03-tutorial.md) |
+| Start | [Introduction](docs/01-introduction.md) · [Quickstart](docs/02-quickstart.md) · [Tutorial](docs/03-tutorial.md) · [AI assistants & MCP](docs/17-ai-assistants.md) |
 | Language | [`.pyweb` files](docs/04-pyweb-files.md) · [State & reactivity](docs/05-reactivity.md) · [Python in the browser](docs/07-browser-python.md) |
 | Server | [Server functions & RPC](docs/06-server-functions.md) · [Pages & routing](docs/08-pages-routing-assets.md) · [Data](docs/09-data.md) · [Auth](docs/10-auth.md) |
 | Ship | [Testing](docs/11-testing.md) · [Deployment](docs/12-deployment.md) · [Security](docs/13-security.md) · [CLI](docs/14-cli.md) |
@@ -117,12 +137,13 @@ a real browser by the test suite.
 ## Command line
 
 ```bash
-pyweb new myapp                                  # scaffold
+pyweb new myapp --template todo                  # scaffold (blank|counter|todo|blog|auth|chat)
 pyweb dev app.pyweb                              # dev server: live reload + error overlay
 pyweb inspect app.pyweb                          # where each name runs, and why
 pyweb check app.pyweb                            # compile + security checks for CI
 pyweb build app.pyweb --out dist --production    # self-contained, hashed, minified dist/
 pyweb serve dist                                 # production server (/healthz, CSP, graceful shutdown)
+pyweb mcp                                        # MCP server for AI assistants (stdio)
 ```
 
 ## Status

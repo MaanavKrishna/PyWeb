@@ -1,13 +1,18 @@
 name: Release
 
-# Push a tag like v0.1.0 to publish. PyPI publishing uses Trusted
-# Publishing: on pypi.org add a (pending) trusted publisher for the
-# `pyweb-stack` project with owner MaanavKrishna, repository PyWeb,
-# workflow release.yml and environment pypi. No API token is needed.
+# To publish: on GitHub open Releases -> "Draft a new release", create a
+# tag like v0.1.0 on main, and click "Publish release". This workflow then
+# builds the package, uploads it to PyPI and attaches the files to the
+# release.
+#
+# PyPI publishing uses Trusted Publishing: on pypi.org add a (pending)
+# trusted publisher for the `pyweb-stack` project with owner MaanavKrishna,
+# repository PyWeb, workflow release.yml and environment pypi. No API
+# token is needed.
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -28,10 +33,13 @@ jobs:
           test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != pyproject version $v"; exit 1; }
       - run: pip install build && python -m build
       - uses: pypa/gh-action-pypi-publish@release/v1
-      - name: GitHub release
+      - name: Attach files and changelog notes to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${GITHUB_REF_NAME#v}"
           awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --title "PyWeb $GITHUB_REF_NAME" --notes-file notes.md
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          if [ -z "$(gh release view "$GITHUB_REF_NAME" --json body -q .body)" ]; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+          fi

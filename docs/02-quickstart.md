@@ -18,7 +18,9 @@ cd hello
 pyweb dev app.pyweb          # http://localhost:8000, reloads on save
 ```
 
-`pyweb new` writes a single `app.pyweb`:
+`pyweb new` writes `app.pyweb` plus `AGENTS.md`/`CLAUDE.md` (instructions
+for AI coding agents). Add `--template todo` (or `blog`, `auth`, `chat`,
+`blank`) to start from a bigger example. The default counter app is:
 
 ```pyweb
 from pyweb import App

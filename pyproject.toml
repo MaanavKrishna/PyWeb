@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyweb-stack"
-version = "0.1.0"
+version = "0.2.0"
 description = "Full-stack web apps in one Python file: server-rendered pages, reactive browser UI, typed RPC."
 readme = "README.md"
 license = { text = "MIT" }
@@ -42,7 +42,7 @@ redis = ["redis>=5"]
 crypto = ["cryptography>=42"]
 asgi = ["uvicorn>=0.30"]
 all = ["psycopg[binary]>=3.1", "PyMySQL>=1.1", "redis>=5", "cryptography>=42", "uvicorn>=0.30"]
-test = ["pytest>=8", "playwright>=1.45"]
+test = ["pytest>=8", "playwright>=1.45", "mcp>=1.2"]
 
 [project.urls]
 Homepage = "https://maanavkrishna.github.io/PyWeb/"
@@ -58,7 +58,7 @@ pyweb = "pyweb.cli:main"
 include = ["pyweb*"]
 
 [tool.setuptools.package-data]
-pyweb = ["runtime/browser/*.js", "py.typed"]
+pyweb = ["runtime/browser/*.js", "py.typed", "ai/*.md", "templates/*.pyweb", "templates/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -382,37 +382,20 @@ def _parse_budget(spec):
     return int(float(spec))
 
 
-NEW_APP = """from pyweb import App
-
-app = App(title="{title}")
-
-
-@app.page("/")
-def Home():
-    count = 0
-
-    def increment():
-        count += 1
-
-    <main>
-        <h1>Counter</h1>
-        <button onclick={{increment}}>
-            Count: {{count}}
-        </button>
-    </main>
-"""
-
-
 def cmd_new(args):
-    if os.path.exists(os.path.join(args.name, "app.pyweb")):
-        raise SystemExit(f"{args.name}/app.pyweb already exists")
-    os.makedirs(os.path.join(args.name, "static"), exist_ok=True)
-    title = os.path.basename(os.path.abspath(args.name)).replace("-", " ").replace("_", " ").title()
-    with open(os.path.join(args.name, "app.pyweb"), "w", encoding="utf-8") as fh:
-        fh.write(NEW_APP.format(title=title))
-    with open(os.path.join(args.name, ".gitignore"), "w", encoding="utf-8") as fh:
-        fh.write("dist/\n__pycache__/\n*.db\n")
-    print(f"created {args.name}/app.pyweb\nnext: cd {args.name} && pyweb dev app.pyweb")
+    from pyweb.mcp import scaffold
+    try:
+        files = scaffold(args.name, template=args.template)
+    except (FileExistsError, ValueError) as exc:
+        raise SystemExit(f"error: {exc}")
+    for f in files:
+        print(f"created {f}")
+    print(f"next: cd {args.name} && pyweb dev app.pyweb")
+
+
+def cmd_mcp(args):
+    from pyweb.mcp import serve_stdio
+    serve_stdio()
 
 
 def main(argv=None):
@@ -425,7 +408,8 @@ def main(argv=None):
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db"); p.add_argument("db_action", choices=["migrate", "new", "status", "rollback"]); p.add_argument("--database", default=None); p.add_argument("--migrations", default="migrations"); p.add_argument("--name", default="migration"); p.add_argument("--steps", type=int, default=1, help="rollback: how many applied migrations to revert"); p.add_argument("--to", default=None, help="rollback: revert everything applied after this label"); p.set_defaults(fn=cmd_db)
-    p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)
+    p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=["blank", "counter", "todo", "blog", "auth", "chat"], help="starter app"); p.set_defaults(fn=cmd_new)
+    p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
     p = sub.add_parser("npm"); p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_npm)
     p = sub.add_parser("deploy")

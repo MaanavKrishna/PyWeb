@@ -133,6 +133,10 @@ CPython), the reactive runtime, server rendering, RPC, sessions, every
 example app in Chromium, and the database/Redis layers against real
 Postgres, MySQL and Redis servers, on Python 3.10–3.13.
 
+## Authors
+
+Built by [MaanavKrishna](https://github.com/MaanavKrishna) and Claude.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:

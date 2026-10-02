@@ -1,11 +1,16 @@
 """Production server: threaded stdlib HTTP over a built ``dist/``.
 
-Unlike ``pyweb dev`` (recompiles source, ``exec()``s page code), ``serve``
-never executes app source. It loads the build manifest, serves hashed
-static assets with immutable caching, answers ``/healthz`` for
-orchestrators, and routes pages + RPC through the compiled server
-runtime. ``--app mod:attr`` optionally mounts live RPC implementations
-from an importable factory returning ``(compiled, rpc_impls)``.
+``pyweb build`` copies the app source into ``dist/app.pyweb``; ``serve``
+loads it (:class:`pyweb.app_loader.LoadedApp`), so ``@server`` functions
+are live RPC endpoints and pages render per request with real data. It
+serves hashed static assets with immutable caching and answers
+``/healthz`` for orchestrators.
+
+For process managers and HTTP/2, prefer the ASGI adapter
+(:mod:`pyweb.asgi`) under uvicorn/gunicorn; this server is dependency-free
+and fine behind a reverse proxy for small and medium deployments.
+``--app mod:attr`` (legacy) mounts RPC implementations from a factory
+returning ``(compiled, rpc_impls)``.
 """
 
 from __future__ import annotations
@@ -60,6 +65,13 @@ MAX_BODY = 1_048_576
 
 #: Security headers applied to every response. The app's own values win
 #: on conflict (merged with ``setdefault`` semantics per header).
+#: Content-Security-Policy for HTML responses (override with PYWEB_CSP).
+#: Scripts only from this origin; the page-state JSON block is data, not code.
+DEFAULT_CSP = ("default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; "
+               "frame-ancestors 'self'; img-src 'self' data: https:; "
+               "style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; "
+               "connect-src 'self'")
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
@@ -80,9 +92,12 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(raw)))
             merged = dict(SECURITY_HEADERS)
+            if ctype.startswith("text/html"):
+                merged["Content-Security-Policy"] = os.environ.get("PYWEB_CSP", DEFAULT_CSP)
             merged.update(extra or {})
             for k, v in merged.items():
-                self.send_header(k, v)
+                for item in (v if isinstance(v, list) else [v]):
+                    self.send_header(k, item)
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(raw)
@@ -120,7 +135,7 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             if server_runtime is not None:
                 from pyweb.runtime.server import Request
                 resp = server_runtime.handle(Request(
-                    "GET", path, dict(self.headers),
+                    "GET", self.path, dict(self.headers),
                     cookies=parse_cookies(self.headers.get("Cookie"))))
                 return self._bytes(resp.body, resp.status,
                                    resp.headers.get("Content-Type", "text/html"),
@@ -183,8 +198,7 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             if server_runtime is None:
                 return self._bytes(json.dumps(
                     {"ok": False, "error": "rpc-unavailable",
-                     "message": "serve has no --app factory; "
-                                "run with live RPC impls or use pyweb dev"}),
+                     "message": "this dist has no app.pyweb; rebuild with `pyweb build`"}),
                     501, "application/json")
             from pyweb.runtime.server import Request
             resp = server_runtime.handle(Request(
@@ -258,7 +272,17 @@ def serve(dist, *, host="0.0.0.0", port=8000, app_factory=None, logger=None,
         if warning is not None:
             logger.info(f"security warning: {warning}")
     runtime = None
-    if app_factory:
+    app_source = os.path.join(dist, manifest.get("app") or "app.pyweb")
+    if not app_factory and os.path.isfile(app_source):
+        from pyweb.app_loader import LoadedApp
+        asset_urls = {name: f"/static/{p['js']}" for name, p in manifest.get("pages", {}).items()
+                      if p.get("js")}
+        app = LoadedApp(app_source, asset_urls=asset_urls)
+        secure = os.environ.get("PYWEB_COOKIE_SECURE", "").lower() in ("1", "true")
+        runtime = Server(app=app, rate_limit=rate_limit, rpc_timeout=rpc_timeout,
+                         auth_secret=auth_secret, csrf_secret=csrf_secret,
+                         max_body=max_body, logger=logger, secure_cookies=secure)
+    elif app_factory:
         factory = load_factory(app_factory)
         compiled, impls = factory(manifest) if callable(factory) else (None, {})
         runtime = Server(compiled or {"pages": {}, "rpc": []},

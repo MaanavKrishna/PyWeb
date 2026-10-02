@@ -1,57 +1,49 @@
-"""Reactivity: signals, computeds, Python primitives, edges."""
-
-import ast
+"""Reactivity classification (signal / computed / const) and Python primitives."""
 
 from pyweb import Computed, Effect, Signal, live
-from pyweb.compiler import parser as P
-from pyweb.compiler.reactivity import compute_reactive
+from pyweb.compiler import compile_source
+
+HEAD = "from pyweb import App\napp=App()\n@app.page('/')\n"
 
 
-def _fn_ui(src):
-    tree, ui_all, _ = P.parse_source(src)
-    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef))
-    span = (fn.lineno, getattr(fn, "end_lineno", fn.lineno))
-    ui = [n for n in ui_all if span[0] <= getattr(n, "line", 0) <= span[1]]
-    return fn, ui
+def page(body):
+    return compile_source(HEAD + body)["pages"]["H"]
 
 
 def test_counter_signal():
-    fn, ui = _fn_ui("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    count = 0\n    def inc():\n        count += 1\n    <button onclick={inc}>{count}</button>\n")
-    signals, computeds, edges = compute_reactive(fn, ui)
-    assert signals == ["count"] and not computeds
-    assert ("count", "__dom__") in edges
+    p = page("def H():\n    count = 0\n    def inc():\n        count += 1\n    <button onclick={inc}>{count}</button>\n")
+    assert p["signals"] == ["count"] and not p["computeds"]
+    assert ("count", "__dom__") in p["edges"]
 
 
 def test_computed_derivation():
-    fn, ui = _fn_ui("from pyweb import App\napp=App()\n@app.page('/')\ndef S():\n    price = 100\n    quantity = 2\n    total = price * quantity\n    <p>{total}</p>\n")
-    signals, computeds, edges = compute_reactive(fn, ui)
-    assert computeds["total"]["deps"] == ["price", "quantity"]
-    assert ("price", "total") in edges and ("total", "__dom__") in edges
-    assert "total" not in signals
+    p = page("def H():\n    price = 100\n    quantity = 2\n    total = price * quantity\n"
+             "    <input bind={quantity} />\n    <p>{total}</p>\n")
+    assert p["computeds"]["total"]["deps"] == ["price", "quantity"]
+    assert ("quantity", "total") in p["edges"] and ("total", "__dom__") in p["edges"]
+    assert "total" not in p["signals"]
 
 
-def test_readonly_display_name_renders_without_signal():
-    # Design: display-only names render from SSR initial HTML; no signal
-    # subscription is needed since nothing mutates them. They must not be
-    # classified as computeds either.
-    fn, ui = _fn_ui("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    title = 'Hi'\n    <h1>{title}</h1>\n")
-    signals, computeds, _ = compute_reactive(fn, ui)
-    assert computeds == {}
-    from pyweb.compiler import compile_source
-    out = compile_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    title = 'Hi'\n    <h1>{title}</h1>\n")
-    assert "Hi" in out["pages"]["H"]["html_body"]
+def test_constants_are_not_reactive():
+    p = page("def H():\n    title = 'Hi'\n    <h1>{title}</h1>\n")
+    assert p["signals"] == [] and p["computeds"] == {} and p["js"] == ""
+    assert "<h1>Hi</h1>" in p["html_body"]
 
 
 def test_bind_target_is_signal():
-    fn, ui = _fn_ui("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    q = ''\n    <input bind={q} />\n")
-    signals, _, _ = compute_reactive(fn, ui)
-    assert signals == ["q"]
+    p = page("def H():\n    q = ''\n    <input bind={q} />\n")
+    assert p["signals"] == ["q"]
+
+
+def test_method_mutation_makes_a_signal():
+    p = page("def H():\n    todos = []\n    def add():\n        todos.append(1)\n    <ul onclick={add}>{len(todos)}</ul>\n")
+    assert p["signals"] == ["todos"]
+    assert "append() in add()" in p["placement"]["todos"][1]
 
 
 def test_loop_var_not_signal():
-    fn, ui = _fn_ui("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    todos = [1]\n    for t in todos:\n        <p>{t}</p>\n")
-    signals, _, _ = compute_reactive(fn, ui)
-    assert "t" not in signals
+    p = page("def H():\n    todos = [1]\n    for t in todos:\n        <p>{t}</p>\n")
+    assert "t" not in p["signals"]
 
 
 def test_python_signal_primitive():

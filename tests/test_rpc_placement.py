@@ -6,8 +6,6 @@ import json
 from pyweb import browser, server, worker
 from pyweb.compiler import parser as P
 from pyweb.compiler import compile_source
-from pyweb.compiler.placement import place_page
-from pyweb.compiler.reactivity import compute_reactive
 from pyweb.compiler.rpc import client_stub, rpc_specs
 from pyweb.runtime.server import Request, Server
 

@@ -111,24 +111,37 @@ def test_minify_shrinks_and_keeps_semantics():
     assert len(out) < len(js) and "return a+b;" in out
 
 
+COUNTER = ("from pyweb import App\napp = App()\n@app.page('/')\ndef Home():\n    count = 0\n"
+           "    def inc():\n        count += 1\n    <button onclick={inc}>Count: {count}</button>\n"
+           "@app.page('/about')\ndef About():\n    <p>static</p>\n")
+
+
 def test_build_writes_hashed_split_artifacts(tmp_path):
-    compiled = {"pages": {"home": {
-        "route": "/", "js": "function home(){ return 1; }\n",
-        "html": ("<html><head><style>.a{color:red}</style></head>"
-                 '<body><script src="runtime.js"></script>'
-                 '<script src="home.js"></script></body></html>'),
-        "signals": ["count"], "computeds": [], "sourcemap": []}},
-        "rpc": [{"name": "get_count"}], "ir_text": "Home"}
-    manifest = _build.build(compiled, str(tmp_path))
-    page = manifest["pages"]["home"]
-    assert page["js"].startswith("home.") and page["js"].endswith(".js")
-    assert page["css"].startswith("home.") and "runtime." in page["runtime"]
-    assert os.path.exists(str(tmp_path / "static" / page["js"]))
-    assert os.path.exists(str(tmp_path / "static" / page["css"]))
-    assert os.path.exists(str(tmp_path / "deploy" / "Dockerfile"))
-    html = open(str(tmp_path / "server" / "home.html")).read()
-    assert page["js"] in html and page["runtime"] in html
-    assert "<style>" not in html  # extracted to file
+    from pyweb.compiler import compile_source
+    compiled = compile_source(COUNTER)
+    manifest = _build.build(compiled, str(tmp_path), source=COUNTER)
+    page = manifest["pages"]["Home"]
+    assert page["js"].startswith("Home.") and page["js"].endswith(".js")
+    assert page["runtime"].startswith("runtime.") and page["runtime"] != "runtime.js"
+    js = open(str(tmp_path / "static" / page["js"])).read()
+    assert f'from"./{page["runtime"]}"' in js.replace(" ", "")   # page imports the hashed runtime
+    assert os.path.exists(str(tmp_path / "static" / page["runtime"]))
+    html = open(str(tmp_path / "server" / "Home.html")).read()
+    assert f'/static/{page["js"]}' in html
+    assert manifest["pages"]["About"]["js"] == ""                  # static page ships no JS
+    assert "<script" not in open(str(tmp_path / "server" / "About.html")).read()
+    assert os.path.exists(str(tmp_path / "Dockerfile"))
+    assert open(str(tmp_path / "app.pyweb")).read() == COUNTER
+    assert manifest["app"] == "app.pyweb" and manifest["runtime_gzip_bytes"] > 0
+
+
+def test_minifier_never_touches_literals():
+    js = ('const a = "Count: " + b; // c\nconst u = "https://x.y/z";\n'
+          "const r = /a\\/b[/]c/g; const t = `x ${a + \"}\"} y`;\nreturn a\n+b;")
+    out = _build.minify_js(js)
+    for lit in ['"Count: "', '"https://x.y/z"', "/a\\/b[/]c/g", '`x ${a + "}"} y`']:
+        assert lit in out, lit
+    assert "// c" not in out
 
 
 def test_content_hash_stable():

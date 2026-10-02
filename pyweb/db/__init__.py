@@ -566,7 +566,14 @@ def connect(url: str, **kwargs):
     u = _up(url)
     scheme = u.scheme.lower()
     if scheme in ("sqlite", "sqlite3", ""):
-        return SQLiteDB(u.path or ":memory:", **kwargs)
+        # SQLAlchemy convention: sqlite:///app.db is relative to the working
+        # directory, sqlite:////var/data/app.db is absolute.
+        if "://" in url:
+            rest = url.split("://", 1)[1]
+            path = rest[1:] if rest.startswith("/") else rest
+        else:
+            path = url  # a plain filesystem path
+        return SQLiteDB(path or ":memory:", **kwargs)
     if scheme in ("postgres", "postgresql"):
         return PostgresDB(url, **kwargs)
     if scheme == "mysql":

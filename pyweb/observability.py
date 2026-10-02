@@ -19,12 +19,20 @@ import uuid
 
 
 class Logger:
-    def __init__(self, stream=None):
+    """JSON-lines logger. ``Logger("serve")`` names the component;
+    ``Logger(stream=fh)`` (or a stream positionally) redirects output."""
+
+    def __init__(self, name=None, stream=None):
+        if name is not None and not isinstance(name, str):
+            name, stream = None, name
+        self.name = name
         self.stream = stream or sys.stdout
         self._lock = threading.Lock()
 
     def log(self, level, message, **fields):
         rec = {"ts": time.time(), "level": level, "msg": message, **fields}
+        if self.name:
+            rec.setdefault("logger", self.name)
         with self._lock:
             self.stream.write(json.dumps(rec) + "\n")
             self.stream.flush()

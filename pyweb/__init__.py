@@ -8,6 +8,8 @@ from . import sync, live, deploy, uploads, lsp
 from . import browser as browser_api
 from . import build, css, plugins, platform
 from .jobs import task
+from .context import NotFound, redirect, request, session
+from .rpc import RPCError
 # NOTE: decorators import comes last — importing the ``pyweb.browser``
 # submodule rebinds the ``browser`` package attr to the module, so the
 # ``@browser`` decorator must be bound afterwards. ``import pyweb.browser``
@@ -23,6 +25,11 @@ from .decorators import (
 
 __all__ = [
     "App",
+    "request",
+    "session",
+    "redirect",
+    "NotFound",
+    "RPCError",
     "browser",
     "component",
     "edge",

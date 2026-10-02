@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from pyweb.compiler import compile_source
-from pyweb.compiler.codegen.emit_js import _py2js
 from pyweb.compiler.codegen.ir import to_text
 
 
@@ -18,22 +17,24 @@ def test_static_page_has_no_runtime():
     assert "<h1>Hi</h1>" in out["pages"]["H"]["html"]
 
 
-def test_dynamic_binding_markers():
+def test_dynamic_page_ships_module_and_state():
     out = compile_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    n = 0\n    def inc():\n        n += 1\n    <button onclick={inc}>{n}</button>\n")
     page = out["pages"]["H"]
-    assert 'pw-bind="n"' in page["html_body"]
-    assert "bind_text" in page["js"] and "increment" not in page["js"].replace("inc", "") or "inc" in page["js"]
+    assert '<div data-pw-root="H"><button>0</button></div>' in page["html"]
+    assert '<script id="pw-state" type="application/json">{"n":0}</script>' in page["html"]
+    assert '$mount("H", H);' in page["js"] and '"onclick": inc' in page["js"]
 
 
 def test_handler_lowering_augassign():
     out = compile_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    n = 0\n    def inc():\n        n += 1\n    <button onclick={inc}>{n}</button>\n")
-    assert "n(n() + 1)" in out["pages"]["H"]["js"]
+    assert "n($py.add(n(), 1));" in out["pages"]["H"]["js"]
 
 
-def test_py2js_keywords():
-    assert _py2js("a and not b") == "a && ! b"
-    assert _py2js("x is None") != ""
-    assert "count()" in _py2js("count", signals=["count"])
+def test_list_mutation_is_copy_on_write():
+    out = compile_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    xs = []\n    def add():\n        xs.append(1)\n    <button onclick={add}>{len(xs)}</button>\n")
+    js = out["pages"]["H"]["js"]
+    assert '$py.mut(xs, [], ($v) => $py.m($v, "append", 1));' in js
+    assert "() => $py.len(xs())" in js
 
 
 def test_ir_text_lists_placement():
@@ -50,9 +51,10 @@ def test_sourcemap_entries():
 
 
 def test_full_page_shell():
-    out = compile_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    <h1>T</h1>\n")
+    out = compile_source("from pyweb import App\napp=App(title='T')\n@app.page('/')\ndef H():\n    n = 0\n    <h1 onclick={lambda: None}>{n}</h1>\n")
     html = out["pages"]["H"]["html"]
-    assert html.startswith("<!doctype html>") and "/static/H.js" in html
+    assert html.startswith("<!doctype html>") and "<title>T</title>" in html
+    assert '<script type="module" src="/static/H.js?v=' in html
 
 
 def test_for_loop_ssr_static_items():
@@ -60,6 +62,17 @@ def test_for_loop_ssr_static_items():
     assert out["pages"]["H"]["html_body"].count("<p>") == 2
 
 
-def test_component_tag_renders_div():
-    out = compile_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    <UserCard name=\"x\" />\n")
-    assert "<div" in out["pages"]["H"]["html_body"]
+def test_unknown_component_is_a_compile_error():
+    import pytest
+    from pyweb.compiler.errors import CompileError
+    with pytest.raises(CompileError) as e:
+        compile_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    <UserCard name=\"x\" />\n")
+    assert "unknown component <UserCard>" in str(e.value) and ":5:" in str(e.value)
+
+
+def test_component_renders_with_props_and_children():
+    src = ("from pyweb import App\napp=App()\n\ndef Card(title, children=None):\n"
+           "    <section><h2>{title}</h2>{children}</section>\n\n"
+           "@app.page('/')\ndef H():\n    <Card title=\"Hi\"><p>body</p></Card>\n")
+    out = compile_source(src)
+    assert "<section><h2>Hi</h2><p>body</p></section>" in out["pages"]["H"]["html_body"]

@@ -1,223 +1,1004 @@
-// PyWeb browser runtime (~3KB): signals, computed, bindings, rpc, mutate.
-let _qid = 0;
-const _effects = new Set();
+// PyWeb browser runtime: fine-grained signals, DOM rendering, Python
+// semantics helpers (`py`), and typed RPC. No virtual DOM: every dynamic
+// expression owns one effect that updates exactly the nodes it renders.
 
-export function sig(value) {
-  let v = value;
-  const subs = new Set();
-  function fn(next) {
-    if (arguments.length === 0) return v;
-    v = next;
-    subs.forEach((s) => s(v));
-    _effects.forEach((e) => e());
-    return v;
+// ---------------------------------------------------------------- signals
+//
+// Dependency tracking: reading a signal inside an effect/computed records a
+// dependency; writing it re-runs only the dependents. Effects created while
+// another effect (or root) runs are *owned* by it and disposed when it
+// re-runs or is disposed, so removed list rows and swapped branches never
+// leak subscriptions.
+
+let Listener = null;
+let Owner = null;
+let batchDepth = 0;
+let flushing = false;
+const pending = new Set();
+
+function cleanNode(node) {
+  if (node.sources) {
+    for (const s of node.sources) s.observers.delete(node);
+    node.sources.clear();
   }
-  fn.subscribe = (s) => { subs.add(s); return () => subs.delete(s); };
-  fn.peek = () => v;
-  return fn;
+  if (node.owned && node.owned.length) {
+    const owned = node.owned;
+    node.owned = [];
+    for (const o of owned) disposeNode(o);
+  }
+  if (node.cleanups && node.cleanups.length) {
+    const cbs = node.cleanups;
+    node.cleanups = [];
+    for (const c of cbs) {
+      try { c(); } catch (e) { reportError(e); }
+    }
+  }
 }
 
+function disposeNode(node) {
+  cleanNode(node);
+  node.disposed = true;
+  pending.delete(node);
+}
+
+function track(src) {
+  if (Listener) {
+    src.observers.add(Listener);
+    Listener.sources.add(src);
+  }
+}
+
+function notify(src) {
+  for (const o of Array.from(src.observers)) {
+    if (o.isComputed) {
+      if (!o.stale) { o.stale = true; notify(o); }
+    } else {
+      pending.add(o);
+    }
+  }
+  if (batchDepth === 0) flush();
+}
+
+function flush() {
+  if (flushing) return;
+  flushing = true;
+  try {
+    let guard = 0;
+    while (pending.size) {
+      if (++guard > 100000) throw new Error("pyweb: reactive update loop (an effect keeps changing its own inputs)");
+      const e = pending.values().next().value;
+      pending.delete(e);
+      if (!e.disposed) runEffect(e);
+    }
+  } finally {
+    flushing = false;
+  }
+}
+
+function runEffect(e) {
+  cleanNode(e);
+  const pl = Listener; const po = Owner;
+  Listener = e; Owner = e;
+  try { e.fn(); } catch (err) { reportError(err); } finally { Listener = pl; Owner = po; }
+}
+
+/** A reactive value. `s()` reads (and tracks), `s(v)` writes. */
+export function signal(value) {
+  const node = { value, observers: new Set() };
+  function s(next) {
+    if (arguments.length === 0) { track(node); return node.value; }
+    if (!Object.is(node.value, next)) { node.value = next; notify(node); }
+    return next;
+  }
+  s.peek = () => node.value;
+  s.set = (v) => s(v);
+  s.update = (fn) => s(fn(node.value));
+  s.subscribe = (cb) => effect(() => cb(s()));
+  s.$signal = true;
+  return s;
+}
+export const sig = signal;
+
+/** A lazily cached derivation; recomputes only after an input changed. */
 export function computed(fn) {
-  let cached; let dirty = true;
-  const c = () => { if (dirty) { cached = fn(); dirty = false; } return cached; };
-  _effects.add(() => { dirty = true; });
+  const node = { value: undefined, stale: true, isComputed: true,
+    sources: new Set(), observers: new Set() };
+  const c = () => {
+    if (node.stale) {
+      cleanNode(node);
+      const pl = Listener;
+      Listener = node;
+      try { node.value = fn(); } finally { Listener = pl; }
+      node.stale = false;
+    }
+    track(node);
+    return node.value;
+  };
+  c.peek = () => untrack(c);
+  c.$signal = true;
   return c;
 }
 
-export function effect(fn) { _effects.add(fn); fn(); return () => _effects.delete(fn); }
+/** Run `fn` now and again whenever a signal it read changes. */
+export function effect(fn) {
+  const e = { fn, sources: new Set(), owned: [], cleanups: [], disposed: false };
+  if (Owner) Owner.owned.push(e);
+  runEffect(e);
+  return () => disposeNode(e);
+}
+
+export function onCleanup(fn) { if (Owner) Owner.cleanups.push(fn); }
+
+/** Run `fn(dispose)` in a fresh ownership scope, detached from the caller. */
+export function root(fn) {
+  const r = { sources: new Set(), owned: [], cleanups: [] };
+  const pl = Listener; const po = Owner;
+  Listener = null; Owner = r;
+  try { return fn(() => disposeNode(r)); } finally { Listener = pl; Owner = po; }
+}
+
+/** Apply several writes, then re-run each affected effect once. */
+export function batch(fn) {
+  batchDepth++;
+  try { return fn(); } finally { if (--batchDepth === 0) flush(); }
+}
+
+export function untrack(fn) {
+  const pl = Listener;
+  Listener = null;
+  try { return fn(); } finally { Listener = pl; }
+}
 
 export function resource(loader) {
   const r = { pending: false, error: null, result: null };
   r.load = async () => {
     r.pending = true;
     try { r.result = await loader(); } catch (e) { r.error = e; }
-    r.pending = false; return r.result;
+    r.pending = false;
+    return r.result;
   };
   return r;
 }
 
-function _walkText(root, cb) {
-  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes = [];
-  while (w.nextNode()) nodes.push(w.currentNode);
-  nodes.forEach(cb);
-}
+// ------------------------------------------------------------------ errors
 
-// Bind {expr} text: codegen emits one bind_text per dynamic expression with a
-// thunk reading current signal values; we re-evaluate on any signal change.
-export function bind_text(root, code, thunk) {
-  const el = root.querySelector ? root : document;
-  let targets;
-  try {
-    targets = el.querySelectorAll(`[pw-bind="${CSS.escape(code)}"]`);
-  } catch { targets = []; }
-  if (!targets || targets.length === 0) return;
-  const render = () => {
-    let v; try { v = thunk(); } catch { return; }
-    if (typeof v === "function") { try { v = v(); } catch { return; } }
-    const s = v == null ? "" : String(v);
-    targets.forEach((t) => { if (t.textContent !== s) t.textContent = s; });
-  };
-  _effects.add(render); render();
-}
-
-export function bind_attr() {}
-
-// --- Keyed live list: appending one item creates exactly one row; existing
-// rows keep their DOM nodes. Ported from Track A (compiler-runtime).
-function _liveRowEls(row) {
-  if (!row) return [];
-  if (row.els) return row.els;
-  if (row.el) return [row.el];
-  return [];
-}
-
-export function liveList(anchor, getItems, renderRow, keyFn) {
-  keyFn = keyFn || ((item, i) => `i:${i}`);
-  const rows = new Map();
-  let order = [];
-  function makeRow(item, i, key) {
-    const row = renderRow(item, i, key) || { els: [] };
-    row.item = item;
-    row.i = i;
-    return row;
+export function reportError(err) {
+  if (typeof console !== "undefined") console.error(err);
+  if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+    try { window.dispatchEvent(new CustomEvent("pyweb:error", { detail: err })); } catch { /* noop */ }
   }
-  function killRow(key) {
-    const row = rows.get(key);
-    if (!row) return;
-    rows.delete(key);
-    if (row.dispose) { try { row.dispose(); } catch { /* noop */ } }
-    _liveRowEls(row).forEach((e) => { if (e.parentNode) e.parentNode.removeChild(e); });
+}
+
+// --------------------------------------------------------------------- DOM
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const SVG_TAGS = new Set(["svg", "path", "circle", "rect", "line", "g", "polyline",
+  "polygon", "ellipse", "defs", "use", "linearGradient", "radialGradient", "stop",
+  "clipPath", "mask", "pattern", "symbol", "tspan", "foreignObject"]);
+const PROPS = new Set(["value", "checked", "selected", "indeterminate"]);
+const URL_ATTRS = new Set(["href", "src", "action", "formaction", "xlink:href"]);
+
+/** Block `javascript:` (and similar) URLs from reaching the DOM. */
+export function safeUrl(v) {
+  const s = String(v);
+  return /^\s*(javascript|vbscript|data:text\/html)/i.test(s.replace(/[\u0000-\u001f]/g, "")) ? "#" : s;
+}
+
+function kebab(k) { return k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()).replace(/_/g, "-"); }
+
+export function clsx(v) {
+  if (v == null || v === false) return "";
+  if (Array.isArray(v)) return v.map(clsx).filter(Boolean).join(" ");
+  if (typeof v === "object") return Object.keys(v).filter((k) => truth(v[k])).join(" ");
+  return String(v);
+}
+
+function applyAttr(el, k, v) {
+  if (k === "class" || k === "class_" || k === "className") {
+    const c = clsx(v);
+    if (c) el.setAttribute("class", c); else el.removeAttribute("class");
+    return;
   }
-  function sync() {
-    const items = getItems() || [];
-    const parent = anchor.parentNode;
-    const seen = {};
-    const nextOrder = [];
-    for (let i = 0; i < items.length; i++) {
-      const key = String(keyFn(items[i], i));
-      seen[key] = true;
-      nextOrder.push(key);
-      const row = rows.get(key);
-      if (!row) {
-        rows.set(key, makeRow(items[i], i, key));
-      } else if (row.item !== items[i]) {
-        killRow(key);
-        rows.set(key, makeRow(items[i], i, key));
-      }
+  if (k === "style" && v && typeof v === "object") {
+    el.removeAttribute("style");
+    for (const key of Object.keys(v)) {
+      if (v[key] != null && v[key] !== false) el.style.setProperty(kebab(key), String(v[key]));
     }
-    const victims = [];
-    rows.forEach((_row, key) => { if (!seen[key]) victims.push(key); });
-    victims.forEach(killRow);
-    order = nextOrder;
-    let ref = anchor;
-    for (let j = order.length - 1; j >= 0; j--) {
-      const els = _liveRowEls(rows.get(order[j]));
-      for (let q = els.length - 1; q >= 0; q--) {
-        if (els[q].nextSibling !== ref) parent.insertBefore(els[q], ref);
-        ref = els[q];
-      }
-    }
+    return;
   }
-  const dispose = effect(sync);
-  return { sync, dispose };
-}
-
-// --- Live conditional: swaps branch DOM in place.
-export function liveIf(anchor, pick, branches) {
-  const state = { idx: -1, nodes: [] };
-  function sync() {
-    const idx = pick();
-    if (idx === state.idx) return;
-    state.nodes.forEach((n) => { if (n.parentNode) n.parentNode.removeChild(n); });
-    state.nodes = [];
-    state.idx = idx;
-    if (idx < 0 || idx >= branches.length) return;
-    const parent = anchor.parentNode;
-    (branches[idx]() || []).forEach((n) => {
-      parent.insertBefore(n, anchor);
-      state.nodes.push(n);
-    });
+  if (PROPS.has(k)) {
+    el[k] = k === "value" ? (v == null ? "" : String(v)) : truth(v);
+    return;
   }
-  const dispose = effect(sync);
-  return { sync, dispose };
+  if (v == null || v === false) { el.removeAttribute(k); return; }
+  if (v === true) { el.setAttribute(k, ""); return; }
+  el.setAttribute(k, URL_ATTRS.has(k) ? safeUrl(v) : String(v));
 }
 
-// --- SSR handoff: replace <!--pw:hid--> ... <!--/pw:hid--> with a live anchor.
-function _findComment(root, text) {
-  const stack = [root];
-  while (stack.length) {
-    const n = stack.pop();
-    const kids = (n && n.childNodes) || [];
-    for (let i = 0; i < kids.length; i++) {
-      const k = kids[i];
-      if (k.nodeType === 8 && k.nodeValue === text) return k;
-      if (k.childNodes && k.childNodes.length) stack.push(k);
-    }
-  }
-  return null;
-}
-
-export function takeover(parent, hid) {
-  const doc = parent.ownerDocument || document;
-  const anchor = doc.createComment("pw-live");
-  const start = _findComment(parent, `pw:${hid}`);
-  if (!start) {
-    parent.appendChild(anchor);
-    return anchor;
-  }
-  const host = start.parentNode || parent;
-  host.insertBefore(anchor, start);
-  let cur = start;
-  while (cur) {
-    const next = cur.nextSibling;
-    host.removeChild(cur);
-    if (cur.nodeType === 8 && cur.nodeValue === `/pw:${hid}`) break;
-    cur = next;
-  }
-  return anchor;
-}
-
-export function dynText(node, fn) {
-  const sync = () => { if (node) node.textContent = fn() == null ? "" : String(fn()); };
-  return effect(sync);
-}
-
-// SSR emits data-pw-id on interactive elements; resolve handlers/inputs by id.
-const _marks = new Map();
-export function _mark_el(root, id, line) { return _resolve(root, id); }
-
-function _resolve(root, id) {
-  if (_marks.has(id)) return _marks.get(id);
-  const scope = root && root.querySelector ? root : (typeof document !== "undefined" ? document : null);
-  if (!scope) return null;
-  const el = scope.querySelector(`[data-pw-id="${CSS.escape(id)}"]`);
-  if (el) _marks.set(id, el);
-  return el;
-}
-
-export function bind_input(root, name, id) {
-  const scope = window.__pyweb_scope || {};
-  const s = scope[name];
-  if (!s) return;
-  const input = id ? _resolve(root, id) : null;
-  const targets = input ? [input]
-    : Array.from((root === document ? document : root).querySelectorAll("input,textarea,select"));
-  targets.forEach((input) => {
-    input.value = s.peek ? s.peek() ?? "" : "";
-    input.addEventListener("input", () => s(input.value));
-    if (s.subscribe) s.subscribe((v) => { if (input.value !== String(v ?? "")) input.value = v ?? ""; });
+function listen(el, ev, handler) {
+  el.addEventListener(ev, (e) => {
+    if (ev === "submit") e.preventDefault();
+    let r;
+    try { r = batch(() => handler(e)); } catch (err) { reportError(err); return; }
+    if (r && typeof r.then === "function") r.then(null, reportError);
   });
 }
 
-export function on(root, event, handler, id) {
-  const scope = window.__pyweb_scope || {};
-  const fn = typeof handler === "function" ? handler : scope[handler];
-  if (typeof fn !== "function") return;
-  const el = id ? _resolve(root, id) : null;
-  if (el) { el.addEventListener(event, (e) => fn(e)); return; }
-  root.addEventListener(event, (e) => fn(e));
+/** Two-way binding between a form control and a signal. */
+export function bind(el, s) {
+  const type = (el.getAttribute("type") || "").toLowerCase();
+  if (type === "checkbox") {
+    effect(() => { el.checked = truth(s()); });
+    el.addEventListener("change", () => s(el.checked));
+    return;
+  }
+  if (type === "radio") {
+    effect(() => { el.checked = el.value === String(s()); });
+    el.addEventListener("change", () => { if (el.checked) s(el.value); });
+    return;
+  }
+  const numeric = typeof s.peek() === "number";
+  effect(() => {
+    const v = s();
+    const str = v == null ? "" : String(v);
+    if (el.value !== str) el.value = str;
+  });
+  el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
+    if (numeric) {
+      const t = el.value.trim();
+      if (t !== "" && !Number.isNaN(Number(t))) s(Number(t));
+    } else {
+      s(el.value);
+    }
+  });
 }
+
+function setProp(el, k, v) {
+  if (k.length > 2 && k[0] === "o" && k[1] === "n") {
+    listen(el, k.slice(2).toLowerCase(), v);
+  } else if (typeof v === "function") {
+    effect(() => applyAttr(el, k, v()));
+  } else {
+    applyAttr(el, k, v);
+  }
+}
+
+function toNodes(v, out) {
+  if (v == null || v === false || v === true) return out;
+  if (Array.isArray(v)) { for (const c of v) toNodes(c, out); return out; }
+  if (typeof Node !== "undefined" && v instanceof Node) {
+    if (v.nodeType === 11) out.push(...Array.from(v.childNodes)); else out.push(v);
+    return out;
+  }
+  if (typeof v === "function") { out.push(...toNodes(dyn(v), [])); return out; }
+  out.push(document.createTextNode(String(v)));
+  return out;
+}
+
+function hasNode(v) {
+  if (typeof Node !== "undefined" && v instanceof Node) return true;
+  return Array.isArray(v) && v.some(hasNode);
+}
+
+/** Create an element. Function-valued props and children are reactive. */
+export function h(tag, props, children) {
+  const el = SVG_TAGS.has(tag) ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
+  // Bindings register first so state is current when on* handlers run;
+  // <select> binds after its <option> children exist.
+  const bound = props && props.$bind;
+  if (bound && tag !== "select") { if (props.type) el.setAttribute("type", props.type); bind(el, bound); }
+  if (props) {
+    for (const k of Object.keys(props)) if (k !== "$bind") setProp(el, k, props[k]);
+  }
+  if (children) for (const n of toNodes(children, [])) el.appendChild(n);
+  if (bound && tag === "select") bind(el, bound);
+  return el;
+}
+
+// Every dynamic region lives between two comment markers, so its content
+// can change shape (text → nodes, branch swaps, nested lists) while the
+// enclosing row or branch can still move/remove it as one unit.
+function region(label) {
+  const frag = document.createDocumentFragment();
+  const start = document.createComment(label);
+  const end = document.createComment("/" + label);
+  frag.appendChild(start);
+  frag.appendChild(end);
+  return [frag, start, end];
+}
+
+function rangeNodes(start, end) {
+  const out = [];
+  for (let n = start; n; n = n.nextSibling) { out.push(n); if (n === end) break; }
+  return out;
+}
+
+function clearBetween(start, end) {
+  let n = start.nextSibling;
+  while (n && n !== end) { const next = n.nextSibling; n.parentNode.removeChild(n); n = next; }
+}
+
+function insertAll(before, nodes) {
+  const parent = before.parentNode;
+  for (const n of nodes) parent.insertBefore(n, before);
+}
+
+/** A reactive hole: text when `fn()` returns a value, nodes when it returns nodes. */
+export function dyn(fn) {
+  const [frag, start, end] = region("pw");
+  let textNode = null;
+  effect(() => {
+    const v = fn();
+    if (hasNode(v)) {
+      clearBetween(start, end);
+      textNode = null;
+      insertAll(end, toNodes(v, []));
+      return;
+    }
+    const s = text(v);
+    if (textNode) { if (textNode.data !== s) textNode.data = s; return; }
+    clearBetween(start, end);
+    textNode = document.createTextNode(s);
+    insertAll(end, [textNode]);
+  });
+  return frag;
+}
+
+const _ids = new WeakMap();
+let _idSeq = 0;
+function keyOf(item) {
+  if (item === null || (typeof item !== "object" && typeof item !== "function")) return item;
+  if (Array.isArray(item)) return "t:" + item.map((x) => {
+    if (x === null || typeof x !== "object") return typeof x + ":" + String(x);
+    if (!_ids.has(x)) _ids.set(x, ++_idSeq);
+    return "o:" + _ids.get(x);
+  }).join("|");
+  return item;
+}
+
+/** Keyed list: unchanged items keep their DOM; only added/removed rows render. */
+export function list(getItems, renderRow) {
+  const [frag, , end] = region("pw-for");
+  let entries = [];
+  onCleanup(() => { for (const e of entries) e.dispose(); entries = []; });
+  effect(() => {
+    const items = iter(getItems());
+    untrack(() => {
+      const pool = new Map();
+      for (const e of entries) {
+        const q = pool.get(e.key);
+        if (q) q.push(e); else pool.set(e.key, [e]);
+      }
+      const next = items.map((item, i) => {
+        const key = keyOf(item);
+        const q = pool.get(key);
+        if (q && q.length) return q.shift();
+        const [rf, rs, re] = region("pw-row");
+        const dispose = root((d) => { const ns = toNodes(renderRow(item, i), []); for (const n of ns) rf.insertBefore(n, re); return d; });
+        return { key, start: rs, end: re, dispose, frag: rf };
+      });
+      for (const q of pool.values()) {
+        for (const e of q) { e.dispose(); for (const n of rangeNodes(e.start, e.end)) n.parentNode.removeChild(n); }
+      }
+      const parent = end.parentNode;
+      let ref = end;
+      for (let j = next.length - 1; j >= 0; j--) {
+        const e = next[j];
+        if (e.frag) { parent.insertBefore(e.frag, ref); e.frag = null; }
+        else if (e.end.nextSibling !== ref) {
+          const ns = rangeNodes(e.start, e.end);
+          for (const n of ns) parent.insertBefore(n, ref);
+        }
+        ref = e.start;
+      }
+      entries = next;
+    });
+  });
+  return frag;
+}
+
+/** Conditional region: renders `yes()` or `no()` and swaps only on change. */
+export function when(test, yes, no) {
+  const [frag, start, end] = region("pw-if");
+  let cur = -1;
+  let disposeBranch = null;
+  onCleanup(() => { if (disposeBranch) disposeBranch(); });
+  effect(() => {
+    const idx = truth(test()) ? 0 : 1;
+    if (idx === cur) return;
+    cur = idx;
+    untrack(() => {
+      if (disposeBranch) disposeBranch();
+      clearBetween(start, end);
+      const branch = idx === 0 ? yes : no;
+      let nodes = [];
+      disposeBranch = root((d) => { if (branch) nodes = toNodes(branch(), []); return d; });
+      insertAll(end, nodes);
+    });
+  });
+  return frag;
+}
+
+/** Run `fn` once the current page/component is in the document. */
+export function onMount(fn) {
+  const run = () => {
+    try {
+      const r = batch(fn);
+      if (r && typeof r.then === "function") r.then(null, reportError);
+    } catch (e) { reportError(e); }
+  };
+  queueMicrotask(run);
+}
+
+/** Render a page into its server-rendered host element. */
+export function mount(name, page) {
+  const run = () => {
+    const host = document.querySelector(`[data-pw-root="${name}"]`) || document.body;
+    const el = document.getElementById("pw-state");
+    let state = {};
+    if (el) { try { state = JSON.parse(el.textContent || "{}"); } catch (e) { reportError(e); } }
+    root(() => {
+      const nodes = toNodes(page(state), []);
+      host.replaceChildren(...nodes);
+    });
+    host.setAttribute("data-pw-ready", "");
+  };
+  if (typeof document === "undefined") return;
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+  else run();
+}
+
+// ----------------------------------------------------- Python semantics
+
+export class PyError extends Error {
+  constructor(type, message) {
+    super(message);
+    this.name = type;
+    this.type = type;
+  }
+}
+function err(type, msg) { return new PyError(type, msg); }
+
+class KW { constructor(o) { Object.assign(this, o); } }
+function kw(o) { return new KW(o); }
+function splitKw(args) {
+  if (args.length && args[args.length - 1] instanceof KW) return [args.slice(0, -1), args[args.length - 1]];
+  return [args, {}];
+}
+
+function isDict(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v) && !(v instanceof Set)
+    && !(v instanceof Map) && !(typeof Node !== "undefined" && v instanceof Node);
+}
+
+export function truth(v) {
+  if (v == null || v === false || v === 0 || v === "" || Number.isNaN(v)) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (v instanceof Set || v instanceof Map) return v.size > 0;
+  if (isDict(v) && Object.getPrototypeOf(v) === Object.prototype) return Object.keys(v).length > 0;
+  return true;
+}
+
+function iter(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") return Array.from(v);
+  if (v instanceof Set) return Array.from(v);
+  if (v instanceof Map) return Array.from(v.keys());
+  if (v && typeof v[Symbol.iterator] === "function") return Array.from(v);
+  if (isDict(v)) return Object.keys(v);
+  throw err("TypeError", `'${typeName(v)}' object is not iterable`);
+}
+
+function typeName(v) {
+  if (v == null) return "NoneType";
+  if (typeof v === "string") return "str";
+  if (typeof v === "boolean") return "bool";
+  if (typeof v === "number") return Number.isInteger(v) ? "int" : "float";
+  if (Array.isArray(v)) return "list";
+  if (v instanceof Set) return "set";
+  if (typeof v === "function") return "function";
+  return "dict";
+}
+
+function repr(v) {
+  if (v == null) return "None";
+  if (v === true) return "True";
+  if (v === false) return "False";
+  if (typeof v === "string") {
+    const q = v.includes("'") && !v.includes('"') ? '"' : "'";
+    return q + v.replace(/\\/g, "\\\\").replace(new RegExp(q, "g"), "\\" + q).replace(/\n/g, "\\n") + q;
+  }
+  if (typeof v === "number") return numStr(v);
+  if (Array.isArray(v)) return "[" + v.map(repr).join(", ") + "]";
+  if (v instanceof Set) return v.size ? "{" + Array.from(v).map(repr).join(", ") + "}" : "set()";
+  if (isDict(v)) return "{" + Object.keys(v).map((k) => repr(k) + ": " + repr(v[k])).join(", ") + "}";
+  return String(v);
+}
+
+function numStr(n) {
+  if (Number.isNaN(n)) return "nan";
+  if (n === Infinity) return "inf";
+  if (n === -Infinity) return "-inf";
+  return String(n);
+}
+
+function str(v) {
+  if (typeof v === "string") return v;
+  if (v instanceof Error) return v.message;
+  if (typeof v === "number") return numStr(v);
+  return repr(v);
+}
+
+/** Text for a `{expr}` hole: like `str()`, except `None` renders nothing. */
+export function text(v) { return v == null ? "" : str(v); }
+
+function eq(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return a == b;
+  if (typeof a === "number" && typeof b === "number") return a === b;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => eq(x, b[i]));
+  if (a instanceof Set && b instanceof Set) return a.size === b.size && Array.from(a).every((x) => b.has(x));
+  if (isDict(a) && isDict(b)) {
+    const ka = Object.keys(a); const kb = Object.keys(b);
+    return ka.length === kb.length && ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && eq(a[k], b[k]));
+  }
+  return false;
+}
+
+function contains(container, x) {
+  if (typeof container === "string") {
+    if (typeof x !== "string") throw err("TypeError", "'in <string>' requires string as left operand");
+    return container.includes(x);
+  }
+  if (Array.isArray(container)) return container.some((y) => eq(x, y));
+  if (container instanceof Set || container instanceof Map) return container.has(x);
+  if (isDict(container)) return Object.prototype.hasOwnProperty.call(container, x);
+  throw err("TypeError", `argument of type '${typeName(container)}' is not iterable`);
+}
+
+function cmp(a, b) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    for (let i = 0; i < Math.min(a.length, b.length); i++) {
+      const c = cmp(a[i], b[i]);
+      if (c) return c;
+    }
+    return a.length - b.length;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function len(v) {
+  if (typeof v === "string" || Array.isArray(v)) return v.length;
+  if (v instanceof Set || v instanceof Map) return v.size;
+  if (isDict(v)) return Object.keys(v).length;
+  throw err("TypeError", `object of type '${typeName(v)}' has no len()`);
+}
+
+function normIndex(seq, i) {
+  if (typeof i !== "number" || !Number.isInteger(i)) throw err("TypeError", "indices must be integers");
+  const n = i < 0 ? seq.length + i : i;
+  if (n < 0 || n >= seq.length) throw err("IndexError", `${typeName(seq)} index out of range`);
+  return n;
+}
+
+function at(obj, key) {
+  if (obj == null) throw err("TypeError", "'NoneType' object is not subscriptable");
+  if (Array.isArray(obj) || typeof obj === "string") return obj[normIndex(obj, key)];
+  if (obj instanceof Map) {
+    if (!obj.has(key)) throw err("KeyError", repr(key));
+    return obj.get(key);
+  }
+  if (!Object.prototype.hasOwnProperty.call(obj, key)) throw err("KeyError", repr(key));
+  return obj[key];
+}
+
+function slice(seq, lo, hi, step) {
+  const n = seq.length;
+  step = step == null ? 1 : step;
+  if (step === 0) throw err("ValueError", "slice step cannot be zero");
+  const clamp = (i, dflt) => {
+    if (i == null) return dflt;
+    if (i < 0) i += n;
+    return step > 0 ? Math.min(Math.max(i, 0), n) : Math.min(Math.max(i, -1), n - 1);
+  };
+  const start = clamp(lo, step > 0 ? 0 : n - 1);
+  const stop = clamp(hi, step > 0 ? n : -1);
+  const out = [];
+  for (let i = start; step > 0 ? i < stop : i > stop; i += step) out.push(seq[i]);
+  return typeof seq === "string" ? out.join("") : out;
+}
+
+function add(a, b) {
+  if (typeof a === "number" && typeof b === "number") return a + b;
+  if (Array.isArray(a) && Array.isArray(b)) return a.concat(b);
+  const ta = typeof a; const tb = typeof b;
+  if ((ta === "string") !== (tb === "string") || ta === "object" || tb === "object") {
+    throw err("TypeError", `unsupported operand type(s) for +: '${typeName(a)}' and '${typeName(b)}'`);
+  }
+  return a + b;
+}
+
+function mul(a, b) {
+  if (typeof a === "number" && typeof b === "number") return a * b;
+  if (typeof b === "string" || Array.isArray(b)) [a, b] = [b, a];
+  if (typeof a === "string") return b > 0 ? a.repeat(b) : "";
+  if (Array.isArray(a)) { let out = []; for (let i = 0; i < b; i++) out = out.concat(a); return out; }
+  throw err("TypeError", `can't multiply '${typeName(a)}' by '${typeName(b)}'`);
+}
+
+function mod(a, b) {
+  if (typeof a === "string") {
+    const args = Array.isArray(b) ? b.slice() : [b];
+    return a.replace(/%([sdrf%]|\.\d+f)/g, (m, t) => {
+      if (t === "%") return "%";
+      const v = args.shift();
+      if (t === "s") return str(v);
+      if (t === "r") return repr(v);
+      if (t === "d") return String(Math.trunc(v));
+      if (t === "f") return Number(v).toFixed(6);
+      return Number(v).toFixed(Number(t.slice(1, -1)));
+    });
+  }
+  if (b === 0) throw err("ZeroDivisionError", "integer modulo by zero");
+  return ((a % b) + b) % b;
+}
+
+function floordiv(a, b) {
+  if (b === 0) throw err("ZeroDivisionError", "integer division by zero");
+  return Math.floor(a / b);
+}
+
+function div(a, b) {
+  if (b === 0) throw err("ZeroDivisionError", "division by zero");
+  return a / b;
+}
+
+function int(v, base) {
+  if (typeof v === "number") return Math.trunc(v);
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (typeof v === "string") {
+    const s = v.trim().replace(/_/g, "");
+    const b = base || 10;
+    const ok = b === 10 ? /^[+-]?\d+$/ : /^[+-]?[0-9a-z]+$/i;
+    const n = parseInt(s, b);
+    if (!ok.test(s) || Number.isNaN(n)) throw err("ValueError", `invalid literal for int() with base ${b}: ${repr(v)}`);
+    return n;
+  }
+  throw err("TypeError", `int() argument must be a string or a number, not '${typeName(v)}'`);
+}
+
+function float(v) {
+  if (typeof v === "number") return v;
+  const n = Number(String(v).trim());
+  if (String(v).trim() === "" || Number.isNaN(n)) throw err("ValueError", `could not convert string to float: ${repr(v)}`);
+  return n;
+}
+
+function round(x, nd) {
+  if (nd == null) {
+    const f = Math.floor(x); const d = x - f;
+    if (d === 0.5) return f % 2 === 0 ? f : f + 1;
+    return Math.round(x);
+  }
+  const m = 10 ** nd;
+  return Math.round(x * m) / m;
+}
+
+function range(a, b, step) {
+  if (b == null) { b = a; a = 0; }
+  step = step == null ? 1 : step;
+  if (step === 0) throw err("ValueError", "range() arg 3 must not be zero");
+  const out = [];
+  for (let i = a; step > 0 ? i < b : i > b; i += step) out.push(i);
+  return out;
+}
+
+function keyed(kwargs) {
+  const key = kwargs.key || ((x) => x);
+  return (x, y) => cmp(key(x), key(y));
+}
+
+function sorted(it, ...rest) {
+  const [, kws] = splitKw(rest);
+  const out = iter(it).slice().sort(keyed(kws));
+  if (kws.reverse) out.reverse();
+  return out;
+}
+
+function extreme(sign, args) {
+  const [pos, kws] = splitKw(args);
+  const items = pos.length === 1 ? iter(pos[0]) : pos;
+  if (!items.length) {
+    if ("default" in kws) return kws.default;
+    throw err("ValueError", "arg is an empty sequence");
+  }
+  const c = keyed(kws);
+  return items.reduce((best, x) => (sign * c(x, best) > 0 ? x : best));
+}
+
+function format(v, spec) {
+  if (!spec) return str(v);
+  const m = /^(?:(.)?([<>^]))?([+\- ])?(0)?(\d+)?(,)?(?:\.(\d+))?([sdfe%g])?$/.exec(spec);
+  if (!m) return str(v);
+  const [, fill = " ", align, sign, zero, width, comma, prec, type] = m;
+  let s;
+  if (type === "%") s = (v * 100).toFixed(prec == null ? 6 : +prec) + "%";
+  else if (type === "f") s = Number(v).toFixed(prec == null ? 6 : +prec);
+  else if (type === "e") s = Number(v).toExponential(prec == null ? 6 : +prec);
+  else if (type === "d") s = String(Math.trunc(v));
+  else if (prec != null && typeof v === "number") s = Number(v).toFixed(+prec);
+  else if (prec != null) s = str(v).slice(0, +prec);
+  else s = str(v);
+  if (comma && typeof v === "number") {
+    const [ip, fp] = s.split(".");
+    s = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (fp != null ? "." + fp : "");
+  }
+  if (sign === "+" && typeof v === "number" && v >= 0) s = "+" + s;
+  if (width) {
+    const w = +width;
+    const f = zero ? "0" : fill;
+    const al = align || (typeof v === "number" ? ">" : "<");
+    if (s.length < w) {
+      const pad = w - s.length;
+      if (al === "<") s = s + f.repeat(pad);
+      else if (al === "^") s = f.repeat(Math.floor(pad / 2)) + s + f.repeat(Math.ceil(pad / 2));
+      else s = f.repeat(pad) + s;
+    }
+  }
+  return s;
+}
+
+function strip(s, chars, left, right) {
+  if (chars == null) {
+    if (left && right) return s.trim();
+    return left ? s.replace(/^\s+/, "") : s.replace(/\s+$/, "");
+  }
+  let a = 0; let b = s.length;
+  while (left && a < b && chars.includes(s[a])) a++;
+  while (right && b > a && chars.includes(s[b - 1])) b--;
+  return s.slice(a, b);
+}
+
+const STR_METHODS = {
+  upper: (s) => s.toUpperCase(),
+  lower: (s) => s.toLowerCase(),
+  strip: (s, c) => strip(s, c, true, true),
+  lstrip: (s, c) => strip(s, c, true, false),
+  rstrip: (s, c) => strip(s, c, false, true),
+  split: (s, sep, max) => {
+    if (sep == null) {
+      const parts = s.trim().split(/\s+/).filter(Boolean);
+      return max == null || max < 0 ? parts : parts.slice(0, max).concat(parts.length > max ? [parts.slice(max).join(" ")] : []);
+    }
+    const parts = s.split(sep);
+    if (max == null || max < 0 || parts.length <= max + 1) return parts;
+    return parts.slice(0, max).concat([parts.slice(max).join(sep)]);
+  },
+  splitlines: (s) => s.split(/\r?\n/).filter((x, i, a) => i < a.length - 1 || x !== ""),
+  join: (s, items) => iter(items).map((x) => {
+    if (typeof x !== "string") throw err("TypeError", `sequence item: expected str instance, ${typeName(x)} found`);
+    return x;
+  }).join(s),
+  replace: (s, a, b, count) => {
+    if (count == null || count < 0) return s.split(a).join(b);
+    let out = s;
+    let i = 0; let from = 0;
+    while (i < count) {
+      const at2 = out.indexOf(a, from);
+      if (at2 < 0) break;
+      out = out.slice(0, at2) + b + out.slice(at2 + a.length);
+      from = at2 + b.length;
+      i++;
+    }
+    return out;
+  },
+  startswith: (s, p) => (Array.isArray(p) ? p.some((x) => s.startsWith(x)) : s.startsWith(p)),
+  endswith: (s, p) => (Array.isArray(p) ? p.some((x) => s.endsWith(x)) : s.endsWith(p)),
+  find: (s, x) => s.indexOf(x),
+  rfind: (s, x) => s.lastIndexOf(x),
+  index: (s, x) => { const i = s.indexOf(x); if (i < 0) throw err("ValueError", "substring not found"); return i; },
+  count: (s, x) => (x === "" ? s.length + 1 : s.split(x).length - 1),
+  title: (s) => s.toLowerCase().replace(/(^|[^a-z0-9])([a-z])/g, (m, a, b) => a + b.toUpperCase()),
+  capitalize: (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(),
+  isdigit: (s) => /^\d+$/.test(s),
+  isnumeric: (s) => /^\d+$/.test(s),
+  isalpha: (s) => /^[A-Za-z]+$/.test(s),
+  isalnum: (s) => /^[A-Za-z0-9]+$/.test(s),
+  isspace: (s) => /^\s+$/.test(s),
+  isupper: (s) => /[A-Z]/.test(s) && s === s.toUpperCase(),
+  islower: (s) => /[a-z]/.test(s) && s === s.toLowerCase(),
+  zfill: (s, w) => (s.length >= w ? s : (s[0] === "-" ? "-" + s.slice(1).padStart(w - 1, "0") : s.padStart(w, "0"))),
+  ljust: (s, w, f = " ") => s.padEnd(w, f),
+  rjust: (s, w, f = " ") => s.padStart(w, f),
+  center: (s, w, f = " ") => format(s, `${f}^${w}`),
+  format: (s, ...args) => {
+    const [pos, kws] = splitKw(args);
+    let auto = 0;
+    return s.replace(/\{\{|\}\}|\{([^{}:]*)(?::([^{}]*))?\}/g, (m, name, spec) => {
+      if (m === "{{") return "{";
+      if (m === "}}") return "}";
+      const v = name === "" || name == null ? pos[auto++] : /^\d+$/.test(name) ? pos[+name] : kws[name];
+      return format(v, spec);
+    });
+  },
+};
+
+const LIST_METHODS = {
+  append: (a, x) => { a.push(x); },
+  extend: (a, xs) => { a.push(...iter(xs)); },
+  insert: (a, i, x) => { a.splice(i < 0 ? Math.max(0, a.length + i) : i, 0, x); },
+  pop: (a, i) => {
+    if (!a.length) throw err("IndexError", "pop from empty list");
+    return a.splice(normIndex(a, i == null ? -1 : i), 1)[0];
+  },
+  remove: (a, x) => {
+    const i = a.findIndex((y) => eq(x, y));
+    if (i < 0) throw err("ValueError", "list.remove(x): x not in list");
+    a.splice(i, 1);
+  },
+  index: (a, x) => {
+    const i = a.findIndex((y) => eq(x, y));
+    if (i < 0) throw err("ValueError", `${repr(x)} is not in list`);
+    return i;
+  },
+  count: (a, x) => a.filter((y) => eq(x, y)).length,
+  clear: (a) => { a.length = 0; },
+  sort: (a, ...rest) => {
+    const [, kws] = splitKw(rest);
+    a.sort(keyed(kws));
+    if (kws.reverse) a.reverse();
+  },
+  reverse: (a) => { a.reverse(); },
+  copy: (a) => a.slice(),
+};
+
+const DICT_METHODS = {
+  get: (d, k, dflt = null) => (Object.prototype.hasOwnProperty.call(d, k) ? d[k] : dflt),
+  keys: (d) => Object.keys(d),
+  values: (d) => Object.values(d),
+  items: (d) => Object.entries(d),
+  pop: (d, k, ...dflt) => {
+    if (Object.prototype.hasOwnProperty.call(d, k)) { const v = d[k]; delete d[k]; return v; }
+    if (dflt.length) return dflt[0];
+    throw err("KeyError", repr(k));
+  },
+  update: (d, o) => { Object.assign(d, o instanceof KW ? { ...o } : o); },
+  setdefault: (d, k, v = null) => { if (!Object.prototype.hasOwnProperty.call(d, k)) d[k] = v; return d[k]; },
+  copy: (d) => ({ ...d }),
+  clear: (d) => { for (const k of Object.keys(d)) delete d[k]; },
+};
+
+const SET_METHODS = {
+  add: (s, x) => { s.add(x); },
+  discard: (s, x) => { s.delete(x); },
+  remove: (s, x) => { if (!s.delete(x)) throw err("KeyError", repr(x)); },
+  clear: (s) => { s.clear(); },
+  copy: (s) => new Set(s),
+};
+
+/** Call a Python method on a JS value (`obj.method(*args)`). */
+function m(obj, name, ...args) {
+  let table = null;
+  if (typeof obj === "string") table = STR_METHODS;
+  else if (Array.isArray(obj)) table = LIST_METHODS;
+  else if (obj instanceof Set) table = SET_METHODS;
+  else if (isDict(obj) && typeof obj[name] !== "function") table = DICT_METHODS;
+  if (table && table[name]) {
+    const r = table[name](obj, ...args);
+    return r === undefined ? null : r;
+  }
+  if (obj != null && typeof obj[name] === "function") {
+    const [pos] = splitKw(args);
+    return obj[name](...pos);
+  }
+  throw err("AttributeError", `'${typeName(obj)}' object has no attribute '${name}'`);
+}
+
+function clone(v) {
+  if (Array.isArray(v)) return v.slice();
+  if (v instanceof Set) return new Set(v);
+  if (v instanceof Map) return new Map(v);
+  if (v && typeof v === "object") return { ...v };
+  return v;
+}
+
+function walk(rootVal, path) {
+  let cur = rootVal;
+  for (const k of path) {
+    const idx = Array.isArray(cur) ? normIndex(cur, k) : k;
+    if (Array.isArray(cur) || isDict(cur)) {
+      if (!Array.isArray(cur) && !Object.prototype.hasOwnProperty.call(cur, idx)) throw err("KeyError", repr(k));
+      cur[idx] = clone(cur[idx]);
+      cur = cur[idx];
+    } else {
+      throw err("TypeError", `'${typeName(cur)}' object is not subscriptable`);
+    }
+  }
+  return cur;
+}
+
+/** Mutate state copy-on-write: `todos.append(x)` → new list, then notify. */
+function mut(s, path, fn) {
+  const next = clone(s.peek());
+  const r = fn(walk(next, path));
+  s(next);
+  return r === undefined ? null : r;
+}
+
+function setitem(obj, k, v) {
+  if (Array.isArray(obj)) obj[normIndex(obj, k)] = v;
+  else if (obj instanceof Map) obj.set(k, v);
+  else obj[k] = v;
+}
+
+function delitem(obj, k) {
+  if (Array.isArray(obj)) obj.splice(normIndex(obj, k), 1);
+  else if (obj instanceof Map) obj.delete(k);
+  else {
+    if (!Object.prototype.hasOwnProperty.call(obj, k)) throw err("KeyError", repr(k));
+    delete obj[k];
+  }
+}
+
+/** `state[a][b] = v` with structural sharing so keyed rows see a new item. */
+function setp(s, path, v) {
+  if (!path.length) { s(v); return; }
+  const next = clone(s.peek());
+  setitem(walk(next, path.slice(0, -1)), path[path.length - 1], v);
+  s(next);
+}
+
+function getp(v, path) {
+  for (const k of path) v = at(v, k);
+  return v;
+}
+
+export const py = {
+  kw, truth, iter, str, repr, text, eq, contains, len, at, slice, add, mul, mod, div, floordiv,
+  int, float, round, range, sorted, format, m, mut, setp, getp, setitem, delitem, cmp,
+  bool: (v) => truth(v),
+  abs: (v) => Math.abs(v),
+  min: (...a) => extreme(-1, a),
+  max: (...a) => extreme(1, a),
+  sum: (it, start = 0) => iter(it).reduce((acc, x) => add(acc, x), start),
+  any: (it) => iter(it).some(truth),
+  all: (it) => iter(it).every(truth),
+  list: (it) => (it == null ? [] : iter(it).slice()),
+  tuple: (it) => (it == null ? [] : iter(it).slice()),
+  set: (it) => new Set(it == null ? [] : iter(it)),
+  dict: (it, ...rest) => {
+    const [, kws] = splitKw(rest);
+    let base = {};
+    if (it instanceof KW) base = { ...it };
+    else if (isDict(it)) base = { ...it };
+    else if (it != null) base = Object.fromEntries(iter(it));
+    return Object.assign(base, kws);
+  },
+  reversed: (it) => iter(it).slice().reverse(),
+  enumerate: (it, start = 0) => iter(it).map((x, i) => [i + start, x]),
+  zip: (...its) => {
+    const arrs = its.map(iter);
+    const n = arrs.length ? Math.min(...arrs.map((a) => a.length)) : 0;
+    return range(n).map((i) => arrs.map((a) => a[i]));
+  },
+  chr: (n) => String.fromCodePoint(n),
+  ord: (c) => c.codePointAt(0),
+  isinstance: (v, t) => (Array.isArray(t) ? t : [t]).some((x) => x === typeName(v)
+    || (x === "float" && typeof v === "number") || (x === "tuple" && Array.isArray(v))),
+  print: (...a) => console.log(...splitKw(a)[0].map(str)),
+  error: (type, msg) => err(type, msg == null ? "" : str(msg)),
+  and: (a, f) => (truth(a) ? f() : a),
+  or: (a, f) => (truth(a) ? a : f()),
+  exc: (e, types) => types.includes("Exception") || types.includes("BaseException")
+    || types.includes((e && (e.type || e.name)) || "Error"),
+  delp: (s, path) => {
+    const next = clone(s.peek());
+    delitem(walk(next, path.slice(0, -1)), path[path.length - 1]);
+    s(next);
+  },
+};
+
+// --------------------------------------------------------------------- RPC
 
 // Typed RPC error: err.code is one of unauthenticated/forbidden/
 // validation_error/not_found/rate_limited/timeout/conflict/csrf_failed/
@@ -226,6 +1007,7 @@ export class RPCError extends Error {
   constructor(name, code, message, status, details, retryAfter) {
     super(message || `${name}: ${code}`);
     this.name = "RPCError";
+    this.type = "RPCError";
     this.rpc = name;
     this.code = code;
     this.status = status;
@@ -234,12 +1016,14 @@ export class RPCError extends Error {
   }
 }
 
+let _qid = 0;
 let _csrf = null;
 export function setCsrfToken(token) { _csrf = token; }
 export function getCsrfToken() {
   if (_csrf) return _csrf;
-  const m = document.cookie.match(/(?:^|;\s*)pyweb_csrf=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : null;
+  if (typeof document === "undefined") return null;
+  const m2 = document.cookie.match(/(?:^|;\s*)pyweb_csrf=([^;]+)/);
+  return m2 ? decodeURIComponent(m2[1]) : null;
 }
 
 const RETRYABLE = new Set([502, 503, 504]);
@@ -275,14 +1059,17 @@ export async function rpc(name, args = {}, opts = {}) {
       });
       const ctype = res.headers.get("Content-Type") || "";
       // Streaming RPC: application/x-ndjson, one {"chunk"} per line.
-      if (res.ok && ctype.includes("x-ndjson") && typeof opts.onChunk === "function") {
-        const text = await res.text();
-        let result = null;
-        for (const line of text.split("\n")) {
+      if (res.ok && ctype.includes("x-ndjson")) {
+        const body = await res.text();
+        const chunks = [];
+        for (const line of body.split("\n")) {
           if (!line.trim()) continue;
-          try { const obj = JSON.parse(line); if ("chunk" in obj) { opts.onChunk(obj.chunk); result = obj.chunk; } } catch { /* skip */ }
+          try {
+            const obj = JSON.parse(line);
+            if ("chunk" in obj) { chunks.push(obj.chunk); if (typeof opts.onChunk === "function") opts.onChunk(obj.chunk); }
+          } catch { /* skip malformed line */ }
         }
-        return result;
+        return chunks;
       }
       let data = null;
       try { data = await res.json(); } catch { data = null; }
@@ -291,19 +1078,18 @@ export async function rpc(name, args = {}, opts = {}) {
         const code = typeof e === "object" ? (e.code || `http_${res.status}`) : "internal";
         const msg = typeof e === "object" ? (e.message || `RPC ${name} failed: ${res.status}`) : String(e);
         const retryAfter = res.headers.get("Retry-After");
-        const err = new RPCError(name, code, msg, res.status, (typeof e === "object" && e.details) || {}, retryAfter ? parseInt(retryAfter, 10) : null);
-        const retryable = res.status === 429 || RETRYABLE.has(res.status) || (opts.retryNetwork !== false && (res.status === 0 || res.status >= 500));
+        const rerr = new RPCError(name, code, msg, res.status, (typeof e === "object" && e.details) || {}, retryAfter ? parseInt(retryAfter, 10) : null);
+        const retryable = res.status === 429 || RETRYABLE.has(res.status);
         if (attempt + 1 < attempts && retryable) {
-          lastErr = err;
+          lastErr = rerr;
           let delay = Math.min(100 * 2 ** attempt, 2000);
           if (res.status === 429 && retryAfter) delay = parseInt(retryAfter, 10) * 1000 || delay;
-          delay += Math.random() * 100;
-          await _sleep(delay);
+          await _sleep(delay + Math.random() * 100);
           continue;
         }
-        throw err;
+        throw rerr;
       }
-      return data.result;
+      return data ? data.result : null;
     } catch (e) {
       if (e && e.name === "AbortError") { e.rpc = e.rpc || name; throw e; }
       if (e instanceof RPCError) throw e;
@@ -341,9 +1127,9 @@ export function subscribe(channel, onMsg, opts = {}) {
         const res = await fetch(`/__pyweb/poll?channel=${encodeURIComponent(channel)}&since=${lastId}`);
         if (!res.ok) throw new Error(`poll ${res.status}`);
         const data = await res.json();
-        for (const m of data.messages || []) { lastId = m.id; onMsg(m.data); }
+        for (const msg of data.messages || []) { lastId = msg.id; onMsg(msg.data); }
       } catch { /* retry below */ }
-      await new Promise((r) => setTimeout(r, opts.interval || 2500));
+      await _sleep(opts.interval || 2500);
     }
   }
   poll();

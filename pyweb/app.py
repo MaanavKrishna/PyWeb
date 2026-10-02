@@ -4,7 +4,11 @@ from __future__ import annotations
 
 
 class App:
-    def __init__(self, database=None, cache=None, auth=None, plugins=()):
+    def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
+                 title="PyWeb", stylesheets=(), lang="en"):
+        self.title = title
+        self.stylesheets = list(stylesheets)
+        self.lang = lang
         self.database = database
         self.cache = cache
         self.auth = auth
@@ -14,10 +18,11 @@ class App:
         for plugin in plugins:
             self.use(plugin)
 
-    def page(self, route, *, render="server"):
+    def page(self, route, *, title=None, render="server"):
         def deco(fn):
-            self.pages.append((route, fn.__name__, {"render": render}))
+            self.pages.append((route, fn.__name__, {"render": render, "title": title}))
             fn.__pyweb_route__ = route
+            fn.__pyweb_title__ = title
             fn.__pyweb_render__ = render
             return fn
 

@@ -1,10 +1,7 @@
-"""Track E port, adapted: reference apps compile + serve for real.
+"""Reference apps: compile, server-render and serve over real HTTP.
 
-Track E's harness assumed raw-HTML ``.pyweb`` files with ``data-pw-id``
-markers. The real PyWeb compiler takes Python+markup ``.pyweb`` sources,
-emits ``data-pw-id``/``pw-bind`` markers itself, and serves SSR over HTTP.
-These contract tests assert the same properties (SSR nodes, hydration
-markers, RPC roundtrip, validation) against the real pipeline.
+Interactive behaviour of the same apps is covered in a real browser by
+``tests/e2e/test_examples_browser.py``.
 """
 
 from __future__ import annotations
@@ -22,7 +19,7 @@ from pyweb.runtime.server import Request, Server
 
 ROOT = Path(__file__).parent.parent
 EXAMPLES = ROOT / "examples"
-APPS = ["counter", "todo", "blog", "auth", "chat"]
+APPS = ["counter", "todo", "blog", "auth", "chat", "showcase"]
 
 
 def _src(app: str) -> str:
@@ -45,17 +42,20 @@ class TestAppContracts:
     def test_ssr_has_hydration_markers_when_dynamic(self, app):
         out = compile_source(_src(app))
         page = next(iter(out["pages"].values()))
-        if "bind_text" in page["js"] or "on(" in page["js"]:
-            assert "data-pw-id" in page["html_body"] or "pw-bind" in page["html_body"], app
+        for page in out["pages"].values():
+            if page["js"]:
+                assert 'data-pw-root="' in page["html"] and 'id="pw-state"' in page["html"], app
+            else:
+                assert "<script" not in page["html"], app
 
 
 class TestCounterApp:
     def test_reactive_nodes_and_build(self):
         out = compile_source(_src("counter"))
         page = out["pages"]["Home"]
-        assert 'pw-bind="count"' in page["html_body"]
-        assert "increment" in page["js"]
-        assert "count(count() + 1)" in page["js"]
+        assert '<button id="inc">Count: 0</button>' in page["html_body"]
+        assert page["signals"] == ["count", "step"]
+        assert "count($py.add(count(), step()))" in page["js"]
 
 
 class TestTodoApp:
@@ -110,4 +110,4 @@ def test_serve_ssr_200():
         with urllib.request.urlopen(url + "/") as res:
             assert res.status == 200
             body = res.read().decode()
-            assert 'pw-bind="count"' in body
+            assert 'data-pw-root="Home"' in body and '"count":0' in body

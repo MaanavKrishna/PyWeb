@@ -1,115 +1,158 @@
-"""Top-level pipeline: source → AppGraph + HTML/JS artifacts."""
+"""Top-level pipeline: `.pyweb` source → app graph + per-page HTML/JS.
+
+``compile_source`` is pure: it never imports or executes the app. Page
+HTML produced here is a *static prerender* (literal and browser-computable
+values only). ``pyweb dev``/``serve``/ASGI render pages per request with
+real server values via :mod:`pyweb.app_loader`.
+"""
 
 from __future__ import annotations
 
 import ast
+import builtins
+import hashlib
 
 from . import parser as P
-from .analyzer import func_info
-from .codegen.emit_html import emit_html, emit_page
-from .codegen.emit_js import emit_js
 from .codegen.ir import build_graph, to_text
-from .placement import place_page
-from .reactivity import compute_reactive
+from .errors import CompileError
+from .lower import Emitter, classify, scan_module
 from .rpc import rpc_specs
 
 
-def _handler_lowers(func_node, signals):
-    """Lower page-level nested event handlers (e.g. `count += 1`) to JS bodies."""
-    from .codegen.emit_js import _py2js
-    from .reactivity import handler_names as _hn
-    # UI association happens per-page in the caller; here lower all nested fns.
-    out = {}
-    nested = [n for n in func_node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    for fn in nested:
-        stmts = []
-        for stmt in fn.body:
-            try:
-                code = ast.unparse(stmt) if hasattr(ast, "unparse") else ""
-            except Exception:  # noqa: BLE001
-                continue
-            if "__pyweb_ui__" in code:
-                continue
-            stmts.append(code)
-        out[fn.name] = {"body_js": "; ".join(s for s in stmts if s) or "",
-                        "line": fn.lineno, "signals": list(signals)}
-        out[fn.name]["body_js"] = _py2js(out[fn.name]["body_js"], signals)
-    return out
+def static_state(info, ctx, args=None):
+    """Evaluate a page/component's state at compile time.
+
+    Literals and expressions over them are evaluated with Python; anything
+    needing the server (or failing) is ``None``.
+    """
+    env = {"__builtins__": builtins}
+    env.update(static_globals(ctx))
+    env.update(args or {})
+    for name in info.order:
+        value = info.inits.get(name)
+        if value is None or info.origin.get(name) == "server":
+            env.setdefault(name, None)
+            continue
+        try:
+            env[name] = eval(compile(ast.Expression(value), "<pyweb-static>", "eval"), env)  # noqa: S307
+        except Exception:  # noqa: BLE001
+            env[name] = None
+    env.pop("__builtins__", None)
+    return env
 
 
-def _initial_values(func_node):
-    vals = {}
-    for n in func_node.body:
-        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
-            try:
-                vals[n.targets[0].id] = ast.literal_eval(n.value)
-            except Exception:
-                pass
-        elif isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.value is not None:
-            try:
-                vals[n.target.id] = ast.literal_eval(n.value)
-            except Exception:
-                pass
-    return vals
+def static_globals(ctx):
+    """Module constants plus browser-safe helpers (pure Python) for prerendering."""
+    cached = getattr(ctx, "_static_globals", None)
+    if cached is not None:
+        return cached
+    env = {"__builtins__": builtins}
+    env.update(ctx.modconsts)
+    safe = [ctx.helpers[n] for n, js in ctx.helper_js.items() if js]
+    if safe:
+        mod = ast.Module(body=safe, type_ignores=[])
+        try:
+            exec(compile(mod, ctx.filename, "exec"), env)  # noqa: S102 - pure helpers
+        except Exception:  # noqa: BLE001
+            pass
+    env.pop("__builtins__", None)
+    ctx._static_globals = env
+    return env
+
+
+def _renderer(ctx, globals_=None, strict=False):
+    from pyweb.ssr import Renderer
+
+    def component_state(name, props):
+        comp = ctx.components[name]
+        args = {}
+        for p in comp.params:
+            if p in props:
+                args[p] = props[p]
+            elif p in comp.defaults:
+                try:
+                    args[p] = ast.literal_eval(comp.defaults[p])
+                except ValueError:
+                    args[p] = None
+            else:
+                args[p] = None
+        return comp.ui, static_state(comp, ctx, args)
+
+    return Renderer(globals_ or static_globals(ctx), component_state=component_state, strict=strict)
 
 
 def compile_source(source, filename="<pyweb>", route="/", title="PyWeb"):
-    tree, ui_all, pages = P.parse_source(source, filename)
+    try:
+        return _compile(source, filename, route, title)
+    except CompileError as exc:
+        if not exc.filename or exc.filename == "<pyweb>":
+            exc.with_file(filename)
+        raise
+
+
+def _compile(source, filename, route, title):
+    from pyweb.ssr import page_html
+    tree, ui_all, _pages = P.parse_source(source, filename)
     rpc = rpc_specs(tree)
-    # Find page functions (@app.page or all top-level fns with UI).
-    page_nodes = []
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            decos = [ast.unparse(d) if hasattr(ast, "unparse") else "" for d in node.decorator_list]
-            if any("page" in d for d in decos) or node.name == "Home":
-                page_nodes.append(node)
-    if not page_nodes:
-        page_nodes = [n for n, _ in pages if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))][:1]
+    ctx, pages, components = scan_module(tree, ui_all, filename)
+    for comp in components:
+        classify(comp, ctx)
+    for info in pages:
+        classify(info, ctx)
+    emitter = Emitter(ctx)
     artifacts = {}
-    all_signals, all_computeds, all_place, all_edges = {}, {}, {}, []
-    page_infos = []
-    for fn in page_nodes:
-        span = (fn.lineno, getattr(fn, "end_lineno", fn.lineno))
-        ui = [n for n in ui_all if span[0] <= getattr(n, "line", 0) <= span[1]]
-        signals, computeds, edges = compute_reactive(fn, ui)
-        placement = place_page(tree, fn, ui, signals, computeds)
-        initial = _initial_values(fn)
-        params = [a.arg for a in fn.args.args]
-        route_of = route
-        for d in fn.decorator_list:
-            txt = ast.unparse(d) if hasattr(ast, "unparse") else ""
-            if "page" in txt:
-                import re
-                m = re.search(r"""['\"]([^'\"]+)['\"]""", txt)
-                if m:
-                    route_of = m.group(1)
-        handlers = _handler_lowers(fn, signals)
-        smap: list = []
-        js = emit_js(fn.name, ui, signals, computeds, initial, rpc, handlers=handlers, sourcemap_out=smap)
-        html_body = emit_html(ui, initial, computeds=computeds)
-        import hashlib as _hashlib
-        _v = _hashlib.sha256(js.encode()).hexdigest()[:8]
-        html = emit_page(route_of, title, ui, initial, js_url=f"/static/{fn.name}.js?v={_v}",
-                         computeds=computeds)
-        artifacts[fn.name] = {"ui": ui, "signals": signals, "computeds": computeds,
-                              "placement": placement, "edges": edges, "initial": initial,
-                              "js": js, "html": html, "html_body": html_body,
-                              "lineno": fn.lineno, "params": params, "route": route_of,
-                              "sourcemap": smap, "handlers": handlers,
-                              "source": ast.get_source_segment(source, fn) or ""}
+    page_infos, all_signals, all_computeds, all_place, all_edges = [], {}, {}, {}, []
+    for info in pages:
+        js = emitter.page_js(info)
+        args = {p: None for p in info.params}
+        env = static_state(info, ctx, args)
+        body = _renderer(ctx).render(info.ui, env)
+        state = {k: env.get(k) for k in info.sent}
+        version = hashlib.sha256(js.encode()).hexdigest()[:10]
+        js_url = f"/static/{info.name}.js?v={version}" if js else None
+        app_cfg = ctx.app_config
+        page_title = info.title or app_cfg.get("title") or title
+        html = page_html(name=info.name, title=page_title, body=body, state=state, js_url=js_url,
+                         css_urls=app_cfg.get("stylesheets") or (), lang=app_cfg.get("lang") or "en")
+        signals = [n for n in info.order if info.kinds[n] == "signal"]
+        computeds = {n: {"code": ast.unparse(info.inits[n]),
+                         "deps": sorted(d for d in info.deps.get(n, ()) if d in info.kinds),
+                         "line": info.inits[n].lineno}
+                     for n in info.order if info.kinds[n] == "computed"}
+        edges = [(s, "__dom__") for s in signals if s in info.ui_names]
+        for n, c in computeds.items():
+            edges += [(d, n) for d in c["deps"]]
+            edges.append((n, "__dom__"))
+        placement = dict(info.reasons)
+        placement["__page__"] = ("browser+server",
+                                 "server renders HTML per request; browser takes over interactivity"
+                                 if js else "static HTML (no JavaScript shipped)")
+        sourcemap = [(f"sig {s}", info.inits[s].lineno if s in info.inits else info.node.lineno)
+                     for s in signals]
+        sourcemap += [(f"handler {h}", node.lineno) for h, node in info.handlers.items()]
+        initial = {n: env.get(n) for n in info.order}
+        artifacts[info.name] = {
+            "ui": info.ui, "signals": signals, "computeds": computeds,
+            "placement": placement, "edges": edges, "initial": initial,
+            "js": js, "html": html, "html_body": body, "lineno": info.node.lineno,
+            "params": info.params, "route": info.route or route, "sourcemap": sourcemap,
+            "handlers": {h: {"line": n.lineno} for h, n in info.handlers.items()},
+            "source": ast.get_source_segment(source, info.node) or "",
+            "dynamic": bool(info.params) or any(info.origin[n] == "server" for n in info.order),
+            "state_keys": list(info.sent), "title": page_title, "info": info, "js_url": js_url,
+        }
         all_signals.update({s: initial.get(s) for s in signals})
         all_computeds.update(computeds)
         all_place.update(placement)
         all_edges.extend(edges)
-        page_infos.append({"name": fn.name, "route": route_of, "signals": signals})
-    # Security gate: a secret-like browser signal only leaks when its initial
-    # value is a non-empty literal baked into the SSR/JS bundle. Empty form
-    # state (e.g. `password = ""` bound to an <input>) originates in the
-    # browser and is safe.
-    for s, v in all_signals.items():
-        if v not in (None, "", 0, False) and any(
-            h in s.upper() for h in ("SECRET", "PASSWORD", "API_KEY", "TOKEN", "PRIVATE")
-        ):
-            raise ValueError(f"ERROR: server secret {s!r} referenced from browser-executed code")
+        page_infos.append({"name": info.name, "route": info.route or route, "signals": signals})
+    for name, callers in ctx.rpc_calls.items():
+        callers = sorted(c for c in callers if not c.startswith("<"))
+        if callers:
+            all_place[name] = ("server", f"@server function; browser calls it over RPC from "
+                                         f"{', '.join(callers)}")
+    for spec in rpc:
+        all_place.setdefault(spec["name"], ("server", "@server function (not called from browser code)"))
     graph = build_graph(page_infos, rpc, all_signals, all_computeds, all_place, all_edges)
-    return {"graph": graph, "ir_text": to_text(graph), "rpc": rpc, "pages": artifacts}
+    return {"graph": graph, "ir_text": to_text(graph), "rpc": rpc, "pages": artifacts,
+            "components": {c.name: c for c in components}, "context": ctx}

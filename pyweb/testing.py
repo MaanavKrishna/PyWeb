@@ -1,51 +1,154 @@
-"""Test harness: virtual browser over compiled apps (no real browser)."""
+"""Testing helpers.
+
+* :class:`TestClient` — in-process HTTP client for a `.pyweb` app. Pages
+  render exactly as in production, ``rpc()`` goes through the real RPC
+  endpoint (validation, errors, cookies), and cookies persist across
+  calls so sessions work::
+
+      from pyweb.testing import TestClient
+
+      client = TestClient("app.pyweb")
+      assert "Todos" in client.get("/").text
+      client.rpc("login", email="a@b.c", password="secret123")
+      assert client.get("/account").status == 200
+
+* :func:`serve` — run the app on a free local port for real-browser tests
+  (e.g. Playwright)::
+
+      with serve("app.pyweb") as url:
+          page.goto(url)
+"""
 
 from __future__ import annotations
 
+import contextlib
 import json
-import re
+import threading
+
+from .rpc import RPCError
 
 
-class VirtualPage:
-    def __init__(self, client, path, html):
-        self.client = client
-        self.path = path
-        self.html = html
+class TestResponse:
+    def __init__(self, status, headers, body):
+        self.status = status
+        self.headers = headers
+        self.body = body
 
-    def text(self, needle):
-        hay = re.sub(r"<[^>]+>", " ", self.html)
-        return needle in hay
+    @property
+    def text(self):
+        return self.body.decode("utf-8", "replace")
 
-    def click(self, label):
-        # Simulate: re-render is server-driven in tests; record the event.
-        self.client.events.append(("click", self.path, label))
-        return self
+    def json(self):
+        return json.loads(self.body)
 
-    def fill(self, name, value):
-        self.client.events.append(("fill", self.path, name, value))
-        return self
+    def header(self, name):
+        name = name.lower()
+        return next((v for k, v in self.headers if k.lower() == name), None)
+
+    def __repr__(self):
+        return f"<TestResponse {self.status}>"
 
 
-class Client:
-    """Full-stack test client: routing + RPC without sockets."""
+class TestClient:
+    __test__ = False  # not a pytest test class
 
-    def __init__(self, compiled, rpc_impls=None):
-        from .runtime.server import Server
-        self.server = Server(compiled)
-        for fn in (rpc_impls or {}).values():
-            self.server.register_rpc(fn)
-        self.events: list = []
+    def __init__(self, app="app.pyweb", *, source=None, **server_kwargs):
+        from .hosting import Site
+        if source is not None:
+            import os
+            import tempfile
+            tmp = tempfile.mkdtemp(prefix="pyweb-test-")
+            app = os.path.join(tmp, "app.pyweb")
+            with open(app, "w", encoding="utf-8") as fh:
+                fh.write(source)
+        self.site = Site(app, debug=True, **server_kwargs)
+        self.cookies = {}
 
-    def open(self, path):
-        from .runtime.server import Request
-        resp = self.server.handle(Request("GET", path))
-        assert resp.status == 200, f"GET {path} -> {resp.status}"
-        return VirtualPage(self, path, resp.body)
+    @property
+    def app(self):
+        return self.site.app
 
-    def rpc(self, name, args=None):
-        from .runtime.server import Request
-        resp = self.server.handle(Request("POST", f"/__pyweb/rpc/{name}",
-                                          body=json.dumps({"args": args or {}}).encode()))
-        payload = json.loads(resp.body)
-        assert resp.status == 200, f"RPC {name} -> {resp.status}: {payload}"
-        return payload["result"]
+    def _headers(self, extra=None):
+        h = {"Host": "testserver"}
+        if self.cookies:
+            h["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.cookies.items())
+        h.update(extra or {})
+        return h
+
+    def _store_cookies(self, headers):
+        for k, v in headers:
+            if k.lower() != "set-cookie":
+                continue
+            pair = v.split(";", 1)[0]
+            name, _, value = pair.partition("=")
+            if "Max-Age=0" in v or not value:
+                self.cookies.pop(name.strip(), None)
+            else:
+                self.cookies[name.strip()] = value.strip()
+
+    def request(self, method, path, body=b"", headers=None):
+        status, hdrs, raw = self.site.respond(method, path, self._headers(headers), body)
+        self._store_cookies(hdrs)
+        return TestResponse(status, hdrs, raw)
+
+    def get(self, path):
+        return self.request("GET", path)
+
+    def post(self, path, data=None, headers=None):
+        body = json.dumps(data).encode() if data is not None else b""
+        return self.request("POST", path, body, {"Content-Type": "application/json", **(headers or {})})
+
+    def rpc(self, function, /, **args):
+        """Call a server function like the browser does; raise RPCError on failure."""
+        resp = self.post(f"/__pyweb/rpc/{function}", {"args": args})
+        payload = resp.json() if resp.body else {}
+        if resp.status != 200 or "error" in payload:
+            err = payload.get("error") or {}
+            raise RPCError(err.get("code", f"http_{resp.status}"), err.get("message", ""),
+                           status=resp.status, details=err.get("details"))
+        return payload.get("result")
+
+
+@contextlib.contextmanager
+def serve(app="app.pyweb", *, host="127.0.0.1", **site_kwargs):
+    """Serve ``app`` (a `.pyweb` file or built dist) on a free port; yield its base URL."""
+    import http.server
+
+    from .hosting import Site
+    from .serve import ThreadedServer
+
+    site = Site(app, **site_kwargs)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _go(self, method, body=b""):
+            status, headers, raw = site.respond(method, self.path, dict(self.headers), body)
+            self.send_response(status)
+            for k, v in headers:
+                if k.lower() != "content-length":
+                    self.send_header(k, v)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            if method != "HEAD":
+                self.wfile.write(raw)
+
+        def do_GET(self):  # noqa: N802
+            self._go("GET")
+
+        def do_HEAD(self):  # noqa: N802
+            self._go("HEAD")
+
+        def do_POST(self):  # noqa: N802
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            self._go("POST", self.rfile.read(n) if n else b"")
+
+        def log_message(self, *a):
+            pass
+
+    httpd = ThreadedServer((host, 0), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://{host}:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

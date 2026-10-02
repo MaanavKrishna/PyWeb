@@ -141,7 +141,14 @@ def test_transaction_rolls_back_on_error():
 
 def test_connect_url_routing():
     assert isinstance(_db.connect(":memory:"), _db.SQLiteDB)
-    assert isinstance(_db.connect("sqlite:///tmp/x.db"), _db.SQLiteDB)
+    assert isinstance(_db.connect("sqlite:////tmp/x.db"), _db.SQLiteDB)
+
+
+def test_sqlite_url_paths(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert _db.connect("sqlite:///rel.db").path == "rel.db"
+    assert _db.connect(f"sqlite:///{tmp_path}/abs.db").path == f"{tmp_path}/abs.db"
+    assert _db.connect(str(tmp_path / "plain.db")).path == str(tmp_path / "plain.db")
     try:
         _db.connect("bogus://x")
         raise AssertionError("should raise")

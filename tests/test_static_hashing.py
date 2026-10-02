@@ -13,7 +13,8 @@ from urllib import request as urlrequest
 
 from pyweb.compiler import compile_source
 
-APP = "from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    count = 0\n    <h1>{count}</h1>\n"
+APP = ("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    count = 0\n"
+       "    def inc():\n        count += 1\n    <h1 onclick={inc}>{count}</h1>\n")
 
 
 def test_ssr_emits_versioned_script_ref():

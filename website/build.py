@@ -376,6 +376,7 @@ def sidebar(active):
             f'<a href="{slug}.html"{" aria-current=page" if slug == active else ""}>{esc(title)}</a>'
             for _f, slug, title, grp in DOCS if grp == g)
         out.append(f"<div class=group><h4>{g}</h4>{links}</div>")
+    out[-1] = out[-1].replace("</div>", f'<a href="changelog.html"{" aria-current=page" if active == "changelog" else ""}>Changelog</a></div>')
     ex = "".join(f'<a href="example-{n}.html"{" aria-current=page" if active == "example-" + n else ""}>{esc(t)}</a>'
                  for n, t, _, _ in EXAMPLES)
     out.append(f"<div class=group><h4>Examples</h4>{ex}</div>")
@@ -385,7 +386,7 @@ def sidebar(active):
 def footer():
     return f"""<footer class="foot">
   <div><span class="logo small"><span class="mark">py</span>web</span> {__version__} · MIT licensed</div>
-  <div><a href="{REPO}">GitHub</a> · <a href="{REPO}/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+  <div><a href="{REPO}">GitHub</a> · <a href="changelog.html">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
 </footer>"""
 
 
@@ -440,6 +441,8 @@ def build_demo(name):
     src_path = os.path.join(ROOT, "examples", name, "app.pyweb")
     with open(src_path, encoding="utf-8") as fh:
         source = fh.read()
+    # An autofocused input inside the embedded demo would scroll the landing page.
+    source = re.sub(r"\s+autofocus(?=[\s/>])", "", source)
     out = compile_source(source, filename="app.pyweb")
     page = next(iter(out["pages"].values()))
     d = os.path.join(OUT, "demos", name)
@@ -543,7 +546,7 @@ def landing(bench, demo_gz):
     return f"""<main class="landing">
 <section class="hero">
   <div class="hero-text">
-    <p class="eyebrow">PyWeb {__version__}</p>
+    <a class="eyebrow" href="ai-assistants.html">PyWeb {__version__} · New: build with AI assistants (MCP) →</a>
     <h1>Full-stack web apps<br>in one Python file.</h1>
     <p class="sub">Server-rendered pages, reactive UI compiled from Python, and typed calls to server
     functions. No JavaScript toolchain, no WebSocket per user, no runtime download.</p>
@@ -702,6 +705,18 @@ def build(out=None):
     body = f'<div class="layout">{sidebar("examples")}<main class="content"><article class="prose"><h1>Examples</h1>{examples_index()}</article></main><nav class="toc"></nav></div>'
     write("examples.html", shell("examples.html", "Examples · PyWeb", "Complete PyWeb apps with live demos and compiler output.", body, active="examples"))
     pages.append("examples.html")
+
+    with open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8") as fh:
+        log_html, _t, log_toc = markdown(fh.read(), compile_pyweb=False)
+    log_toc = [t for t in log_toc if t[0] == 2 and t[2] != "[Unreleased]"]
+    log_html = re.sub(r'<h2 id="unreleased">.*?</h2>\s*', "", log_html)
+    body = doc_page("changelog", "Changelog", log_toc, log_html, None, None, "../CHANGELOG.md")
+    body = body.replace(f'href="{REPO}/edit/main/docs/../CHANGELOG.md"', f'href="{REPO}/edit/main/CHANGELOG.md"')
+    write("changelog.html", shell("changelog.html", "Changelog · PyWeb", "What changed in each PyWeb release.",
+                                  body, active="docs"))
+    pages.append("changelog.html")
+    search.append({"url": "changelog.html", "title": "Changelog", "group": "Reference",
+                   "headings": [[a, t] for _, a, t in log_toc], "text": re.sub(r"<[^>]+>", " ", log_html)[:6000]})
 
     bench_html = benchmarks_page(bench, example_sizes)
     body = f'<div class="layout">{sidebar("benchmarks")}<main class="content"><article class="prose"><h1>Benchmarks</h1>{bench_html}</article></main><nav class="toc"></nav></div>'

@@ -148,9 +148,16 @@ pyweb mcp                                        # MCP server for AI assistants 
 
 ## Status
 
-PyWeb 0.1 is the first public release (beta). The language, server API,
-RPC protocol and CLI are documented and tested, and changes to them are
-announced in the changelog (see [stability](docs/15-toolkit.md#stability)). The test suite covers the
+PyWeb is in beta (0.x; see the PyPI badge above for the latest version).
+The language, server API, RPC protocol and CLI are documented and tested,
+and changes to them are announced in the [changelog](CHANGELOG.md) (see
+[stability](docs/15-toolkit.md#stability)). Upgrade with
+`pip install -U pyweb-stack`.
+
+| Version | Highlights |
+|---|---|
+| 0.2 | MCP server for AI assistants, AI guide, project templates, `AGENTS.md`/`CLAUDE.md`, `llms.txt` |
+| 0.1 | First public release: compiler, reactive runtime, server rendering, typed RPC, sessions, databases, CLI | The test suite covers the
 parser, the Python→JavaScript translation (differentially, against
 CPython), the reactive runtime, server rendering, RPC, sessions, every
 example app in Chromium, and the database/Redis layers against real

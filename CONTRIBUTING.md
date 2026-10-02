@@ -51,3 +51,17 @@ runtime is `pyweb/runtime/browser/runtime.js`, server rendering is
 - **No new required dependencies.** PyWeb's core is standard-library only;
   integrations go behind optional extras.
 - Keep the changelog's "Unreleased" section up to date in your PR.
+
+## Releasing (maintainers)
+
+1. Bump `version` in `pyproject.toml` (for example `0.2.0` → `0.3.0`).
+2. In `CHANGELOG.md`, move the "Unreleased" entries under a new
+   `## [0.3.0]` heading, and add the version to the "Released so far" list
+   in `docs/16-limitations-roadmap.md` and the README's version table.
+3. Push to `main` and wait for CI to pass.
+4. On GitHub: **Releases → Draft a new release**, create tag `v0.3.0` on
+   `main`, title `PyWeb 0.3.0`, leave the notes empty, **Publish release**.
+5. The Release workflow checks the tag matches `pyproject.toml`, builds,
+   publishes to PyPI (trusted publishing) and attaches the files and the
+   changelog section to the release. PyPI never accepts the same version
+   twice, so a failed upload needs a new version number.

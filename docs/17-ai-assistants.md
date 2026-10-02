@@ -13,7 +13,9 @@ get it right:
 
 ## The MCP server
 
-Install PyWeb, then register the server with your assistant. It talks
+The MCP server, templates and agent files need `pyweb-stack` 0.2.0 or
+later (`pip install -U pyweb-stack`). Install PyWeb, then register the
+server with your assistant. It talks
 over stdio and has no dependencies beyond PyWeb itself.
 
 **Claude Code**

@@ -1,8 +1,6 @@
 """Jobs queue, cache + SWR, realtime bus/channels."""
 
-import time
 
-from pyweb import cache as cache_mod
 from pyweb.cache import MemoryCache, cache, swr
 from pyweb.jobs import Queue, task
 from pyweb.realtime import Bus, Channel, realtime

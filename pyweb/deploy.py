@@ -6,18 +6,24 @@ import os
 import re
 
 
-def dockerfile(python="3.13-slim", port=8000):
+def dockerfile(python="3.12-slim", port=8000, app_file="app.pyweb"):
+    """Dockerfile for an app directory (``app.pyweb`` + optional requirements.txt)."""
+    from pyweb import __version__
+    pin = f"=={__version__}" if __version__[:1].isdigit() and "+" not in __version__ else ""
     return (
         f"FROM python:{python}\n"
-        "WORKDIR /app\nCOPY pyproject.toml .\nRUN pip install --no-cache-dir .\n"
+        "WORKDIR /app\n"
+        f"RUN pip install --no-cache-dir pyweb{pin}\n"
+        "COPY requirements.tx[t] ./\n"
+        "RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi\n"
         "COPY . .\n"
-        "RUN python -m pyweb.cli build app.pyweb --out dist --production\n"
+        f"RUN pyweb build {app_file} --out dist --production\n"
+        "ENV PYWEB_ENV=production\n"
         f"EXPOSE {port}\n"
         'HEALTHCHECK --interval=30s --timeout=5s CMD python -c '
         '"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('
         f"'http://127.0.0.1:{port}/healthz').status==200 else 1)\"\n"
-        'CMD ["python", "-m", "pyweb.cli", "serve", "dist", "--port", '
-        f'"{port}"]\n'
+        f'CMD ["pyweb", "serve", "dist", "--host", "0.0.0.0", "--port", "{port}"]\n'
     )
 
 

@@ -8,7 +8,6 @@ import functools
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import time
 import urllib.parse
@@ -492,22 +491,67 @@ def parse_auth_data(auth_data: bytes) -> dict:
     }
 
 
+def _b64url_decode(data) -> bytes:
+    if isinstance(data, bytes):
+        return data
+    return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+
+
+def _der_to_rs(sig: bytes):
+    """Parse an ASN.1 DER ``ECDSA-Sig-Value`` into ``(r, s)``."""
+    def read_len(buf, i):
+        n = buf[i]
+        i += 1
+        if n < 0x80:
+            return n, i
+        k = n & 0x7F
+        if k == 0 or k > 2:
+            raise ValueError("bad DER length")
+        return int.from_bytes(buf[i:i + k], "big"), i + k
+
+    if len(sig) < 8 or sig[0] != 0x30:
+        raise ValueError("not a DER sequence")
+    total, i = read_len(sig, 1)
+    if i + total != len(sig):
+        raise ValueError("DER length mismatch")
+    out = []
+    for _ in range(2):
+        if sig[i] != 0x02:
+            raise ValueError("expected DER integer")
+        n, i = read_len(sig, i + 1)
+        out.append(int.from_bytes(sig[i:i + n], "big"))
+        i += n
+    if i != len(sig):
+        raise ValueError("trailing DER bytes")
+    return out[0], out[1]
+
+
 def verify_webauthn_assertion(*, credential_public_key: bytes,
                               auth_data: bytes, client_data_json: bytes,
                               signature: bytes, rp_id: str,
-                              require_user_verification=False) -> dict:
-    """Verify a WebAuthn login assertion.
+                              expected_challenge, expected_origin,
+                              require_user_verification=False,
+                              prior_sign_count=None) -> dict:
+    """Verify a WebAuthn (passkey) login assertion. ES256 / P-256 only.
 
-    ``credential_public_key`` is the raw uncompressed P-256 point
-    (``0x04 || x || y``, 65 bytes) stored at registration. Returns the
-    parsed authData on success; raises :class:`AuthError` otherwise.
+    * ``credential_public_key``: raw uncompressed P-256 point
+      (``0x04 || x || y``) stored at registration
+      (:func:`cose_to_raw_point` converts COSE keys).
+    * ``signature``: as sent by the browser (ASN.1 DER); raw 64-byte
+      ``r || s`` is accepted too.
+    * ``expected_challenge``: the challenge you issued for this login
+      (bytes, or base64url text) — prevents replaying old assertions.
+    * ``expected_origin``: e.g. ``"https://example.com"`` (or a list).
+    * ``prior_sign_count``: the stored counter; a non-increasing counter
+      signals a cloned authenticator and is rejected.
 
-    Why raw point, not COSE: avoids a CBOR dependency for the common
-    ES256 case; :func:`cose_to_raw_point` converts stored COSE keys.
+    Returns the parsed authenticator data; raises :class:`AuthError`.
+    The signature is checked with the ``cryptography`` package when it is
+    installed (``pip install pyweb[crypto]``) and with a pure-Python
+    fallback otherwise.
     """
-    import struct as _struct
     parsed = parse_auth_data(auth_data)
-    if parsed["rp_id_hash"] != hashlib.sha256(rp_id.encode()).digest():
+    if not hmac.compare_digest(parsed["rp_id_hash"], hashlib.sha256(rp_id.encode()).digest()):
         raise AuthError("rpId hash mismatch")
     if not parsed["user_present"]:
         raise AuthError("user presence flag not set")
@@ -515,17 +559,34 @@ def verify_webauthn_assertion(*, credential_public_key: bytes,
         raise AuthError("user verification required")
     if len(credential_public_key) != 65 or credential_public_key[0] != 0x04:
         raise AuthError("unsupported credential key (need raw P-256)")
-    client_hash = hashlib.sha256(client_data_json).digest()
     try:
         client = json.loads(client_data_json)
     except ValueError as exc:
         raise AuthError("invalid clientDataJSON") from exc
-    if client.get("type") != "webauthn.get":
+    if not isinstance(client, dict) or client.get("type") != "webauthn.get":
         raise AuthError("wrong ceremony type")
-    msg = auth_data + client_hash
+    try:
+        got_challenge = _b64url_decode(client.get("challenge") or "")
+    except (ValueError, TypeError) as exc:
+        raise AuthError("malformed challenge") from exc
+    if not expected_challenge or not hmac.compare_digest(got_challenge, _b64url_decode(expected_challenge)):
+        raise AuthError("challenge mismatch")
+    origins = [expected_origin] if isinstance(expected_origin, str) else list(expected_origin or [])
+    if client.get("origin") not in origins:
+        raise AuthError("origin mismatch")
+    if prior_sign_count and parsed["sign_count"] and parsed["sign_count"] <= prior_sign_count:
+        raise AuthError("sign count did not increase (possible cloned authenticator)")
+    msg = auth_data + hashlib.sha256(client_data_json).digest()
+    try:
+        if len(signature) == 64:
+            r, s_ = int.from_bytes(signature[:32], "big"), int.from_bytes(signature[32:], "big")
+        else:
+            r, s_ = _der_to_rs(signature)
+    except (ValueError, IndexError) as exc:
+        raise AuthError("malformed signature") from exc
     x = int.from_bytes(credential_public_key[1:33], "big")
     y = int.from_bytes(credential_public_key[33:65], "big")
-    if not _ecdsa_p256_verify(x, y, msg, signature):
+    if not _ecdsa_p256_verify_rs(x, y, msg, r, s_):
         raise AuthError("invalid assertion signature")
     return parsed
 
@@ -590,21 +651,36 @@ def _p256_scalar_mult(k, point):
 
 
 def _ecdsa_p256_verify(x, y, msg, signature: bytes) -> bool:
-    """Pure-Python ECDSA P-256/SHA-256 verify (constant-time-ish).
-
-    Why pure Python: avoids a ``cryptography`` dependency for the pilot
-    use case (low-volume logins). Throughput is ~50 verifications/sec,
-    fine for auth but not for bulk signing — documented in the docstring
-    so teams switch to ``cryptography`` before building a CA on this.
-    """
-    if len(signature) != 64 or not (0 < x < _P256 and 0 < y < _P256):
+    """Verify a raw 64-byte ``r || s`` ECDSA P-256/SHA-256 signature."""
+    if len(signature) != 64:
         return False
-    if not _p256_on_curve(x, y):
-        return False  # point not on curve
-    r = int.from_bytes(signature[:32], "big")
-    s = int.from_bytes(signature[32:], "big")
+    return _ecdsa_p256_verify_rs(x, y, msg, int.from_bytes(signature[:32], "big"),
+                                 int.from_bytes(signature[32:], "big"))
+
+
+def _ecdsa_p256_verify_rs(x, y, msg, r, s) -> bool:
+    if not (0 < x < _P256 and 0 < y < _P256) or not _p256_on_curve(x, y):
+        return False
     if not (0 < r < _P256_N and 0 < s < _P256_N):
         return False
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+    except ImportError:
+        return _ecdsa_p256_verify_pure(x, y, msg, r, s)
+    key = ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1()).public_key()
+    try:
+        key.verify(encode_dss_signature(r, s), msg, ec.ECDSA(hashes.SHA256()))
+        return True
+    except InvalidSignature:
+        return False
+
+
+def _ecdsa_p256_verify_pure(x, y, msg, r, s) -> bool:
+    """Pure-Python fallback. Verification uses only public data, so timing
+    side channels do not leak secrets; it is slow (~50/s), fine for logins."""
     e = int.from_bytes(hashlib.sha256(msg).digest(), "big")
     w = pow(s, -1, _P256_N)
     u1 = (e * w) % _P256_N

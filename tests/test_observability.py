@@ -1,11 +1,9 @@
 """Distributed traces, error taxonomy, time-travel log, inspect CLI."""
 
-import io
 import json
 import subprocess
 import sys
 
-import pytest
 
 from pyweb import observability as _o
 

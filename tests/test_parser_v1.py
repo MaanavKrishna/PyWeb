@@ -5,7 +5,7 @@ import ast
 import pytest
 
 from pyweb.compiler import parser as P
-from pyweb.compiler.ast import ControlFor, ControlIf, Element, ExprNode, TextNode
+from pyweb.compiler.ast import ControlFor, ControlIf, ExprNode
 
 
 def page(body):

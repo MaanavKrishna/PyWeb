@@ -4,7 +4,8 @@ from .app import App
 from .reactive import Computed, Effect, Resource, Signal, live
 from .models import Email, Model
 from . import auth, cache, jobs, realtime, security, observability, forms, testing
-from . import sync, live, deploy, uploads, lsp
+from . import sync, deploy, uploads, lsp
+from . import live as live_queries  # noqa: F401 - module; `live` is the function
 from . import browser as browser_api
 from . import build, css, plugins, platform
 from .jobs import task
@@ -53,7 +54,7 @@ __all__ = [
     "forms",
     "testing",
     "sync",
-    "live",
+    "live_queries",
     "deploy",
     "uploads",
     "lsp",

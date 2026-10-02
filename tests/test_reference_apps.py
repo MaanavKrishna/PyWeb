@@ -6,7 +6,6 @@ Interactive behaviour of the same apps is covered in a real browser by
 
 from __future__ import annotations
 
-import json
 import threading
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -15,7 +14,6 @@ from pathlib import Path
 import pytest
 
 from pyweb.compiler import compile_source
-from pyweb.runtime.server import Request, Server
 
 ROOT = Path(__file__).parent.parent
 EXAMPLES = ROOT / "examples"

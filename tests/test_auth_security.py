@@ -3,7 +3,6 @@ TOTP, placement boundary, XSS, traversal, uploads, redirects, scanner."""
 
 import base64
 import json
-import time
 
 import pytest
 
@@ -255,10 +254,3 @@ def test_security_scan_reports_findings():
     assert "secret-leak" in kinds
     assert "xss-risk" in kinds
     assert "missing-auth-on-mutating-rpc" in kinds
-
-
-def test_cli_security_scan_flag_exists():
-    from pyweb import cli
-    parser = cli.build_parser()
-    args = parser.parse_args(["--security-scan"])
-    assert args.security_scan is True

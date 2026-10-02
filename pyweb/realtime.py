@@ -132,45 +132,57 @@ class RedisBus(Bus):
     def _pub_key(self, channel_name):
         return f"{self._prefix}live:{channel_name}"
 
+    def _seq_key(self, channel_name):
+        return f"{self._prefix}seq:{channel_name}"
+
     def publish(self, channel_name, message):
+        """Publish to local subscribers and to Redis.
+
+        Sequence numbers come from a per-channel Redis counter and double
+        as stream IDs (``<seq>-1``), so every process agrees on ids and
+        ``since(last_id)`` resumes exactly where a client left off.
+        """
         import json as _json
-        local = super().publish(channel_name, message)
         if self._broken:
-            return local
+            return super().publish(channel_name, message)
         try:
             body = message if isinstance(message, str) else _json.dumps(message)
-            self._r.xadd(self._stream_key(channel_name),
-                         {"body": body}, maxlen=1000, approximate=True)
+            seq = int(self._r.incr(self._seq_key(channel_name)))
+            self._r.xadd(self._stream_key(channel_name), {"body": body},
+                         id=f"{seq}-1", maxlen=1000, approximate=True)
             self._r.publish(self._pub_key(channel_name), body)
         except Exception as exc:  # noqa: BLE001 — degrade, don't crash app
             self._broken = exc
-        return local
+            return super().publish(channel_name, message)
+        with self._lock:
+            self._seq = max(self._seq, seq)
+            log = self._log.setdefault(channel_name, [])
+            log.append((seq, message))
+            self._log[channel_name] = log[-100:]
+        return self.channel(channel_name).publish(message)
 
     def since(self, channel_name, last_id=0, limit=50):
-        local = super().since(channel_name, last_id, limit)
+        """Messages after ``last_id`` from the shared Redis stream."""
         if self._broken:
-            return local
+            return super().since(channel_name, last_id, limit)
         try:
             import json as _json
             entries = self._r.xrange(self._stream_key(channel_name),
-                                     min=f"({last_id}", count=limit)
-            remote = []
+                                     min=f"({int(last_id)}-1", max="+", count=limit)
+            out = []
             for seq_raw, fields in entries:
-                seq = int(seq_raw.decode().split("-")[0])
-                if seq <= last_id:
-                    continue
-                raw = fields.get(b"body", b"")
+                sid = seq_raw.decode() if isinstance(seq_raw, bytes) else seq_raw
+                seq = int(sid.split("-")[0])
+                raw = fields.get(b"body", fields.get("body", b""))
                 body = raw.decode() if isinstance(raw, bytes) else raw
                 try:
-                    remote.append((seq, _json.loads(body)))
+                    out.append((seq, _json.loads(body)))
                 except (ValueError, TypeError):
-                    remote.append((seq, body))
+                    out.append((seq, body))
+            return out
         except Exception as exc:  # noqa: BLE001
             self._broken = exc
-            return local
-        seen = {s for s, _ in local}
-        merged = sorted(local + [e for e in remote if e[0] not in seen])
-        return merged[:limit]
+            return super().since(channel_name, last_id, limit)
 
     def history(self, channel_name, limit=50):
         """Newest-first convenience wrapper used by chat/presence UIs."""

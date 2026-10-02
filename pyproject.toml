@@ -5,11 +5,47 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pyweb"
 version = "1.0.0"
-description = "PyWeb — Python from browser to database"
+description = "Full-stack web apps in one Python file: server-rendered pages, reactive browser UI, typed RPC."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = []
+authors = [{ name = "Maanav Krishna" }]
+keywords = ["web", "framework", "full-stack", "reactive", "rpc", "ssr", "compiler"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: JavaScript",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+mysql = ["PyMySQL>=1.1"]
+redis = ["redis>=5"]
+crypto = ["cryptography>=42"]
+asgi = ["uvicorn>=0.30"]
+all = ["psycopg[binary]>=3.1", "PyMySQL>=1.1", "redis>=5", "cryptography>=42", "uvicorn>=0.30"]
+test = ["pytest>=8", "playwright>=1.45"]
+
+[project.urls]
+Homepage = "https://maanavkrishna.github.io/PyWeb/"
+Documentation = "https://maanavkrishna.github.io/PyWeb/guide.html"
+Source = "https://github.com/MaanavKrishna/PyWeb"
+Changelog = "https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md"
+Issues = "https://github.com/MaanavKrishna/PyWeb/issues"
 
 [project.scripts]
 pyweb = "pyweb.cli:main"
@@ -17,5 +53,16 @@ pyweb = "pyweb.cli:main"
 [tool.setuptools.packages.find]
 include = ["pyweb*"]
 
+[tool.setuptools.package-data]
+pyweb = ["runtime/browser/*.js", "py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["website/dist"]
+
+[tool.ruff.lint]
+select = ["E9", "F"]

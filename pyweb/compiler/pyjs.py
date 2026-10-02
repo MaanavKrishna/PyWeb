@@ -547,7 +547,7 @@ class Translator:
                 raise self.error(node, f"keyword arguments are not supported when calling {f.id!r} from browser code")
             return f"{callee}({', '.join(self.args(node, scope))})"
         if isinstance(f, ast.Attribute):
-            base_js = self.expr(f.value, scope)  # surfaces server-only names first
+            self.expr(f.value, scope)  # surfaces server-only names before other errors
             root = _root_name(f.value)
             root_kind = scope.lookup(root) if root else None
             js_root = root_kind in ("browser_global",) or (root_kind is None and root in JS_GLOBALS)

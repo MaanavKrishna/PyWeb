@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import ast
 import re
-from dataclasses import dataclass, field as _dc_field
-from typing import Any, Iterable
+from dataclasses import dataclass
 
 from .compiler import parser as P
 

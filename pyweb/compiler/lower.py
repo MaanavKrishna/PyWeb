@@ -30,7 +30,7 @@ import re
 from . import pyjs
 from .ast import ControlFor, ControlIf, Element, ExprNode
 from .errors import CompileError
-from .pyjs import (COMPONENT, COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
+from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
                    ModuleContext, Translator, jsname)
 
 RUNTIME_IMPORT = ("import { h as $h, list as $list, when as $when, signal as $signal, "

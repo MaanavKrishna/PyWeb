@@ -165,12 +165,16 @@ class RedisQueue(Queue):
         """Run one pending job from the Redis list. Returns job or None."""
         import json as _json
         try:
-            item = self._r.blpop(self._prefix + "pending", timeout=timeout)
+            if timeout:
+                item = self._r.blpop(self._prefix + "pending", timeout=timeout)
+                job_id = item[1] if item else None
+            else:
+                # BLPOP with timeout=0 blocks forever on real Redis.
+                job_id = self._r.lpop(self._prefix + "pending")
         except Exception:
             return None
-        if not item:
+        if not job_id:
             return None
-        _, job_id = item
         job_id = job_id.decode() if isinstance(job_id, bytes) else job_id
         try:
             rec = self._r.hgetall(self._prefix + f"job:{job_id}")
@@ -195,11 +199,29 @@ class RedisQueue(Queue):
         self._run(job, fn, payload.get("args", ()),
                   payload.get("kwargs", {}), retries)
         try:
+            try:
+                result = _json.dumps(job.result)
+            except (TypeError, ValueError):
+                result = _json.dumps(repr(job.result))
             self._r.hset(self._prefix + f"job:{job_id}", mapping={
-                "done": "1", "failed": "1" if job.failed else ""})
+                "done": "1", "failed": "1" if job.failed else "",
+                "result": result, "error": str(job.error or "")})
         except Exception:
             pass
         return job
+
+    def status(self, job_id):
+        """Job state as stored in Redis (readable from any process)."""
+        import json as _json
+        rec = self._r.hgetall(self._prefix + f"job:{job_id}")
+        if not rec:
+            return None
+        rec = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+               for k, v in rec.items()}
+        return {"fn": rec.get("fn"), "done": rec.get("done") == "1",
+                "failed": rec.get("failed") == "1",
+                "result": _json.loads(rec["result"]) if rec.get("result") else None,
+                "error": rec.get("error") or None}
 
 
 _default_queue = Queue()

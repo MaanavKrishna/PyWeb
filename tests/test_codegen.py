@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from pyweb.compiler import compile_source
-from pyweb.compiler.codegen.ir import to_text
 
 
 def test_ssr_escapes_html():

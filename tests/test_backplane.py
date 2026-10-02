@@ -14,20 +14,30 @@ class FakeRedis:
         self.lists = {}
         self._n = 0
 
-    def xadd(self, key, fields, maxlen=None, approximate=None):
+    def incr(self, key):
+        self.counters = getattr(self, "counters", {})
+        self.counters[key] = self.counters.get(key, 0) + 1
+        return self.counters[key]
+
+    def xadd(self, key, fields, id="*", maxlen=None, approximate=None):
         self._n += 1
+        sid = id if id != "*" else f"{self._n}-0"
         self.streams.setdefault(key, []).append(
-            (f"{self._n}-0".encode(), {k.encode(): v.encode() for k, v in fields.items()}))
-        return f"{self._n}-0"
+            (sid.encode(), {k.encode(): v.encode() for k, v in fields.items()}))
+        return sid
+
+    def lpop(self, key):
+        lst = self.lists.get(key, [])
+        return lst.pop(0) if lst else None
 
     def publish(self, key, body):
         self.pubs.append((key, body))
         return 1
 
-    def xrange(self, key, min="-", count=None):
+    def xrange(self, key, min="-", max="+", count=None):
         entries = self.streams.get(key, [])
         if isinstance(min, str) and min.startswith("("):
-            floor = int(min[1:])
+            floor = int(min[1:].split("-")[0])
             entries = [e for e in entries if int(e[0].decode().split("-")[0]) > floor]
         return entries[:count] if count else entries
 

@@ -18,6 +18,32 @@ _OPS = {
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def qmark_to_format(sql):
+    """``?`` → ``%s`` outside quotes; literal ``%`` → ``%%``.
+
+    SQL that already uses ``%s`` (no ``?`` placeholders) is returned
+    unchanged, so driver-native SQL keeps working.
+    """
+    out, quote, found = [], None, False
+    for ch in sql:
+        if quote:
+            out.append("%%" if ch == "%" else ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+        elif ch == "?":
+            found = True
+            out.append("%s")
+        elif ch == "%":
+            out.append("%%")
+        else:
+            out.append(ch)
+    return "".join(out) if found else sql
+
+
 def _ident(name, kind="identifier"):
     if not isinstance(name, str) or not _IDENT.match(name):
         raise ValueError(f"invalid {kind}: {name!r}")
@@ -245,15 +271,42 @@ class _PooledDB:
 
     def __init__(self, pool_size=5, timeout=10.0, statement_cache=128,
                  connect_kwargs=None):
+        # Connections open lazily (up to pool_size), so importing an app
+        # never fails just because the database is briefly unreachable.
         self._pool: queue.Queue = queue.Queue()
-        for _ in range(max(1, pool_size)):
-            self._pool.put(self._connect())
+        self._pool_size = max(1, pool_size)
+        self._pool_timeout = timeout
+        self._created = 0
+        self._create_lock = threading.Lock()
         self._local = threading.local()
         self._stmt_cache_size = statement_cache
         self._stmt_cache: dict[str, str] = {}
 
     def _current(self):
         return getattr(self._local, "conn", None)
+
+    def _acquire(self):
+        try:
+            return self._pool.get_nowait()
+        except queue.Empty:
+            pass
+        with self._create_lock:
+            if self._created < self._pool_size:
+                conn = self._connect()
+                self._created += 1
+                return conn
+        try:
+            return self._pool.get(timeout=self._pool_timeout)
+        except queue.Empty:
+            raise TransientDBError(
+                f"no database connection available within {self._pool_timeout}s "
+                f"(pool_size={self._pool_size})") from None
+
+    def _adapt(self, sql, params):
+        """Rewrite portable ``?`` placeholders for ``format``-style drivers."""
+        if self.paramstyle != "format" or not params:
+            return sql
+        return qmark_to_format(sql)
 
     def prepare(self, sql: str) -> str:
         """Cache/validate a statement; returns the (possibly rewritten) SQL.
@@ -276,7 +329,8 @@ class _PooledDB:
         conn = self._current()
         owned = conn is None
         if owned:
-            conn = self._pool.get()
+            conn = self._acquire()
+        sql = self._adapt(sql, params)
         try:
             last: Exception | None = None
             for _ in range(max(1, attempts)):
@@ -315,7 +369,8 @@ class _PooledDB:
 
     def stream(self, sql, params=(), *, chunksize=1000):
         """Yield ``Result`` pages without loading the full result set."""
-        conn = self._pool.get()
+        conn = self._acquire()
+        sql = self._adapt(sql, params)
         try:
             cur = conn.cursor() if hasattr(conn, "cursor") else None
             if cur is None:
@@ -341,10 +396,16 @@ class _PooledDB:
         if self._current() is not None:
             yield self
             return
-        conn = self._pool.get()
+        conn = self._acquire()
         self._local.conn = conn
+        # Drivers in autocommit mode (Postgres/MySQL pools) must leave it for
+        # the duration, or every statement commits and rollback is a no-op.
+        prev_autocommit = None
         try:
-            if hasattr(conn, "execute"):
+            if isinstance(getattr(conn, "autocommit", None), bool):
+                prev_autocommit = conn.autocommit
+                conn.autocommit = False
+            elif hasattr(conn, "execute"):
                 try:
                     conn.execute("BEGIN")
                 except Exception:
@@ -358,6 +419,11 @@ class _PooledDB:
                 pass
             raise
         finally:
+            if prev_autocommit is not None:
+                try:
+                    conn.autocommit = prev_autocommit
+                except Exception:
+                    pass
             self._local.conn = None
             self._pool.put(conn)
 
@@ -367,6 +433,8 @@ class _PooledDB:
                 conn = self._pool.get_nowait()
             except queue.Empty:
                 break
+            with self._create_lock:
+                self._created -= 1
             try:
                 conn.close()
             except Exception:

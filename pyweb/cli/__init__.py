@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import argparse
 import http.server
-import json
 import os
-import socketserver
 import sys
 
 
@@ -391,19 +389,7 @@ def cmd_new(args):
     print(f"created {args.name}/app.pyweb")
 
 
-def build_parser():
-    """Build the CLI parser (also exposes --security-scan)."""
-    ap = argparse.ArgumentParser(prog="pyweb")
-    ap.add_argument("--security-scan", action="store_true",
-                    help="run security.scan over the app and report")
-    return ap
-
-
 def main(argv=None):
-    if argv is not None and "--security-scan" in argv:
-        from pyweb import security
-        print("security scan: pass an app descriptor to security.scan(app)")
-        return 0
     ap = argparse.ArgumentParser(prog="pyweb")
     ap.add_argument("--version", action="store_true",
                     help="print the PyWeb version and exit")

@@ -56,12 +56,11 @@ def test_bindings_cover_all_apis():
 
 
 def test_user_import_patterns():
-    """Lock in the import contract documented in docs/08-browser-apis.md."""
+    """`pyweb.browser` is the browser-API module (no decorator shadows it)."""
     import pyweb
-    from pyweb.browser import storage  # module from-import works
+    from pyweb.browser import storage
     assert storage is _b.storage
-    assert callable(pyweb.browser)  # `from pyweb import browser`: decorator
-    assert pyweb.browser_api is _b  # alias reaches the module
+    assert pyweb.browser is _b and pyweb.browser_api is _b
 
 
 def test_css_dict_px_and_unitless():

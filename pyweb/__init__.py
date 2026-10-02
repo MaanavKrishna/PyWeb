@@ -1,28 +1,15 @@
 """PyWeb — Python from browser to database."""
 
 from .app import App
-from .reactive import Computed, Effect, Resource, Signal, live
 from .models import Email, Model
 from . import auth, cache, jobs, realtime, security, observability, forms, testing
-from . import sync, deploy, uploads, lsp
-from . import live as live_queries  # noqa: F401 - module; `live` is the function
+from . import sync, deploy, uploads, lsp, live
 from . import browser as browser_api
 from . import build, css, plugins, platform
 from .jobs import task
 from .context import NotFound, redirect, request, session
 from .rpc import RPCError
-# NOTE: decorators import comes last — importing the ``pyweb.browser``
-# submodule rebinds the ``browser`` package attr to the module, so the
-# ``@browser`` decorator must be bound afterwards. ``import pyweb.browser``
-# still resolves to the module via sys.modules either way.
-from .decorators import (
-    browser,
-    component,
-    edge,
-    server,
-    shared,
-    worker,
-)
+from .decorators import component, edge, server, worker
 
 __all__ = [
     "App",
@@ -31,17 +18,10 @@ __all__ = [
     "redirect",
     "NotFound",
     "RPCError",
-    "browser",
     "component",
     "edge",
     "server",
-    "shared",
     "worker",
-    "Computed",
-    "Effect",
-    "Resource",
-    "Signal",
-    "live",
     "Email",
     "Model",
     "task",
@@ -54,7 +34,7 @@ __all__ = [
     "forms",
     "testing",
     "sync",
-    "live_queries",
+    "live",
     "deploy",
     "uploads",
     "lsp",

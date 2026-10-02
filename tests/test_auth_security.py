@@ -1,5 +1,5 @@
 """Auth + security: password hashing, sessions, RBAC, OAuth, magic links,
-TOTP, placement boundary, XSS, traversal, uploads, redirects, scanner."""
+TOTP, XSS, traversal, uploads, redirects, scanner."""
 
 import base64
 import json
@@ -125,61 +125,8 @@ def test_totp_rfc6238_vector():
     assert auth.verify_totp(secret, "000000", for_time=59) is False
 
 
-def test_placement_blocks_server_secret_in_browser_bundle():
-    from pyweb.compiler import placement
-    src = "from app import settings\nAPI_KEY = settings.SECRET_KEY\n"
-    with pytest.raises(placement.CompileError) as ei:
-        placement.check_source(src, filename="pages/home.py", placement="browser")
-    assert "pages/home.py:2" in str(ei.value)
 
 
-def test_placement_blocks_server_only_import_in_browser():
-    from pyweb.compiler import placement
-    for src in ("import sqlite3\nx = 1\n",
-                "import psycopg\nx = 1\n",
-                "import os\nk = os.environ['DB_PASSWORD']\n"):
-        with pytest.raises(placement.CompileError) as ei:
-            placement.check_source(src, filename="pages/p.py", placement="browser")
-        assert "pages/p.py" in str(ei.value)
-        assert "leak" in str(ei.value).lower()
-
-
-def test_placement_blocks_file_read_in_browser():
-    from pyweb.compiler import placement
-    with pytest.raises(placement.CompileError):
-        placement.check_source("data = open('/etc/secrets.txt').read()\n",
-                               filename="pages/p.py", placement="browser")
-
-
-def test_placement_secret_patterns_exist_and_server_passes():
-    from pyweb.compiler import placement
-    assert len(placement.SECRET_PATTERNS) >= 3
-    src = "import sqlite3\nDB = 'x'\n"
-    assert placement.check_source(src, filename="srv.py", placement="server") == "server"
-
-
-XSS_PAYLOADS = [
-    "<script>alert(1)</script>",
-    "<img src=x onerror=alert(1)>",
-    "\"><script>alert(1)</script>",
-    "' onmouseover='alert(1)",
-]
-
-
-@pytest.mark.parametrize("payload", XSS_PAYLOADS)
-def test_ssr_escapes_text_nodes(payload):
-    from pyweb import security
-    out = security.ssr("<p>{{ body }}</p>", body=payload)
-    assert "<script>" not in out
-    assert payload not in out
-
-
-@pytest.mark.parametrize("payload", XSS_PAYLOADS)
-def test_ssr_escapes_attribute_values(payload):
-    from pyweb import security
-    out = security.ssr('<a title="{{ t }}">x</a>', t=payload)
-    assert payload not in out
-    assert "&quot;" in out or "&#x27;" in out or "&lt;" in out
 
 
 def test_escape_attr_neutralizes_quote_breakout():

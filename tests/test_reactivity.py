@@ -1,6 +1,5 @@
 """Reactivity classification (signal / computed / const) and Python primitives."""
 
-from pyweb import Computed, Effect, Signal, live
 from pyweb.compiler import compile_source
 
 HEAD = "from pyweb import App\napp=App()\n@app.page('/')\n"
@@ -44,29 +43,3 @@ def test_method_mutation_makes_a_signal():
 def test_loop_var_not_signal():
     p = page("def H():\n    todos = [1]\n    for t in todos:\n        <p>{t}</p>\n")
     assert "t" not in p["signals"]
-
-
-def test_python_signal_primitive():
-    s = Signal(1)
-    seen = []
-    unsub = s.subscribe(seen.append)
-    s(2)
-    assert s() == 2 and seen == [2]
-    unsub()
-    s(3)
-    assert seen == [2]
-
-
-def test_python_computed_and_effect():
-    calls = []
-    c = Computed(lambda: 40 + 2)
-    assert c() == 42
-    Effect(lambda: calls.append(1))
-    assert calls == [1]
-
-
-def test_live_returns_resource():
-    import asyncio
-    r = live(lambda: [1, 2])
-    assert asyncio.run(r.load()) == [1, 2]
-    assert r.result == [1, 2] and not r.pending

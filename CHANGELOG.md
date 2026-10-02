@@ -6,6 +6,20 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- Migrations: the `pyweb_migrations` journal table can now be created on
+  MySQL (`VARCHAR(255)` key instead of `TEXT`).
+
+### Removed
+- Modules the 1.0 framework no longer uses: `pyweb.components` (pure-Python
+  element API), `pyweb.routing` (unused router), `pyweb.reactive`
+  (server-side `Signal`/`Computed`/`Effect`/`live`), and
+  `pyweb.compiler.placement` (superseded by the compiler's boundary checks).
+- The `@browser` and `@shared` decorators, which had no effect.
+- `pyweb.compiler.rpc.client_stub`/`server_handler` and unused AST classes.
+- `docs/BUGLOG.md` (it described pre-1.0 internals) and the committed
+  `website/dist/`; the Pages workflow builds the site.
+
 ## [1.0.0]
 
 The first stable release. Earlier development versions were labelled

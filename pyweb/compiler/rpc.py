@@ -33,15 +33,3 @@ def rpc_specs(tree):
                           "location": loc, "line": node.lineno,
                           "async": isinstance(node, ast.AsyncFunctionDef)})
     return specs
-
-
-def client_stub(spec):
-    params = ", ".join(a["name"] for a in spec["args"])
-    return (
-        f"async function {spec['name']}({params}) {{\n"
-        f"  return rpc('{spec['name']}', {{{params}}});\n}}"
-    )
-
-
-def server_handler(spec):
-    return f"# POST /__pyweb/rpc/{spec['name']} -> {spec['name']}({', '.join(a['name']+': '+a['type'] for a in spec['args'])}) -> {spec['returns']}"

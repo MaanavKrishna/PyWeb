@@ -14,8 +14,8 @@ from .compiler import parser as P
 
 BROWSER_APIS = ["storage", "clipboard", "location", "camera", "notifications",
                 "fetch", "websocket", "indexeddb", "geolocation", "canvas"]
-DECORATORS = ["@app.page", "@server", "@browser", "@edge", "@worker",
-              "@shared", "@component", "@task", "@cache", "@realtime",
+DECORATORS = ["@app.page", "@server", "@edge", "@worker",
+              "@component", "@task", "@cache", "@realtime",
               "@auth.required", "@permission"]
 HTML_TAGS = ["main", "div", "span", "p", "h1", "h2", "article", "section",
              "button", "input", "form", "label", "ul", "li", "a", "img"]

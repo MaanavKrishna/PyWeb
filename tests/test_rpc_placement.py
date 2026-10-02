@@ -1,12 +1,11 @@
 """RPC specs, placement decisions, server validation/dispatch."""
 
-import ast
 import json
 
-from pyweb import browser, server
+from pyweb import edge, server
 from pyweb.compiler import parser as P
 from pyweb.compiler import compile_source
-from pyweb.compiler.rpc import client_stub, rpc_specs
+from pyweb.compiler.rpc import rpc_specs
 from pyweb.runtime.server import Request, Server
 
 
@@ -21,19 +20,11 @@ def test_worker_location_and_stub():
     tree, _, _ = P.parse_source("from pyweb import worker\n@worker\ndef heavy(x: int) -> int:\n    return x\n")
     specs = rpc_specs(tree)
     assert specs[0]["location"] == "worker"
-    assert "rpc('heavy'" in client_stub(specs[0])
 
 
 def test_non_rpc_fn_ignored():
     tree, _, _ = P.parse_source("def plain():\n    pass\n")
     assert rpc_specs(tree) == []
-
-
-def test_explicit_browser_override():
-    tree, _, _ = P.parse_source("from pyweb import browser\n@browser\ndef h():\n    pass\n")
-    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef))
-    from pyweb.compiler.placement import explicit_location
-    assert explicit_location(fn) == ("browser", "explicit @browser marker")
 
 
 def test_server_dep_goes_to_server():
@@ -46,10 +37,10 @@ def test_decorator_metadata():
     @server
     def f():
         pass
-    @browser
+    @edge
     def g():
         pass
-    assert f.__pyweb_location__ == "server" and g.__pyweb_location__ == "browser"
+    assert f.__pyweb_location__ == "server" and g.__pyweb_location__ == "edge"
 
 
 def test_rpc_validation_ok_and_errors():

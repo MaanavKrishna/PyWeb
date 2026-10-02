@@ -21,9 +21,6 @@ def server(fn=None):
     return _mark(fn, location="server") if fn else lambda t: _mark(t, location="server")
 
 
-def browser(fn=None):
-    return _mark(fn, location="browser") if fn else lambda t: _mark(t, location="browser")
-
 
 def edge(fn=None):
     return _mark(fn, location="edge") if fn else lambda t: _mark(t, location="edge")
@@ -32,9 +29,6 @@ def edge(fn=None):
 def worker(fn=None):
     return _mark(fn, location="worker") if fn else lambda t: _mark(t, location="worker")
 
-
-def shared(fn=None):
-    return _mark(fn, location="shared") if fn else lambda t: _mark(t, location="shared")
 
 
 def csrf_exempt(fn=None):

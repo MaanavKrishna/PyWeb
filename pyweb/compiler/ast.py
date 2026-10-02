@@ -43,23 +43,3 @@ class ControlIf:
     body: list
     orelse: list = field(default_factory=list)
     line: int = 0
-
-
-@dataclass
-class Page:
-    name: str
-    route: str
-    func: object
-    lineno: int
-    params: list
-    ui: list
-    location_marks: dict = field(default_factory=dict)
-
-
-@dataclass
-class ServerFn:
-    name: str
-    node: object
-    lineno: int
-    arg_types: dict
-    return_type: str

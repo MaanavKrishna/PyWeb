@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quickstart · PyWeb</title>
+<meta name="description" content="#Install
+TerminalCopypip install pyweb            # Python 3.10+; no other dependencies
+pip install &amp;quot;pyweb[all]&amp;quot;     # optional: Postgres, MySQL, Redis, cryptography, uvi">
+<meta property="og:title" content="Quickstart · PyWeb">
+<meta property="og:description" content="#Install
+TerminalCopypip install pyweb            # Python 3.10+; no other dependencies
+pip install &amp;quot;pyweb[all]&amp;quot;     # optional: Postgres, MySQL, Redis, cryptography, uvi">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/quickstart.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html">Introduction</a><a href="quickstart.html" aria-current=page>Quickstart</a><a href="tutorial.html">Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html">State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html">Pages, routing &amp; assets</a><a href="data.html">Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html">Security model</a><a href="cli.html">Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>Quickstart</h1>
+<h2 id="install"><a class="anchor" href="#install">#</a>Install</h2>
+<div class="code"><div class="code-head"><span>Terminal</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-bash"><span class="k">pip</span> install pyweb<span class="c">            # Python 3.10+; no other dependencies</span>
+<span class="k">pip</span> install <span class="s">&quot;pyweb[all]&quot;</span><span class="c">     # optional: Postgres, MySQL, Redis, cryptography, uvicorn</span></code></pre></div>
+<h2 id="create-and-run-an-app"><a class="anchor" href="#create-and-run-an-app">#</a>Create and run an app</h2>
+<div class="code"><div class="code-head"><span>Terminal</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-bash"><span class="k">pyweb</span> new hello
+<span class="k">cd</span> hello
+<span class="k">pyweb</span> dev app.pyweb<span class="c">          # http://localhost:8000, reloads on save</span></code></pre></div>
+<p><code>pyweb new</code> writes a single <code>app.pyweb</code>:</p>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App
+
+app = App(title=<span class="s">&quot;Hello&quot;</span>)
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Home():
+    count = <span class="n">0</span>
+
+    <span class="k">def</span> increment():
+        count += <span class="n">1</span>
+
+    <span class="t">&lt;main</span><span class="t">&gt;</span>
+        <span class="t">&lt;h1</span><span class="t">&gt;</span>Counter<span class="t">&lt;/h1</span><span class="t">&gt;</span>
+        <span class="t">&lt;button</span> onclick={increment}<span class="t">&gt;</span>
+            Count: {count}
+        <span class="t">&lt;/button</span><span class="t">&gt;</span>
+    <span class="t">&lt;/main</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>262 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Home.js</span>
+<span class="k">function</span> Home($s) {
+  <span class="k">const</span> count = $signal(<span class="s">&quot;count&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;count&quot;</span>] : <span class="n">0</span>);
+  <span class="k">function</span> increment() {
+    count($py.add(count(), <span class="n">1</span>));
+  }
+  <span class="k">return</span> [$h(<span class="s">&quot;main&quot;</span>, <span class="k">null</span>, [
+      $h(<span class="s">&quot;h1&quot;</span>, <span class="k">null</span>, [<span class="s">&quot;Counter&quot;</span>]),
+      $h(<span class="s">&quot;button&quot;</span>, {<span class="s">&quot;onclick&quot;</span>: increment}, [
+        <span class="s">&quot;Count: &quot;</span>,
+        () =&gt; count()
+      ])
+    ])];
+}
+$mount(<span class="s">&quot;Home&quot;</span>, Home);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Home  route=/
+  browser  count          reactive state: assigned in increment(); literal initial value
+  browser  increment      event handler (compiled to JavaScript)</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;main&gt;
+&lt;h1&gt;Counter&lt;/h1&gt;
+&lt;button&gt;Count: 0&lt;/button&gt;
+&lt;/main&gt;</code></pre></div></div></div></details>
+<p>What happened:</p>
+<ul><li><code>count</code> is read by the markup and changed by <code>increment</code>, so it became a <strong>signal</strong>. Clicking the button updates only that button's text.</li><li><code>increment</code> was compiled to a JavaScript function. Nothing is sent to the server when you click.</li><li>The first response was complete HTML (<code>Count: 0</code>), rendered on the server.</li></ul>
+<p>Edit the file and save: the dev server recompiles and the browser reloads. If you introduce an error, the page shows it with the line.</p>
+<h2 id="see-what-the-compiler-decided"><a class="anchor" href="#see-what-the-compiler-decided">#</a>See what the compiler decided</h2>
+<div class="code"><div class="code-head"><span>Terminal</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-bash"><span class="k">pyweb</span> inspect app.pyweb</code></pre></div>
+<div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Home(&quot;/&quot;) signals [&#x27;count&#x27;] rpc []
+  place count: browser  # reactive state: assigned in increment(); literal initial value
+  place increment: browser  # event handler (compiled to JavaScript)</code></pre></div>
+<h2 id="check-build-and-serve"><a class="anchor" href="#check-build-and-serve">#</a>Check, build and serve</h2>
+<div class="code"><div class="code-head"><span>Terminal</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-bash"><span class="k">pyweb</span> check app.pyweb<span class="c">                          # compile + security checks (CI-friendly)</span>
+<span class="k">pyweb</span> build app.pyweb --out dist --production<span class="c">  # hashed, minified, deployable dist/</span>
+<span class="k">pyweb</span> serve dist<span class="c">                               # production server with /healthz</span></code></pre></div>
+<p><code>dist/</code> contains your app source, static assets and a <code>Dockerfile</code>; see <a href="deployment.html">Deployment</a>.</p>
+<h2 id="next"><a class="anchor" href="#next">#</a>Next</h2>
+<p>The <a href="tutorial.html">tutorial</a> builds a notes app with a database, server functions and login.</p>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/02-quickstart.md">Edit this page</a><nav class="pager"><a class="prev" href="introduction.html"><small>Previous</small>Introduction</a><a class="next" href="tutorial.html"><small>Next</small>Tutorial</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#install">Install</a><a class="l2" href="#create-and-run-an-app">Create and run an app</a><a class="l2" href="#see-what-the-compiler-decided">See what the compiler decided</a><a class="l2" href="#check-build-and-serve">Check, build and serve</a><a class="l2" href="#next">Next</a></nav>
+</div>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial: a notes app · PyWeb</title>
+<meta name="description" content="We&#x27;ll build a small multi-user notes app in one file: a page with browser-side state, a reusable component, a SQLite database behind server functions, and sign-in with sessions. Th">
+<meta property="og:title" content="Tutorial: a notes app · PyWeb">
+<meta property="og:description" content="We&#x27;ll build a small multi-user notes app in one file: a page with browser-side state, a reusable component, a SQLite database behind server functions, and sign-in with sessions. Th">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/tutorial.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html">Introduction</a><a href="quickstart.html">Quickstart</a><a href="tutorial.html" aria-current=page>Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html">State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html">Pages, routing &amp; assets</a><a href="data.html">Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html">Security model</a><a href="cli.html">Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>Tutorial: a notes app</h1>
+<p>We'll build a small multi-user notes app in one file: a page with browser-side state, a reusable component, a SQLite database behind server functions, and sign-in with sessions. The finished app is about 90 lines.</p>
+<h2 id="1-a-page-with-state"><a class="anchor" href="#1-a-page-with-state">#</a>1. A page with state</h2>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App
+
+app = App(title=<span class="s">&quot;Notes&quot;</span>)
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Home():
+    notes = [<span class="s">&quot;Try PyWeb&quot;</span>]
+    draft = <span class="s">&quot;&quot;</span>
+
+    <span class="k">def</span> save():
+        <span class="k">if</span> draft.strip():
+            notes.append(draft.strip())
+        draft = <span class="s">&quot;&quot;</span>
+
+    <span class="t">&lt;main</span><span class="t">&gt;</span>
+        <span class="t">&lt;h1</span><span class="t">&gt;</span>Notes ({<span class="b">len</span>(notes)})<span class="t">&lt;/h1</span><span class="t">&gt;</span>
+        <span class="t">&lt;form</span> onsubmit={save}<span class="t">&gt;</span>
+            <span class="t">&lt;input</span> bind={draft} placeholder=<span class="s">&quot;Write a note&quot;</span> <span class="t">/&gt;</span>
+            <span class="t">&lt;button</span> disabled={<span class="k">not</span> draft.strip()}<span class="t">&gt;</span>Save<span class="t">&lt;/button</span><span class="t">&gt;</span>
+        <span class="t">&lt;/form</span><span class="t">&gt;</span>
+        <span class="t">&lt;ul</span><span class="t">&gt;</span>
+            <span class="k">for</span> note <span class="k">in</span> notes:
+                <span class="t">&lt;li</span><span class="t">&gt;</span>{note}<span class="t">&lt;/li</span><span class="t">&gt;</span>
+        <span class="t">&lt;/ul</span><span class="t">&gt;</span>
+    <span class="t">&lt;/main</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>416 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Home.js</span>
+<span class="k">function</span> Home($s) {
+  <span class="k">const</span> notes = $signal(<span class="s">&quot;notes&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;notes&quot;</span>] : [<span class="s">&quot;Try PyWeb&quot;</span>]);
+  <span class="k">const</span> draft = $signal(<span class="s">&quot;draft&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;draft&quot;</span>] : <span class="s">&quot;&quot;</span>);
+  <span class="k">function</span> save() {
+    <span class="k">if</span> ($py.truth($py.m(draft(), <span class="s">&quot;strip&quot;</span>))) {
+      $py.mut(notes, [], ($v) =&gt; $py.m($v, <span class="s">&quot;append&quot;</span>, $py.m(draft(), <span class="s">&quot;strip&quot;</span>)));
+    }
+    draft(<span class="s">&quot;&quot;</span>);
+  }
+  <span class="k">return</span> [$h(<span class="s">&quot;main&quot;</span>, <span class="k">null</span>, [
+      $h(<span class="s">&quot;h1&quot;</span>, <span class="k">null</span>, [
+        <span class="s">&quot;Notes (&quot;</span>,
+        () =&gt; $py.len(notes()),
+        <span class="s">&quot;)&quot;</span>
+      ]),
+      $h(<span class="s">&quot;form&quot;</span>, {<span class="s">&quot;onsubmit&quot;</span>: save}, [
+        $h(<span class="s">&quot;input&quot;</span>, {<span class="s">&quot;$bind&quot;</span>: draft, <span class="s">&quot;placeholder&quot;</span>: <span class="s">&quot;Write a note&quot;</span>}),
+        $h(<span class="s">&quot;button&quot;</span>, {<span class="s">&quot;disabled&quot;</span>: () =&gt; !$py.truth($py.m(draft(), <span class="s">&quot;strip&quot;</span>))}, [<span class="s">&quot;Save&quot;</span>])
+      ]),
+      $h(<span class="s">&quot;ul&quot;</span>, <span class="k">null</span>, [$list(() =&gt; notes(), (note) =&gt; [$h(<span class="s">&quot;li&quot;</span>, <span class="k">null</span>, [$py.text(note)])])])
+    ])];
+}
+$mount(<span class="s">&quot;Home&quot;</span>, Home);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Home  route=/
+  browser  notes          reactive state: .append() in save(); literal initial value
+  browser  draft          reactive state: bound to an input (line 19); literal initial value
+  browser  save           event handler (compiled to JavaScript)</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;main&gt;
+&lt;h1&gt;Notes (1)&lt;/h1&gt;
+&lt;form&gt;
+&lt;input value=&quot;&quot; placeholder=&quot;Write a note&quot;&gt;&lt;button disabled&gt;Save&lt;/button&gt;
+&lt;/form&gt;&lt;ul&gt;
+&lt;li&gt;Try PyWeb&lt;/li&gt;
+&lt;/ul&gt;&lt;/main&gt;</code></pre></div></div></div></details>
+<ul><li><code>bind={draft}</code> keeps the input and the variable in sync both ways.</li><li><code>onsubmit={save}</code> runs <code>save</code> and prevents the browser's default form submission.</li><li><code>notes.append(...)</code> mutates a list that markup reads. PyWeb makes the update copy-on-write, so the <code>&lt;ul&gt;</code> adds exactly one <code>&lt;li&gt;</code> and the heading's count updates.</li><li><code>disabled={not draft.strip()}</code> re-evaluates as you type.</li></ul>
+<p>Inside handlers, assigning a page variable (<code>draft = &quot;&quot;</code>) updates the page state. There is no <code>nonlocal</code> and no <code>setState</code>.</p>
+<h2 id="2-a-component"><a class="anchor" href="#2-a-component">#</a>2. A component</h2>
+<p>Any capitalised function containing markup is a component. Parameters are props; <code>children</code> receives nested markup.</p>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App, component
+
+app = App(title=<span class="s">&quot;Notes&quot;</span>)
+
+
+<span class="d">@component</span>
+<span class="k">def</span> Note(text, on_delete):
+    <span class="t">&lt;li</span><span class="t">&gt;</span>
+        <span class="t">&lt;span</span><span class="t">&gt;</span>{text}<span class="t">&lt;/span</span><span class="t">&gt;</span>
+        <span class="t">&lt;button</span> onclick={on_delete} aria-label=<span class="s">&quot;Delete&quot;</span><span class="t">&gt;</span>×<span class="t">&lt;/button</span><span class="t">&gt;</span>
+    <span class="t">&lt;/li</span><span class="t">&gt;</span>
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Home():
+    notes = [<span class="s">&quot;Try PyWeb&quot;</span>, <span class="s">&quot;Write docs&quot;</span>]
+
+    <span class="k">def</span> delete(i):
+        <span class="k">del</span> notes[i]
+
+    <span class="t">&lt;ul</span><span class="t">&gt;</span>
+        <span class="k">for</span> i, text <span class="k">in</span> <span class="b">enumerate</span>(notes):
+            <span class="t">&lt;Note</span> text={text} on_delete={<span class="k">lambda</span>: delete(i)} <span class="t">/&gt;</span>
+    <span class="t">&lt;/ul</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>390 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Home.js</span>
+<span class="k">function</span> Note($p) {
+  <span class="k">const</span> text = $p[<span class="s">&quot;text&quot;</span>] || (() =&gt; <span class="k">null</span>);
+  <span class="k">const</span> on_delete = $p[<span class="s">&quot;on_delete&quot;</span>] || (() =&gt; <span class="k">null</span>);
+  <span class="k">return</span> [$h(<span class="s">&quot;li&quot;</span>, <span class="k">null</span>, [
+      $h(<span class="s">&quot;span&quot;</span>, <span class="k">null</span>, [() =&gt; text()]),
+      $h(<span class="s">&quot;button&quot;</span>, {<span class="s">&quot;onclick&quot;</span>: (e) =&gt; on_delete()(e), <span class="s">&quot;aria-label&quot;</span>: <span class="s">&quot;Delete&quot;</span>}, [<span class="s">&quot;\u00d7&quot;</span>])
+    ])];
+}
+<span class="k">function</span> Home($s) {
+  <span class="k">const</span> notes = $signal(<span class="s">&quot;notes&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;notes&quot;</span>] : [<span class="s">&quot;Try PyWeb&quot;</span>, <span class="s">&quot;Write docs&quot;</span>]);
+  <span class="k">function</span> delete_(i) {
+    $py.delp(notes, [i]);
+  }
+  <span class="k">return</span> [$h(<span class="s">&quot;ul&quot;</span>, <span class="k">null</span>, [$list(() =&gt; $py.enumerate(notes()), ([i, text]) =&gt; [Note({<span class="s">&quot;text&quot;</span>: () =&gt; text, <span class="s">&quot;on_delete&quot;</span>: () =&gt; (() =&gt; (delete_(i)))})])])];
+}
+$mount(<span class="s">&quot;Home&quot;</span>, Home);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Home  route=/
+  browser  notes          reactive state: item assigned in delete(); literal initial value
+  browser  delete         event handler (compiled to JavaScript)</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;ul&gt;
+&lt;li&gt;&lt;span&gt;Try PyWeb&lt;/span&gt;&lt;button aria-label=&quot;Delete&quot;&gt;×&lt;/button&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;span&gt;Write docs&lt;/span&gt;&lt;button aria-label=&quot;Delete&quot;&gt;×&lt;/button&gt;
+&lt;/li&gt;
+&lt;/ul&gt;</code></pre></div></div></div></details>
+<p><code>onclick={delete(i)}</code> would also work: an event attribute's expression runs when the event fires, not while rendering.</p>
+<h2 id="3-persist-to-a-database-with-server-functions"><a class="anchor" href="#3-persist-to-a-database-with-server-functions">#</a>3. Persist to a database with server functions</h2>
+<p>Functions marked <code>@server</code> run only on the server. Calling one from a handler sends a typed RPC request and waits for the result; the compiler generates both ends.</p>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App, RPCError, server
+<span class="k">from</span> pyweb.db <span class="k">import</span> connect
+
+app = App(title=<span class="s">&quot;Notes&quot;</span>)
+db = connect(<span class="s">&quot;sqlite:///notes.db&quot;</span>)
+db.execute(<span class="s">&quot;create table if not exists notes (id integer primary key, body text not null)&quot;</span>)
+
+
+<span class="k">def</span> all_notes():
+    <span class="k">return</span> db.execute(<span class="s">&quot;select id, body from notes order by id&quot;</span>).dicts()
+
+
+<span class="d">@server</span>
+<span class="k">def</span> add_note(body: <span class="b">str</span>) -<span class="t">&gt;</span> <span class="b">list</span>:
+    <span class="k">if</span> <span class="k">not</span> body.strip():
+        <span class="k">raise</span> RPCError(<span class="s">&quot;validation_error&quot;</span>, <span class="s">&quot;A note can&#x27;t be empty.&quot;</span>)
+    db.execute(<span class="s">&quot;insert into notes (body) values (?)&quot;</span>, (body.strip(),))
+    <span class="k">return</span> all_notes()
+
+
+<span class="d">@server</span>
+<span class="k">def</span> delete_note(note_id: <span class="b">int</span>) -<span class="t">&gt;</span> <span class="b">list</span>:
+    db.execute(<span class="s">&quot;delete from notes where id = ?&quot;</span>, (note_id,))
+    <span class="k">return</span> all_notes()
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Home():
+    notes = all_notes()
+    draft = <span class="s">&quot;&quot;</span>
+    error = <span class="s">&quot;&quot;</span>
+
+    <span class="k">def</span> save():
+        <span class="k">try</span>:
+            notes = add_note(draft)
+            draft = <span class="s">&quot;&quot;</span>
+            error = <span class="s">&quot;&quot;</span>
+        <span class="k">except</span> RPCError <span class="k">as</span> e:
+            error = <span class="b">str</span>(e)
+
+    <span class="k">def</span> remove(note):
+        notes = delete_note(note[<span class="s">&quot;id&quot;</span>])
+
+    <span class="t">&lt;main</span><span class="t">&gt;</span>
+        <span class="t">&lt;form</span> onsubmit={save}<span class="t">&gt;</span>
+            <span class="t">&lt;input</span> bind={draft} <span class="t">/&gt;</span>
+            <span class="t">&lt;button</span><span class="t">&gt;</span>Save<span class="t">&lt;/button</span><span class="t">&gt;</span>
+        <span class="t">&lt;/form</span><span class="t">&gt;</span>
+        <span class="t">&lt;p</span> <span class="k">class</span>=<span class="s">&quot;error&quot;</span><span class="t">&gt;</span>{error}<span class="t">&lt;/p</span><span class="t">&gt;</span>
+        <span class="t">&lt;ul</span><span class="t">&gt;</span>
+            <span class="k">for</span> note <span class="k">in</span> notes:
+                <span class="t">&lt;li</span><span class="t">&gt;</span>{note[<span class="s">&quot;body&quot;</span>]} <span class="t">&lt;button</span> onclick={remove(note)}<span class="t">&gt;</span>×<span class="t">&lt;/button</span><span class="t">&gt;</span><span class="t">&lt;/li</span><span class="t">&gt;</span>
+        <span class="t">&lt;/ul</span><span class="t">&gt;</span>
+    <span class="t">&lt;/main</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>497 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Home.js</span>
+<span class="k">function</span> Home($s) {
+  <span class="k">const</span> notes = $signal(<span class="s">&quot;notes&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;notes&quot;</span>] : <span class="k">null</span>);
+  <span class="k">const</span> draft = $signal(<span class="s">&quot;draft&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;draft&quot;</span>] : <span class="s">&quot;&quot;</span>);
+  <span class="k">const</span> error = $signal(<span class="s">&quot;error&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;error&quot;</span>] : <span class="s">&quot;&quot;</span>);
+  <span class="k">async</span> <span class="k">function</span> save() {
+    <span class="k">let</span> e;
+    <span class="k">try</span> {
+      notes((<span class="k">await</span> $rpc(<span class="s">&quot;add_note&quot;</span>, {<span class="s">&quot;body&quot;</span>: draft()})));
+      draft(<span class="s">&quot;&quot;</span>);
+      error(<span class="s">&quot;&quot;</span>);
+    } <span class="k">catch</span> ($err) {
+      <span class="k">if</span> ($py.exc($err, [<span class="s">&quot;RPCError&quot;</span>])) {
+        e = $err;
+        error($py.str(e));
+      } <span class="k">else</span> { <span class="k">throw</span> $err; }
+    }
+  }
+  <span class="k">async</span> <span class="k">function</span> remove(note) {
+    notes((<span class="k">await</span> $rpc(<span class="s">&quot;delete_note&quot;</span>, {<span class="s">&quot;note_id&quot;</span>: $py.at(note, <span class="s">&quot;id&quot;</span>)})));
+  }
+  <span class="k">return</span> [$h(<span class="s">&quot;main&quot;</span>, <span class="k">null</span>, [
+      $h(<span class="s">&quot;form&quot;</span>, {<span class="s">&quot;onsubmit&quot;</span>: save}, [
+        $h(<span class="s">&quot;input&quot;</span>, {<span class="s">&quot;$bind&quot;</span>: draft}),
+        $h(<span class="s">&quot;button&quot;</span>, <span class="k">null</span>, [<span class="s">&quot;Save&quot;</span>])
+      ]),
+      $h(<span class="s">&quot;p&quot;</span>, {<span class="s">&quot;class&quot;</span>: <span class="s">&quot;error&quot;</span>}, [() =&gt; error()]),
+      $h(<span class="s">&quot;ul&quot;</span>, <span class="k">null</span>, [$list(() =&gt; notes(), (note) =&gt; [$h(<span class="s">&quot;li&quot;</span>, <span class="k">null</span>, [
+            $py.text($py.at(note, <span class="s">&quot;body&quot;</span>)),
+            <span class="s">&quot; &quot;</span>,
+            $h(<span class="s">&quot;button&quot;</span>, {<span class="s">&quot;onclick&quot;</span>: (<span class="k">async</span> () =&gt; (<span class="k">await</span> remove(note)))}, [<span class="s">&quot;\u00d7&quot;</span>])
+          ])])])
+    ])];
+}
+$mount(<span class="s">&quot;Home&quot;</span>, Home);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Home  route=/
+  browser  notes          reactive state: assigned in save(); initial value computed on the server and sent
+  browser  draft          reactive state: bound to an input (line 46); literal initial value
+  browser  error          reactive state: assigned in save(); literal initial value
+  browser  save           event handler (compiled to JavaScript)
+  browser  remove         event handler (compiled to JavaScript)
+rpc POST /__pyweb/rpc/add_note  (body: str) -&gt; list
+rpc POST /__pyweb/rpc/delete_note  (note_id: int) -&gt; list</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;main&gt;
+&lt;form&gt;
+&lt;input value=&quot;&quot;&gt;&lt;button&gt;Save&lt;/button&gt;
+&lt;/form&gt;&lt;p class=&quot;error&quot;&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;/ul&gt;&lt;/main&gt;</code></pre></div></div></div></details>
+<p>What the compiler did (run <code>pyweb inspect app.pyweb</code> to see it):</p>
+<ul><li><code>notes = all_notes()</code> calls a module function, so it runs <strong>on the server</strong> for each request; its value is rendered into the HTML and sent to the browser as initial state.</li><li><code>save</code> and <code>remove</code> are compiled to <code>async</code> JavaScript functions that call <code>/__pyweb/rpc/add_note</code> and <code>/__pyweb/rpc/delete_note</code>.</li><li><code>db</code> and <code>connect</code> never reach the browser. Referencing them from a handler is a compile error that points at the line.</li><li><code>RPCError(&quot;validation_error&quot;, ...)</code> becomes a typed error in the browser; <code>except RPCError as e</code> catches it there.</li></ul>
+<h2 id="4-sign-in-with-sessions"><a class="anchor" href="#4-sign-in-with-sessions">#</a>4. Sign-in with sessions</h2>
+<p><code>pyweb.session</code> stores a signed, HTTP-only cookie. Pages can redirect before rendering.</p>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App, redirect, server, session
+
+app = App(title=<span class="s">&quot;Notes&quot;</span>)
+
+
+<span class="d">@server</span>
+<span class="k">def</span> sign_in(name: <span class="b">str</span>) -<span class="t">&gt;</span> <span class="b">bool</span>:
+    <span class="k">if</span> <span class="k">not</span> name.strip():
+        <span class="k">return</span> <span class="k">False</span>
+    session.login(name.strip())
+    <span class="k">return</span> <span class="k">True</span>
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/login&quot;</span>)
+<span class="k">def</span> Login():
+    name = <span class="s">&quot;&quot;</span>
+    error = <span class="s">&quot;&quot;</span>
+
+    <span class="k">def</span> go():
+        <span class="k">if</span> sign_in(name):
+            window.location.href = <span class="s">&quot;/&quot;</span>
+        <span class="k">else</span>:
+            error = <span class="s">&quot;Enter a name&quot;</span>
+
+    <span class="t">&lt;form</span> onsubmit={go}<span class="t">&gt;</span>
+        <span class="t">&lt;input</span> bind={name} placeholder=<span class="s">&quot;Your name&quot;</span> <span class="t">/&gt;</span>
+        <span class="t">&lt;button</span><span class="t">&gt;</span>Sign <span class="k">in</span><span class="t">&lt;/button</span><span class="t">&gt;</span>
+        <span class="t">&lt;p</span><span class="t">&gt;</span>{error}<span class="t">&lt;/p</span><span class="t">&gt;</span>
+    <span class="t">&lt;/form</span><span class="t">&gt;</span>
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Home():
+    user = session.user()
+    <span class="k">if</span> <span class="k">not</span> user:
+        <span class="k">return</span> redirect(<span class="s">&quot;/login&quot;</span>)
+    who = user[<span class="s">&quot;sub&quot;</span>]
+
+    <span class="t">&lt;h1</span><span class="t">&gt;</span>Hello, {who}<span class="t">&lt;/h1</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>352 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Login.js</span>
+<span class="k">function</span> Login($s) {
+  <span class="k">const</span> name = $signal(<span class="s">&quot;name&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;name&quot;</span>] : <span class="s">&quot;&quot;</span>);
+  <span class="k">const</span> error = $signal(<span class="s">&quot;error&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;error&quot;</span>] : <span class="s">&quot;&quot;</span>);
+  <span class="k">async</span> <span class="k">function</span> go() {
+    <span class="k">if</span> ($py.truth((<span class="k">await</span> $rpc(<span class="s">&quot;sign_in&quot;</span>, {<span class="s">&quot;name&quot;</span>: name()})))) {
+      window.location.href = <span class="s">&quot;/&quot;</span>;
+    } <span class="k">else</span> {
+      error(<span class="s">&quot;Enter a name&quot;</span>);
+    }
+  }
+  <span class="k">return</span> [$h(<span class="s">&quot;form&quot;</span>, {<span class="s">&quot;onsubmit&quot;</span>: go}, [
+      $h(<span class="s">&quot;input&quot;</span>, {<span class="s">&quot;$bind&quot;</span>: name, <span class="s">&quot;placeholder&quot;</span>: <span class="s">&quot;Your name&quot;</span>}),
+      $h(<span class="s">&quot;button&quot;</span>, <span class="k">null</span>, [<span class="s">&quot;Sign in&quot;</span>]),
+      $h(<span class="s">&quot;p&quot;</span>, <span class="k">null</span>, [() =&gt; error()])
+    ])];
+}
+$mount(<span class="s">&quot;Login&quot;</span>, Login);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Login  route=/login
+  browser  name           reactive state: bound to an input (line 26); literal initial value
+  browser  error          reactive state: assigned in go(); literal initial value
+  browser  go             event handler (compiled to JavaScript)
+page Home  route=/
+  server   user           computed per request; never read by browser code, never sent
+  server   who            computed per request on the server; value sent because browser code reads it
+rpc POST /__pyweb/rpc/sign_in  (name: str) -&gt; bool</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;form&gt;
+&lt;input value=&quot;&quot; placeholder=&quot;Your name&quot;&gt;&lt;button&gt;Sign in&lt;/button&gt;
+&lt;p&gt;&lt;/p&gt;
+&lt;/form&gt;</code></pre></div></div></div></details>
+<p>Only <code>who</code> is sent to the browser. The full session record in <code>user</code> stays on the server because browser code never reads it.</p>
+<p>In server functions, <code>session.require()</code> returns the session or raises an <code>unauthenticated</code> RPC error. Set <code>PYWEB_AUTH_SECRET</code> in production (see <a href="auth.html">Authentication</a>).</p>
+<h2 id="5-ship-it"><a class="anchor" href="#5-ship-it">#</a>5. Ship it</h2>
+<div class="code"><div class="code-head"><span>Terminal</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-bash"><span class="k">pyweb</span> check app.pyweb
+<span class="k">pyweb</span> build app.pyweb --out dist --production
+PYWEB_AUTH_SECRET=change-me pyweb serve dist</code></pre></div>
+<p>The complete, tested versions of these apps live in <a href="https://github.com/MaanavKrishna/PyWeb/tree/main/examples"><code>examples/</code></a>.</p>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/03-tutorial.md">Edit this page</a><nav class="pager"><a class="prev" href="quickstart.html"><small>Previous</small>Quickstart</a><a class="next" href="language.html"><small>Next</small>The .pyweb language</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#1-a-page-with-state">1. A page with state</a><a class="l2" href="#2-a-component">2. A component</a><a class="l2" href="#3-persist-to-a-database-with-server-functions">3. Persist to a database with server functions</a><a class="l2" href="#4-sign-in-with-sessions">4. Sign-in with sessions</a><a class="l2" href="#5-ship-it">5. Ship it</a></nav>
+</div>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

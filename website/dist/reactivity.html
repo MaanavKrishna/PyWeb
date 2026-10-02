@@ -1,46 +1,135 @@
-<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta name=description content='How PyWeb lowers ordinary Python variables into signals and computed values, and patches only the affected DOM nodes.'><meta property='og:title' content='Reactivity without a virtual DOM - PyWeb'><meta property='og:description' content='How PyWeb lowers ordinary Python variables into signals and computed values, and patches only the affected DOM nodes.'><meta property='og:type' content='website'><meta name=theme-color content='#0a0f16'><title>Reactivity without a virtual DOM - PyWeb</title><script src="https://cdn.tailwindcss.com"></script><script>tailwind.config={corePlugins:{preflight:!1},theme:{extend:{colors:{base:"var(--bg)",base2:"var(--bg2)",panel:"var(--panel)",panel2:"var(--panel2)",line:"var(--line)",ink:"var(--txt)",mut:"var(--dim)",faint:"var(--faint)",acc:"var(--acc)",acc2:"var(--acc2)",okc:"var(--ok)"},fontFamily:{sans:["system-ui","-apple-system","Segoe UI","Roboto","Inter","sans-serif"],mono:["ui-monospace","SFMono-Regular","Menlo","Consolas","monospace"]}}}}</script><link rel=stylesheet href="assets/style.css"><link rel=icon href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27><text y=%27.9em%27 font-size=%2732%27>P</text></svg>"></head><body class="m-0 bg-base font-sans text-ink"><a class="skip" href="#main">Skip to content</a><header class="sticky top-0 z-50 border-b border-line bg-base2"><div class="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-3 gap-y-2 px-6 py-2.5"><a class="flex items-center gap-2 text-[18px] font-extrabold tracking-tight text-ink hover:no-underline" href="index.html"><span class="grid h-[26px] w-[26px] place-items-center rounded-lg bg-gradient-to-br from-emerald-400 to-sky-400 text-[14px] font-black text-white">P</span>PyWeb</a><span class="whitespace-nowrap rounded-full border border-line bg-panel2 px-2.5 py-0.5 text-[11px] font-bold text-okc">v1.0</span><nav class="ml-auto hidden items-center gap-0.5 text-[13px] md:flex" aria-label="Docs"><a href="guide.html" class="text-mut whitespace-nowrap rounded-lg px-2.5 py-1.5 hover:bg-panel2 hover:text-ink hover:no-underline">Guide</a><a href="playground.html" class="text-mut whitespace-nowrap rounded-lg px-2.5 py-1.5 hover:bg-panel2 hover:text-ink hover:no-underline">Playground</a><a href="examples.html" class="text-mut whitespace-nowrap rounded-lg px-2.5 py-1.5 hover:bg-panel2 hover:text-ink hover:no-underline">Examples</a><a href="benchmarks.html" class="text-mut whitespace-nowrap rounded-lg px-2.5 py-1.5 hover:bg-panel2 hover:text-ink hover:no-underline">Benchmarks</a><a href="api.html" class="text-mut whitespace-nowrap rounded-lg px-2.5 py-1.5 hover:bg-panel2 hover:text-ink hover:no-underline">API</a></nav><div class="ml-auto flex items-center gap-2 md:ml-0"><input id="site-search" type="search" placeholder="Search docs…" aria-label="Search docs" class="hidden w-[150px] rounded-lg border border-line bg-panel px-3 py-1.5 text-[13px] text-ink placeholder:text-faint sm:block xl:w-[170px]"><button onclick="pwTheme()" title="Toggle theme" class="rounded-lg border border-line bg-panel px-3 py-1.5 text-[13px] text-ink hover:border-acc">☾</button><a href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub" class="hidden items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 text-[13px] font-semibold text-ink hover:border-acc hover:no-underline sm:inline-flex"><svg width=14 height=14 viewBox='0 0 16 16' fill='currentColor' aria-hidden=true><path d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z'/></svg><span>GitHub</span></a></div></div></header><div id="main" class="mx-auto w-full max-w-7xl gap-9 px-6 lg:grid lg:grid-cols-[250px_minmax(0,1fr)]"><aside class="flex gap-6 overflow-x-auto py-3 lg:sticky lg:top-[62px] lg:block lg:max-h-[calc(100vh_-_86px)] lg:overflow-auto lg:py-7"><div class="shrink-0 lg:mb-5"><div class="mb-1.5 hidden text-[11px] font-extrabold uppercase tracking-[1px] text-faint lg:block">Start</div><nav aria-label="Start" class="flex gap-2 overflow-x-auto pb-1 lg:block lg:overflow-visible lg:pb-0"><a href="guide.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Guide</a><a href="playground.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Playground</a></nav></div><div class="shrink-0 lg:mb-5"><div class="mb-1.5 hidden text-[11px] font-extrabold uppercase tracking-[1px] text-faint lg:block">Core</div><nav aria-label="Core" class="flex gap-2 overflow-x-auto pb-1 lg:block lg:overflow-visible lg:pb-0"><a href="reactivity.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-acc text-ink lg:mb-1 lg:border-0 lg:border-l-2 lg:bg-panel lg:font-bold">Reactivity</a><a href="rpc.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">RPC &amp; Placement</a><a href="database.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Database</a><a href="auth.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Auth</a></nav></div><div class="shrink-0 lg:mb-5"><div class="mb-1.5 hidden text-[11px] font-extrabold uppercase tracking-[1px] text-faint lg:block">Runtime</div><nav aria-label="Runtime" class="flex gap-2 overflow-x-auto pb-1 lg:block lg:overflow-visible lg:pb-0"><a href="realtime.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Realtime &amp; Jobs</a><a href="styling.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Styling</a><a href="browser.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Browser APIs</a><a href="testing.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Testing</a></nav></div><div class="shrink-0 lg:mb-5"><div class="mb-1.5 hidden text-[11px] font-extrabold uppercase tracking-[1px] text-faint lg:block">Ship</div><nav aria-label="Ship" class="flex gap-2 overflow-x-auto pb-1 lg:block lg:overflow-visible lg:pb-0"><a href="production.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Production</a><a href="deploy.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Deploy</a><a href="api.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">API</a><a href="examples.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Examples</a><a href="benchmarks.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Benchmarks</a><a href="roadmap.html" class="mb-0 block whitespace-nowrap rounded-lg border px-3 py-1.5 hover:bg-panel hover:text-ink hover:no-underline border-line text-mut lg:mb-1 lg:border-0 lg:border-l-2 lg:border-transparent">Roadmap</a></nav></div></aside><div class="min-w-0 pb-5">
-<section class=block>
-<h2 class=sec>Normal variables become signals</h2>
-<p class=lead>Stages: parse markup → <code>compute_reactive</code> finds
-locals read by UI and mutated by handlers → each becomes a signal →
-computed values form a dependency graph → generated JS updates only bound
-nodes.</p>
-<div style="position:relative"><button class="copybtn" onclick="pwCopy(this)">Copy</button><pre><code>price = 100
-quantity = 2
-total = price * quantity   # compiler: computed(price, quantity)
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>State and reactivity · PyWeb</title>
+<meta name="description" content="You never declare reactive state. The compiler reads each page (and component) function and classifies every local variable by how it is used.">
+<meta property="og:title" content="State and reactivity · PyWeb">
+<meta property="og:description" content="You never declare reactive state. The compiler reads each page (and component) function and classifies every local variable by how it is used.">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/reactivity.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html">Introduction</a><a href="quickstart.html">Quickstart</a><a href="tutorial.html">Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html" aria-current=page>State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html">Pages, routing &amp; assets</a><a href="data.html">Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html">Security model</a><a href="cli.html">Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>State and reactivity</h1>
+<p>You never declare reactive state. The compiler reads each page (and component) function and classifies every local variable by <strong>how it is used</strong>.</p>
+<h2 id="the-three-kinds-of-state"><a class="anchor" href="#the-three-kinds-of-state">#</a>The three kinds of state</h2>
+<div class="table"><table><thead><tr><th>Kind</th><th>Rule</th><th>In the browser</th></tr></thead><tbody><tr><td><strong>signal</strong></td><td>changed by an event handler (assigned, <code>+=</code>, mutated with <code>.append()</code>, item assignment, <code>del x[i]</code>, …) or bound with <code>bind={x}</code></td><td>a reactive cell; writing it updates exactly the DOM that reads it</td></tr><tr><td><strong>computed</strong></td><td>assigned once from an expression that reads signals, never changed by a handler</td><td>a cached derivation, recomputed only after one of its inputs changes</td></tr><tr><td><strong>constant</strong></td><td>anything else</td><td>a plain value</td></tr></tbody></table></div>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App
 
-&lt;p&gt;{total}&lt;/p&gt;             # one text-node binding; a price change
-                           # patches that node only</code></pre></div>
-<div class="graph" role="img" aria-label="Dependency graph: price and quantity flow into total, which updates one text node">
-<svg viewBox="0 0 640 210" width="640" height="210">
-<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#6b7d99" stroke-width="1.4"/></marker></defs>
-<text class="glab" x="20" y="18">pyweb compiler · reactive dependency graph</text>
-<rect class="gnode" x="20" y="50" width="130" height="52" rx="10"/><text class="gtxt" x="34" y="72">price = 100</text><text class="glab" x="34" y="90">signal · browser</text>
-<rect class="gnode" x="20" y="130" width="130" height="52" rx="10"/><text class="gtxt" x="34" y="152">quantity = 2</text><text class="glab" x="34" y="170">signal · browser</text>
-<rect class="gnode" x="255" y="90" width="150" height="52" rx="10"/><text class="gtxt" x="269" y="112">total = price*qty</text><text class="glab" x="269" y="130">computed</text>
-<rect class="gnode" x="490" y="90" width="130" height="52" rx="10"/><text class="gtxt" x="504" y="112">&lt;p&gt;{total}&lt;/p&gt;</text><text class="glab" x="504" y="130">1 text node</text>
-<line class="gedge" x1="150" y1="76" x2="248" y2="104"/><line class="gedge" x1="150" y1="156" x2="248" y2="122"/><line class="gedge" x1="405" y1="116" x2="483" y2="116"/>
-</svg></div>
+app = App()
 
-<p class=lead>When <code>price</code> changes, only the <code>{total}</code>
-text node updates — the component never rerenders. Compare with the
-framework norm:</p>
-<div class=compare>
-<div class=vs-no><b>Typical VDOM framework</b><br>state change → rerender component → diff tree → patch DOM. O(tree) work per update; memoization is manual.</div>
-<div class=vs-yes><b>PyWeb</b><br>signal change → notify exactly the bindings that read it → patch those nodes. O(bindings) work; dependencies are compiler-derived.</div>
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Cart():
+    price = <span class="n">25</span>            <span class="c"># constant</span>
+    quantity = <span class="n">1</span>          <span class="c"># signal: bound to the input</span>
+    total = price * quantity          <span class="c"># computed: reads a signal</span>
+    label = <span class="s">&quot;Total&quot;</span>       <span class="c"># constant</span>
+
+    <span class="t">&lt;label</span><span class="t">&gt;</span>Quantity <span class="t">&lt;input</span> type=<span class="s">&quot;number&quot;</span> bind={quantity} <span class="t">/&gt;</span><span class="t">&lt;/label</span><span class="t">&gt;</span>
+    <span class="t">&lt;p</span><span class="t">&gt;</span>{label}: {total}<span class="t">&lt;/p</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>298 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Cart.js</span>
+<span class="k">function</span> Cart($s) {
+  <span class="k">const</span> price = <span class="n">25</span>;
+  <span class="k">const</span> quantity = $signal(<span class="s">&quot;quantity&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;quantity&quot;</span>] : <span class="n">1</span>);
+  <span class="k">const</span> total = $computed(() =&gt; $py.mul(price, quantity()));
+  <span class="k">const</span> label = <span class="s">&quot;Total&quot;</span>;
+  <span class="k">return</span> [
+    $h(<span class="s">&quot;label&quot;</span>, <span class="k">null</span>, [
+      <span class="s">&quot;Quantity &quot;</span>,
+      $h(<span class="s">&quot;input&quot;</span>, {<span class="s">&quot;type&quot;</span>: <span class="s">&quot;number&quot;</span>, <span class="s">&quot;$bind&quot;</span>: quantity})
+    ]),
+    $h(<span class="s">&quot;p&quot;</span>, <span class="k">null</span>, [
+      $py.text(label),
+      <span class="s">&quot;: &quot;</span>,
+      () =&gt; total()
+    ])
+  ];
+}
+$mount(<span class="s">&quot;Cart&quot;</span>, Cart);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Cart  route=/
+  browser  price          constant
+  browser  quantity       reactive state: bound to an input (line 13); literal initial value
+  browser  total          derived from quantity; recomputed when they change
+  browser  label          constant</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;label&gt;Quantity &lt;input type=&quot;number&quot; value=&quot;1&quot;&gt;&lt;/label&gt;&lt;p&gt;Total: 25&lt;/p&gt;</code></pre></div></div></div></details>
+<p>Typing in the input updates <code>quantity</code>, which invalidates <code>total</code>, which updates one text node. Nothing else re-renders. There is no virtual DOM.</p>
+<h2 id="where-initial-values-come-from"><a class="anchor" href="#where-initial-values-come-from">#</a>Where initial values come from</h2>
+<p>Separately, each value's <em>origin</em> decides where it is first computed:</p>
+<div class="table"><table><thead><tr><th>Origin</th><th>Example</th><th>Behaviour</th></tr></thead><tbody><tr><td>literal</td><td><code>count = 0</code></td><td>known at compile time</td></tr><tr><td>browser</td><td><code>total = price * quantity</code></td><td>computed by the generated JavaScript</td></tr><tr><td>server</td><td><code>rows = load_rows()</code>, <code>user = session.user()</code>, anything after page-level Python logic (<code>if</code>, loops), anything derived from another server value</td><td>computed by Python on every request</td></tr></tbody></table></div>
+<p>Server values are rendered into the HTML. Only the ones that browser code (markup or handlers) actually reads are serialised to JSON for the page, so intermediate values such as a full user record stay private. The serialised state must be JSON-compatible; <code>dict</code>, <code>list</code>, <code>str</code>, numbers, <code>bool</code>, <code>None</code>, dataclasses, <code>datetime</code>/<code>date</code> (ISO strings), <code>Decimal</code> (float) and objects with <code>to_dict()</code>/<code>model_dump()</code> are converted automatically.</p>
+<h2 id="updating-state-in-handlers"><a class="anchor" href="#updating-state-in-handlers">#</a>Updating state in handlers</h2>
+<p>Inside a handler, page variables are shared with the page: assigning one updates the page state. (In plain Python this would create a local; in a PyWeb page it is the point.) Names that are not page variables are ordinary locals.</p>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App
+
+app = App()
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Board():
+    cards = [{<span class="s">&quot;title&quot;</span>: <span class="s">&quot;a&quot;</span>, <span class="s">&quot;votes&quot;</span>: <span class="n">0</span>}]
+    selected = <span class="k">None</span>
+
+    <span class="k">def</span> vote(i):
+        cards[i][<span class="s">&quot;votes&quot;</span>] += <span class="n">1</span>          <span class="c"># item update: copy-on-write</span>
+        selected = i                    <span class="c"># plain assignment</span>
+
+    <span class="k">def</span> sort_cards():
+        cards.sort(key=<span class="k">lambda</span> c: -c[<span class="s">&quot;votes&quot;</span>])
+
+    <span class="t">&lt;ul</span> onclick={sort_cards}<span class="t">&gt;</span>
+        <span class="k">for</span> i, card <span class="k">in</span> <span class="b">enumerate</span>(cards):
+            <span class="t">&lt;li</span> onclick={vote(i)}<span class="t">&gt;</span>{card[<span class="s">&quot;title&quot;</span>]}: {card[<span class="s">&quot;votes&quot;</span>]}<span class="t">&lt;/li</span><span class="t">&gt;</span>
+    <span class="t">&lt;/ul</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>405 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Board.js</span>
+<span class="k">function</span> Board($s) {
+  <span class="k">const</span> cards = $signal(<span class="s">&quot;cards&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;cards&quot;</span>] : [{<span class="s">&quot;title&quot;</span>: <span class="s">&quot;a&quot;</span>, <span class="s">&quot;votes&quot;</span>: <span class="n">0</span>}]);
+  <span class="k">const</span> selected = $signal(<span class="s">&quot;selected&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;selected&quot;</span>] : <span class="k">null</span>);
+  <span class="k">function</span> vote(i) {
+    { <span class="k">const</span> $k1 = [i, <span class="s">&quot;votes&quot;</span>]; $py.setp(cards, $k1, $py.add($py.getp(cards.peek(), $k1), <span class="n">1</span>)); }
+    selected(i);
+  }
+  <span class="k">function</span> sort_cards() {
+    $py.mut(cards, [], ($v) =&gt; $py.m($v, <span class="s">&quot;sort&quot;</span>, $py.kw({<span class="s">&quot;key&quot;</span>: ((c) =&gt; ((-$py.at(c, <span class="s">&quot;votes&quot;</span>))))})));
+  }
+  <span class="k">return</span> [$h(<span class="s">&quot;ul&quot;</span>, {<span class="s">&quot;onclick&quot;</span>: sort_cards}, [$list(() =&gt; $py.enumerate(cards()), ([i, card]) =&gt; [$h(<span class="s">&quot;li&quot;</span>, {<span class="s">&quot;onclick&quot;</span>: (() =&gt; vote(i))}, [
+          $py.text($py.at(card, <span class="s">&quot;title&quot;</span>)),
+          <span class="s">&quot;: &quot;</span>,
+          $py.text($py.at(card, <span class="s">&quot;votes&quot;</span>))
+        ])])])];
+}
+$mount(<span class="s">&quot;Board&quot;</span>, Board);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Board  route=/
+  browser  cards          reactive state: updated in vote(); literal initial value
+  browser  selected       reactive state: assigned in vote(); literal initial value
+  browser  vote           event handler (compiled to JavaScript)
+  browser  sort_cards     event handler (compiled to JavaScript)</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;ul&gt;
+&lt;li&gt;a: 0&lt;/li&gt;
+&lt;/ul&gt;</code></pre></div></div></div></details>
+<p>Mutations of state (<code>append</code>, <code>extend</code>, <code>insert</code>, <code>pop</code>, <code>remove</code>, <code>clear</code>, <code>sort</code>, <code>reverse</code>, <code>update</code>, <code>setdefault</code>, <code>add</code>, <code>discard</code>, <code>x[i] = v</code>, <code>x[k][j] = v</code>, <code>x.attr = v</code>, <code>del x[i]</code>) are compiled to copy-on-write updates: the changed container and every container on the path to it are copied, siblings are shared. List rows keyed on the changed item re-render; the rest keep their DOM.</p>
+<p>Assigning to a computed value or constant from a handler is a compile error, because the value would immediately be recomputed or ignored.</p>
+<h2 id="batching-and-ordering"><a class="anchor" href="#batching-and-ordering">#</a>Batching and ordering</h2>
+<p>All writes made synchronously in one event handler are batched: each affected binding updates once, after the handler returns (or reaches its first <code>await</code>, such as a server call). Reads inside the handler see the latest values immediately.</p>
+<h2 id="rendering-model"><a class="anchor" href="#rendering-model">#</a>Rendering model</h2>
+<ol><li>The server renders the page to HTML with real values.</li><li>The page module rebuilds the same DOM with live bindings and swaps it in. This takes a few milliseconds and does not change what is displayed.</li><li>From then on each signal write re-runs only the bindings that read it.</li></ol>
+<p>Input that a user types into a field <em>before</em> the module has loaded is replaced by the server value when the page takes over. Modules load in parallel with the HTML and are small, so this window is short, but it exists.</p>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/05-reactivity.md">Edit this page</a><nav class="pager"><a class="prev" href="language.html"><small>Previous</small>The .pyweb language</a><a class="next" href="browser-python.html"><small>Next</small>Python in the browser</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#the-three-kinds-of-state">The three kinds of state</a><a class="l2" href="#where-initial-values-come-from">Where initial values come from</a><a class="l2" href="#updating-state-in-handlers">Updating state in handlers</a><a class="l2" href="#batching-and-ordering">Batching and ordering</a><a class="l2" href="#rendering-model">Rendering model</a></nav>
 </div>
-<h2 class=sec>Explicit primitives (advanced)</h2>
-<p class=lead>Basic apps never need these, but they exist and the compiler
-lowers plain code into them:</p>
-<table class=spec>
-<tr><th>Primitive</th><th>Use</th></tr>
-<tr><td><span class=k>Signal(x)</span></td><td>Explicit mutable state with subscribers</td></tr>
-<tr><td><span class=k>Computed(f)</span></td><td>Cached derived value, recomputed when deps change</td></tr>
-<tr><td><span class=k>Resource(loader)</span></td><td>Async data with pending / error / result</td></tr>
-<tr><td><span class=k>Effect(f)</span></td><td>Side effect re-run on dependency change</td></tr>
-</table>
-<div class=ok><b>Time-travel:</b> the runtime event log records every signal
-transition with timestamps, so DevTools can replay state — possible only
-because the compiler owns the reactive graph.</div>
-</section>
-<nav class="pager" aria-label="Pages"><a href="playground.html"><small>← Previous</small><b>Playground</b></a><a class="next" href="rpc.html"><small>Next →</small><b>RPC &amp; Placement</b></a></nav></div></div><footer class="mt-[70px] border-t border-line bg-base2 py-11 text-[13.5px] text-mut"><div class="mx-auto w-full max-w-7xl px-6"><div class="grid gap-7 md:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]"><div><h5 class="mb-2.5 text-[11.5px] font-bold uppercase tracking-[0.8px] text-faint">PyWeb</h5><p class="m-0 max-w-[340px]">One language. Every layer. Python from browser to database — compiler, reactivity, RPC, auth, realtime, and deploy-anywhere builds. Core open source (MIT).</p></div><div><h5 class="mb-2.5 text-[11.5px] font-bold uppercase tracking-[0.8px] text-faint">Learn</h5><ul class="m-0 list-none p-0"><li class="my-1.5"><a class="text-mut hover:text-ink" href="guide.html">5-minute guide</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="playground.html">Compiler playground</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="reactivity.html">Reactivity</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="rpc.html">RPC & placement</a></li></ul></div><div><h5 class="mb-2.5 text-[11.5px] font-bold uppercase tracking-[0.8px] text-faint">Build</h5><ul class="m-0 list-none p-0"><li class="my-1.5"><a class="text-mut hover:text-ink" href="database.html">Database</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="auth.html">Auth</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="realtime.html">Realtime & jobs</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="deploy.html">Deploy</a></li></ul></div><div><h5 class="mb-2.5 text-[11.5px] font-bold uppercase tracking-[0.8px] text-faint">Project</h5><ul class="m-0 list-none p-0"><li class="my-1.5"><a class="text-mut hover:text-ink" href="https://github.com/MaanavKrishna/PyWeb">GitHub</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="benchmarks.html">Benchmarks</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="api.html">API map</a></li><li class="my-1.5"><a class="text-mut hover:text-ink" href="roadmap.html">Roadmap</a></li></ul></div></div><div class="mt-7 flex flex-wrap items-center gap-4 border-t border-line pt-5 text-[12.5px] text-faint"><span>PyWeb — Python from browser to database. Self-host anywhere; no mandatory cloud.</span><span class="ml-auto flex gap-4"><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a><a href="roadmap.html">Roadmap</a><a href="benchmarks.html">Benchmarks</a></span></div></div></footer><script src="assets/site.js"></script></body></html>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

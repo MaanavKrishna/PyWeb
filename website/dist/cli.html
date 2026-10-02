@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command line · PyWeb</title>
+<meta name="description" content="OutputCopypyweb new NAME                       create NAME/app.pyweb (+ static/, .gitignore)
+pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
+                         ">
+<meta property="og:title" content="Command line · PyWeb">
+<meta property="og:description" content="OutputCopypyweb new NAME                       create NAME/app.pyweb (+ static/, .gitignore)
+pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
+                         ">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/cli.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html">Introduction</a><a href="quickstart.html">Quickstart</a><a href="tutorial.html">Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html">State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html">Pages, routing &amp; assets</a><a href="data.html">Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html">Security model</a><a href="cli.html" aria-current=page>Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>Command line</h1>
+<div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">pyweb new NAME                       create NAME/app.pyweb (+ static/, .gitignore)
+pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
+                                     development server: recompile on save, live reload,
+                                     in-browser error overlay with the failing line
+pyweb check FILE                     compile + security checks; non-zero exit on problems
+pyweb inspect FILE [--security]      where every name runs and why; RPC table; findings
+pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
+                                     self-contained dist/; --production hashes and minifies;
+                                     budgets fail the build when a file exceeds SIZE (e.g. 20KB)
+pyweb serve [DIR] [--host 0.0.0.0] [--port 8000]
+                                     production server for a built dist/
+pyweb db migrate|status|rollback|new [--database URL] [--migrations DIR]
+                                     [--name NAME] [--steps N] [--to VERSION]
+pyweb deploy [--target docker|compose|k8s] [--out deploy] [--port 8000]
+                                     write deployment files
+pyweb test [PATH]                    run pytest
+pyweb fmt [PATH] / pyweb lint [PATH] run ruff format / ruff check (if installed)
+pyweb --version</code></pre></div>
+<p><code>python -m pyweb.cli ...</code> is equivalent to <code>pyweb ...</code>.</p>
+<h2 id="exit-codes"><a class="anchor" href="#exit-codes">#</a>Exit codes</h2>
+<p><code>check</code> and <code>build</code> exit <code>1</code> on compile or security errors and <code>2</code> on budget breaches, so they can gate CI.</p>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/14-cli.md">Edit this page</a><nav class="pager"><a class="prev" href="security.html"><small>Previous</small>Security model</a><a class="next" href="toolkit.html"><small>Next</small>Toolkit &amp; stability</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#exit-codes">Exit codes</a></nav>
+</div>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

@@ -42,7 +42,8 @@ CASES = [
     "int('12')", "int(3.9)", "int(-3.9)", "float('2.5')", "str(5)", "str(None)", "str(True)", "str([1, 'a'])",
     "abs(neg)", "round(2.5)", "round(3.5)", "round(2.675, 1)", "f'{n} items'", "f'{f:.2f}'", "f'{1234567:,}'",
     "f'{s!r}'", "f'{n:>4}'", "f'{0.256:.1%}'", "'%s=%d' % ('n', n)", "'{} and {}'.format(1, 'b')",
-    "dict(a=1, b=2)", "list(reversed(xs))", "chr(65)", "ord('A')", "len({1, 2, 2})", "[w.lower() for w in words if 'p' in w.lower()]",
+    "dict(a=1, b=2)", "isinstance(xs, list)", "isinstance(s, (int, str))", "isinstance(n, float)",
+    "isinstance(f, float)", "isinstance(d, dict)", "isinstance(none, str)", "isinstance(True, int)", "list(reversed(xs))", "chr(65)", "ord('A')", "len({1, 2, 2})", "[w.lower() for w in words if 'p' in w.lower()]",
 ]
 
 

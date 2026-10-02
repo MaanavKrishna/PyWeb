@@ -1,116 +1,139 @@
-# PyWeb — Python from browser to database
+# PyWeb
 
-[![Docs](https://img.shields.io/badge/docs-pyweb.dev-blue)](https://maanavkrishna.github.io/PyWeb/)
-[![v1.0](https://img.shields.io/badge/v1.0-production--grade-green)](https://maanavkrishna.github.io/PyWeb/roadmap.html)
-[![Tests](https://img.shields.io/badge/tests-353%20passing-green)](https://github.com/MaanavKrishna/PyWeb)
+**Full-stack web apps in one Python file.** Server-rendered pages,
+reactive browser UI compiled from Python, and typed calls to server
+functions, without a JavaScript toolchain.
 
-> One language. Every layer. — 🌐 **[Read the docs site](https://maanavkrishna.github.io/PyWeb/)** · [Compiler playground](https://maanavkrishna.github.io/PyWeb/playground.html) · [Examples](https://maanavkrishna.github.io/PyWeb/examples.html) · [Benchmarks](https://maanavkrishna.github.io/PyWeb/benchmarks.html) · [API map](https://maanavkrishna.github.io/PyWeb/api.html)
+[![CI](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-maanavkrishna.github.io%2FPyWeb-0d9488)](https://maanavkrishna.github.io/PyWeb/)
+![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab)
+![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-Write one coherent Python app. PyWeb infers browser/server placement,
-lowers plain variables to fine-grained reactive signals (no VDOM), and
-generates typed RPC — no manual APIs, no state library, no bundler config.
+```pyweb
+from pyweb import App, server
 
-```python
-from pyweb import App
+app = App(title="Guestbook")
+ENTRIES = []
 
-app = App()
+
+@server
+def sign(name: str) -> list:
+    ENTRIES.append(name.strip() or "anonymous")
+    return ENTRIES
+
 
 @app.page("/")
 def Home():
-    count = 0
+    entries = list(ENTRIES)     # computed on the server per request
+    name = ""                   # bound to the input: browser state
 
-    def increment():
-        count += 1
+    def submit():               # compiled to JavaScript
+        entries = sign(name)    # typed RPC to the server
+        name = ""
 
     <main>
-        <h1>Counter</h1>
-        <button onclick={increment}>
-            Count: {count}
-        </button>
+        <h1>Guestbook ({len(entries)})</h1>
+        <form onsubmit={submit}>
+            <input bind={name} placeholder="Your name" />
+            <button>Sign</button>
+        </form>
+        <ul>
+            for entry in entries:
+                <li>{entry}</li>
+        </ul>
     </main>
 ```
 
-`count` is an ordinary variable. The compiler sees it read by markup
-and mutated by an event, makes it reactive, and updates only the
-button's text node — no virtual DOM, no `useState`, no fetch calls.
+```bash
+pip install pyweb
+pyweb dev app.pyweb        # http://localhost:8000
+```
 
-## What v1 includes
+## Why PyWeb
 
-| Layer | Status |
+- **Interactions run in the browser.** Handlers and expressions are
+  compiled to small JavaScript modules; the server is only contacted when
+  your code calls a `@server` function. No WebSocket per user, no
+  multi-megabyte Python runtime in the browser.
+- **Every page is server-rendered.** Complete HTML on first paint, real
+  data from your database, good for SEO and slow devices.
+- **You never write an API layer.** `@server` functions get endpoints,
+  argument validation, typed errors and generated browser calls.
+- **Plain variables are state.** The compiler sees which variables your
+  handlers change and makes exactly those reactive; updates touch only
+  the DOM nodes that read them.
+- **Boundaries are checked.** Database handles, imports and secrets can't
+  leak into browser code: it's a compile error with a line number.
+  `pyweb inspect` explains where every name runs and why.
+- **Stateless servers.** Signed-cookie sessions and plain HTTP RPC scale
+  horizontally behind any load balancer. Deploy with `pyweb serve`,
+  uvicorn/gunicorn (ASGI) or the generated Dockerfile.
+
+A typical interactive page ships under 1 KB of page code plus a ~10 KB
+(gzip) runtime that's cached across pages. Pages without interactivity
+ship no JavaScript.
+
+## Is it for you?
+
+**Good fit:** internal tools, admin panels, dashboards, CRUD apps,
+small SaaS products and content sites with interactive parts, built by
+people who'd rather stay in Python.
+
+**Not a fit:** large client-heavy single-page apps that need the npm
+ecosystem (use React/Svelte/Vue), or running scientific Python in the
+browser (use Pyodide/PyScript). See the
+[comparison](https://maanavkrishna.github.io/PyWeb/introduction.html)
+and [current limitations](docs/16-limitations-roadmap.md).
+
+## Documentation
+
+| | |
 |---|---|
-| Compiler (`.pyweb` → SSR HTML + JS + source maps) | ✅ |
-| Fine-grained reactivity (plain vars → signals) | ✅ |
-| Auto RPC (`@server` → endpoint + typed stub + trace) | ✅ |
-| Browser/server partitioning with reasons (`inspect`) | ✅ |
-| Postgres / MySQL / SQLite + pooling + streaming | ✅ |
-| Realtime (Redis streams + degrade) + persisted jobs | ✅ |
-| Auth (RBAC policies, rotation, WebAuthn ES256) | ✅ |
-| Typed browser APIs (`pyweb.browser`) | ✅ |
-| Styling (scoped modules, tokens, Tailwind) | ✅ |
-| Production build (hashed, minified, split) | ✅ |
-| Traces, error codes, time-travel log, DevTools data | ✅ |
-| Plugins, platform targets, benchmarks | ✅ |
-| Docker / K8s / any VM (no cloud lock-in) | ✅ |
+| Start | [Introduction](docs/01-introduction.md) · [Quickstart](docs/02-quickstart.md) · [Tutorial](docs/03-tutorial.md) |
+| Language | [`.pyweb` files](docs/04-pyweb-files.md) · [State & reactivity](docs/05-reactivity.md) · [Python in the browser](docs/07-browser-python.md) |
+| Server | [Server functions & RPC](docs/06-server-functions.md) · [Pages & routing](docs/08-pages-routing-assets.md) · [Data](docs/09-data.md) · [Auth](docs/10-auth.md) |
+| Ship | [Testing](docs/11-testing.md) · [Deployment](docs/12-deployment.md) · [Security](docs/13-security.md) · [CLI](docs/14-cli.md) |
+| Reference | [Toolkit & stability](docs/15-toolkit.md) · [Limitations & roadmap](docs/16-limitations-roadmap.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) |
 
-Shipped JS for counter+todo+blog: **~30 KB total (~10 KB/app incl. shared
-runtime, cached across pages)** (`python -m pyweb.bench` — totals include
-the runtime; per-page code is typically under 1 KB).
+The same docs are published at
+**[maanavkrishna.github.io/PyWeb](https://maanavkrishna.github.io/PyWeb/)**,
+with compiler output shown next to each example.
 
-## Quickstart
+## Examples
 
-```bash
-pip install -e .
-python -m pyweb.cli inspect examples/counter/app.pyweb   # placement + RPC
-python -m pyweb.cli build examples/counter/app.pyweb --out dist --production
-python -m pyweb.cli dev examples/counter/app.pyweb       # http://localhost:8000
-python -m pytest tests/ -q
-```
+Each runs with `pyweb dev examples/<name>/app.pyweb` and is exercised in
+a real browser by the test suite.
 
-## Docs
+| Example | Shows |
+|---|---|
+| [`counter`](examples/counter/app.pyweb) | signals, computed values, binding a number input |
+| [`todo`](examples/todo/app.pyweb) | components, list mutation, filters, keyed lists |
+| [`blog`](examples/blog/app.pyweb) | SQL database, server functions, route params, 404s, validation errors |
+| [`auth`](examples/auth/app.pyweb) | registration, password hashing, sessions, protected pages |
+| [`chat`](examples/chat/app.pyweb) | route params, shared server state, polling with `on_mount` |
+| [`showcase`](examples/showcase/app.pyweb) | everything on one page, with a stylesheet |
 
-🌐 **Docs site:** [maanavkrishna.github.io/PyWeb](https://maanavkrishna.github.io/PyWeb/) — rebuilt from the real compiler on every site build, so all compiled JS, SSR HTML, placement output, and benchmark numbers shown are actual artifacts, not mockups:
-[Guide](https://maanavkrishna.github.io/PyWeb/guide.html) ·
-[Reactivity](https://maanavkrishna.github.io/PyWeb/reactivity.html) ·
-[RPC & placement](https://maanavkrishna.github.io/PyWeb/rpc.html) ·
-[Compiler playground](https://maanavkrishna.github.io/PyWeb/playground.html) ·
-[Database](https://maanavkrishna.github.io/PyWeb/database.html) ·
-[Auth](https://maanavkrishna.github.io/PyWeb/auth.html) ·
-[Realtime & jobs](https://maanavkrishna.github.io/PyWeb/realtime.html) ·
-[Styling](https://maanavkrishna.github.io/PyWeb/styling.html) ·
-[Browser APIs](https://maanavkrishna.github.io/PyWeb/browser.html) ·
-[Testing](https://maanavkrishna.github.io/PyWeb/testing.html) ·
-[Production](https://maanavkrishna.github.io/PyWeb/production.html) ·
-[Deploy](https://maanavkrishna.github.io/PyWeb/deploy.html) ·
-[API map](https://maanavkrishna.github.io/PyWeb/api.html) ·
-[Examples](https://maanavkrishna.github.io/PyWeb/examples.html) ·
-[Benchmarks](https://maanavkrishna.github.io/PyWeb/benchmarks.html) ·
-[Search](https://maanavkrishna.github.io/PyWeb/search.html) ·
-[Roadmap](https://maanavkrishna.github.io/PyWeb/roadmap.html)
-
-Rebuild it with `python website/build.py` (stdlib only → `website/dist/`).
-
-Markdown sources: `docs/00-quickstart.md` → `docs/01-tutorial-todo.md` for beginners;
-`02-reactivity` through `07-escape-hatches` for the core model;
-`08-browser-apis`, `09-styling`, `10-production-build`,
-`11-observability`, `12-production-services`, `13-plugins-platform`
-for production v1. `ARCHITECTURE.md` is the full design;
-`docs/BUGLOG.md` logs every bug found and fixed.
-
-## Commands
+## Command line
 
 ```bash
-python -m pyweb.cli new <name>        # scaffold
-python -m pyweb.cli dev <file>        # hot-reload dev server
-python -m pyweb.cli build <file> --out dist [--production] [--budget f=20KB]
-python -m pyweb.cli inspect <file> [--security]  # placement, RPC, findings
-python -m pyweb.cli check <file>      # types + security gates
-python -m pyweb.cli deploy --target docker|k8s
-python -m pyweb.bench                 # bundle/SSR benchmark
+pyweb new myapp                                  # scaffold
+pyweb dev app.pyweb                              # dev server: live reload + error overlay
+pyweb inspect app.pyweb                          # where each name runs, and why
+pyweb check app.pyweb                            # compile + security checks for CI
+pyweb build app.pyweb --out dist --production    # self-contained, hashed, minified dist/
+pyweb serve dist                                 # production server (/healthz, CSP, graceful shutdown)
 ```
 
-## Escape hatches
+## Status
 
-Every abstraction unwraps: components → primitives → raw HTML/CSS →
-npm/JS (`pyweb.npm` reads `.d.ts` to typed bindings) → browser APIs;
-server side down to ASGI/SQL. `pyweb inspect` shows what the compiler
-decided and why — magic you can audit.
+PyWeb 1.0 has a stable language, server API, RPC protocol and CLI (see
+[stability](docs/15-toolkit.md#stability)). The test suite covers the
+parser, the Python→JavaScript translation (differentially, against
+CPython), the reactive runtime, server rendering, RPC, sessions, every
+example app in Chromium, and the database/Redis layers against real
+Postgres, MySQL and Redis servers, on Python 3.10–3.13.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:
+[SECURITY.md](SECURITY.md). License: MIT.

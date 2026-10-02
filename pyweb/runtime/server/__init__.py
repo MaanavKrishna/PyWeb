@@ -196,6 +196,20 @@ class Server:
                 gate.headers.setdefault("X-Request-Id", trace_id)
                 gate.headers["traceparent"] = traceparent
                 return gate
+            hdr = {k.lower(): v for k, v in (req.headers or {}).items()}
+            ctype = hdr.get("content-type", "")
+            if ctype and "json" not in ctype.lower():
+                # Browsers can only send cross-site requests without a CORS
+                # preflight using form encodings; requiring JSON blocks them.
+                return self._err(415, "RPC requests must be application/json",
+                                 trace_id=trace_id, traceparent=traceparent)
+            origin = hdr.get("origin")
+            host = hdr.get("x-forwarded-host") or hdr.get("host")
+            if origin and host and origin != "null":
+                from urllib.parse import urlparse as _urlparse
+                if _urlparse(origin).netloc != host:
+                    return self._err(_rpc.Code.CSRF, "cross-origin RPC call rejected",
+                                     trace_id=trace_id, traceparent=traceparent)
             if self.max_body is not None and len(req.body or b"") > self.max_body:
                 return self._err(413, "request body too large",
                                  trace_id=trace_id, traceparent=traceparent)

@@ -207,3 +207,16 @@ def test_dev_server_serves(tmp_path):
             time.sleep(0.05)
     assert body is not None and "Counter" in body
     assert js is not None and "count" in js
+
+
+def test_rpc_rejects_form_posts_and_cross_origin_calls():
+    client = TestClient(source=NOTES)
+    form = client.request("POST", "/__pyweb/rpc/sign_in", b'{"args": {"name": "x"}}',
+                          {"Content-Type": "text/plain"})
+    assert form.status == 415
+    evil = client.request("POST", "/__pyweb/rpc/sign_in", b'{"args": {"name": "x"}}',
+                          {"Content-Type": "application/json", "Origin": "https://evil.example"})
+    assert evil.status == 403 and evil.json()["error"]["code"] == "csrf_failed"
+    same = client.request("POST", "/__pyweb/rpc/sign_in", b'{"args": {"name": "x"}}',
+                          {"Content-Type": "application/json", "Origin": "http://testserver"})
+    assert same.status == 200

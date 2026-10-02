@@ -134,3 +134,18 @@ def test_realtime_marker():
     def chat():
         pass
     assert chat.__pyweb_realtime__ == "room"
+
+
+def test_job_raising_typeerror_runs_once():
+    from pyweb.jobs import Queue
+    calls = []
+
+    def bad():
+        calls.append(1)
+        raise TypeError("bug inside the job")
+
+    q = Queue()
+    job = q.submit(bad)
+    for t in q._threads:
+        t.join(2)
+    assert calls == [1] and job.failed and "TypeError" in job.error

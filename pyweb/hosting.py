@@ -45,6 +45,16 @@ class Site:
         self.started = time.time()
         self.csp = os.environ.get("PYWEB_CSP", DEFAULT_CSP)
         self.server_kwargs = dict(server_kwargs)
+        # Same production defaults as `pyweb serve`.
+        if "rate_limit" not in self.server_kwargs and not debug:
+            from .rpc import RateLimiter
+            self.server_kwargs["rate_limit"] = RateLimiter(max_calls=120, window=60.0)
+        elif self.server_kwargs.get("rate_limit") is False:
+            self.server_kwargs["rate_limit"] = None
+        self.server_kwargs.setdefault("auth_secret", os.environ.get("PYWEB_AUTH_SECRET"))
+        self.server_kwargs.setdefault("csrf_secret", os.environ.get("PYWEB_CSRF_SECRET"))
+        self.server_kwargs.setdefault(
+            "secure_cookies", os.environ.get("PYWEB_COOKIE_SECURE", "").lower() in ("1", "true"))
         if os.path.isdir(target):
             manifest, static_dir, _ = load_dist(target)
             self.static_dirs = [static_dir]

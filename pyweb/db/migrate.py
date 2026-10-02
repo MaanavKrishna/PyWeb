@@ -15,7 +15,7 @@ import time
 
 JOURNAL_DDL = (
     "CREATE TABLE IF NOT EXISTS pyweb_migrations ("
-    "version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+    "version VARCHAR(255) PRIMARY KEY, applied_at VARCHAR(64) NOT NULL)"
 )
 
 _FILE_RE = re.compile(r"^(\d+)_([A-Za-z0-9_]+)\.(up|down)\.sql$")

@@ -50,7 +50,7 @@ def _version():
     try:
         from importlib.metadata import version, PackageNotFoundError
         try:
-            return version("pyweb")
+            return version("pyweb-framework")
         except PackageNotFoundError:
             pass
     except ImportError:  # pragma: no cover - ancient Python

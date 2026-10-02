@@ -547,7 +547,7 @@ def verify_webauthn_assertion(*, credential_public_key: bytes,
 
     Returns the parsed authenticator data; raises :class:`AuthError`.
     The signature is checked with the ``cryptography`` package when it is
-    installed (``pip install pyweb[crypto]``) and with a pure-Python
+    installed (``pip install "pyweb-framework[crypto]"``) and with a pure-Python
     fallback otherwise.
     """
     parsed = parse_auth_data(auth_data)

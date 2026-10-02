@@ -7,6 +7,7 @@ functions, without a JavaScript toolchain.
 [![CI](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-maanavkrishna.github.io%2FPyWeb-0d9488)](https://maanavkrishna.github.io/PyWeb/)
 ![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab)
+![PyPI](https://img.shields.io/pypi/v/pyweb-framework)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ```pyweb
@@ -45,7 +46,7 @@ def Home():
 ```
 
 ```bash
-pip install pyweb
+pip install pyweb-framework   # imported as `pyweb`
 pyweb dev app.pyweb        # http://localhost:8000
 ```
 
@@ -126,8 +127,9 @@ pyweb serve dist                                 # production server (/healthz, 
 
 ## Status
 
-PyWeb 1.0 has a stable language, server API, RPC protocol and CLI (see
-[stability](docs/15-toolkit.md#stability)). The test suite covers the
+PyWeb 0.1 is the first public release (beta). The language, server API,
+RPC protocol and CLI are documented and tested, and changes to them are
+announced in the changelog (see [stability](docs/15-toolkit.md#stability)). The test suite covers the
 parser, the Python→JavaScript translation (differentially, against
 CPython), the reactive runtime, server rendering, RPC, sessions, every
 example app in Chromium, and the database/Redis layers against real

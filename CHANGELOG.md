@@ -6,26 +6,13 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-### Fixed
-- Migrations: the `pyweb_migrations` journal table can now be created on
-  MySQL (`VARCHAR(255)` key instead of `TEXT`).
+## [0.1.0]
 
-### Removed
-- Modules the 1.0 framework no longer uses: `pyweb.components` (pure-Python
-  element API), `pyweb.routing` (unused router), `pyweb.reactive`
-  (server-side `Signal`/`Computed`/`Effect`/`live`), and
-  `pyweb.compiler.placement` (superseded by the compiler's boundary checks).
-- The `@browser` and `@shared` decorators, which had no effect.
-- `pyweb.compiler.rpc.client_stub`/`server_handler` and unused AST classes.
-- `docs/BUGLOG.md` (it described pre-1.0 internals) and the committed
-  `website/dist/`; the Pages workflow builds the site.
-
-## [1.0.0]
-
-The first stable release. Earlier development versions were labelled
-1.0 but only the simplest counter pattern worked in a browser; this
-release rebuilds the compiler, runtime and server around a design that
-works end to end, and is verified in a real browser.
+The first public release, published on PyPI as `pyweb-framework`. The
+unpublished prototype was labelled "1.0" but only the simplest counter
+pattern worked in a browser; this release rebuilds the compiler, runtime
+and server around a design that works end to end, and is verified in a
+real browser.
 
 ### Language and compiler
 - `.pyweb` parser with a character scanner: tags and expressions may span
@@ -81,6 +68,8 @@ works end to end, and is verified in a real browser.
 - Redis bus and queue work against real Redis.
 
 ### Fixed
+- Migrations: the `pyweb_migrations` journal table can now be created on
+  MySQL (`VARCHAR(255)` key instead of `TEXT`).
 - `pyweb serve` crashed on startup (logger misconfiguration).
 - Production builds referenced a hashed runtime the page modules never
   imported.
@@ -94,10 +83,18 @@ works end to end, and is verified in a real browser.
 - The deploy Dockerfile ran a non-existent `serve --dir` flag.
 
 ### Removed
+- Modules the framework no longer uses: `pyweb.components` (pure-Python
+  element API), `pyweb.routing` (unused router), `pyweb.reactive`
+  (server-side `Signal`/`Computed`/`Effect`/`live`), and
+  `pyweb.compiler.placement` (superseded by the compiler's boundary checks).
+- The `@browser` and `@shared` decorators, which had no effect.
+- `pyweb.compiler.rpc.client_stub`/`server_handler` and unused AST classes.
+- `docs/BUGLOG.md` (it described the prototype's internals) and the committed
+  `website/dist/`; the Pages workflow builds the site.
 - The regex-based codegen, the virtual test client that only recorded
   clicks, documentation "snippets" that did not use PyWeb, island and
   streaming-SSR string helpers without runtime support, and the no-op
   `--security-scan` flag.
 
-## [0.1.0]
+## Pre-release prototype (unpublished)
 - Initial prototype.

@@ -1,165 +1,175 @@
-# PyWeb — Architecture
+# Architecture
 
-> One language. Every layer. Python from browser to database.
+This document describes how PyWeb is built, for contributors and for
+anyone who wants to know exactly what happens to their code.
 
-## 1. Vision
+```text
+app.pyweb
+   │
+   ▼
+parser.py ──── split_sources ──► Python AST (CPython)   +   UI tree (markup)
+   │                               │                            │
+   ▼                               ▼                            ▼
+lower.py:  scan_module ─► ModuleContext (server fns, helpers, constants, components, server-only names)
+           classify    ─► per page/component: signal / computed / const × literal / browser / server
+           Emitter     ─► page JS module  ◄── pyjs.py (Python → JS translation)
+   │
+   ▼
+pipeline.compile_source ─► {pages: {html (static prerender), js, signals, placement, ...}, rpc, graph}
+   │
+   ├─► build.py      dist/: app.pyweb, manifest.json, hashed static/, Dockerfile
+   └─► app_loader.py LoadedApp: exec Python half, register @server fns, render pages per request
+                          │
+                          ▼
+         runtime/server Server ─► hosting.Site ─► pyweb dev │ pyweb serve │ asgi.create_app
+                                                      │
+browser:  runtime.js (signals, DOM regions, py helpers, rpc) + <Page>.js ─► mount()
+```
 
-Write one coherent Python app. PyWeb decides what runs in browser / server /
-edge / worker, generates RPC, transport and runtime, keeps HTML real, typed,
-secure and fast. Progressive complexity: trivial apps need almost no
-concepts; expert apps can drop to any lower layer.
+## 1. Parsing (`pyweb/compiler/parser.py`)
 
-## 2. Programming model
+A `.pyweb` file is Python plus markup statements. `split_sources`
+classifies each physical line as Python, a tag line, a content line
+inside an open tag, or a `for`/`if`/`elif`/`else` line that governs
+markup. Markup lines become `__pyweb_ui__(<line>)` placeholder calls (or
+one-line compound statements for control lines), **keeping the exact
+line count**, so CPython parses the logic and every reported line number
+is a real `.pyweb` line. Tags and `{expressions}` may span lines; the
+continuation lines become blank.
 
-- Pages: `@app.page("/users/{user_id}") def UserPage(user_id: int)`.
-- Components: `@component def Card(...)`; markup optional — pure-Python API
-  (`Page(Heading(...))`) always works.
-- Normal locals become reactive when read by UI and mutated by events.
-  Explicit `Signal / Computed / Resource / Effect` for advanced use.
-- `@server def create_user(...)` called like a local function from UI code;
-  compiler emits endpoint + typed stub.
-- Overrides `@browser @server @edge @worker @shared` are escape hatches.
-- Safety rule: uncertain placement goes to the server. Secrets and
-  server-only imports never enter browser bundles (compile error).
+The markup itself is tokenised by a character scanner that understands
+balanced brackets and Python string literals inside `{...}`, so
+`{len({"a": 1})}` and `attr={lambda: f("}")}` are single expressions.
+`parse_ui_block` builds the UI tree (`Element`, `TextNode`, `ExprNode`,
+`ControlFor`, `ControlIf` with `elif` chains). Errors are
+`PyWebSyntaxError` with the line.
 
-## 3. Source format (`.pyweb`, `.pyx` accepted)
+## 2. Module analysis (`lower.scan_module`)
 
-Superset of Python: plain Python plus JSX-like markup statements inside
-component/page bodies. Markup supports `{expr}`, `bind={x}`,
-`onclick={fn}`, `for`/`if` control flow, components (`<UserCard/>`).
-Lowercase tags compile to real HTML; capitalized tags to components.
-Implementation (`compiler/parser.py`): markup lines are replaced with
-`__pyweb_ui__` placeholders so CPython `ast` parses all logic exactly
-(scoping/types preserved), then markup is parsed with a small tag tokenizer
-recording source lines. Pure `.py` files use the component-call API and skip
-the markup pass. Why: reuses the CPython grammar (IDE friendly), keeps line
-numbers, avoids forking Python. Rejected: full custom grammar, string DSLs.
-Long-term: Rust tokenizer, same grammar.
+Top-level statements are sorted into: pages (`@app.page`), `@server`
+functions (also `@worker`/`@edge`/`@task`), components (`@component` or
+capitalised functions with markup), helpers (undecorated functions),
+literal constants, and server-only names (imports, classes, non-literal
+module values). `pyweb.browser` imports map to JavaScript globals.
 
-## 4. Reactivity
+## 3. Classification (`lower.classify`)
 
-Primitives: `Signal` (mutable), `Computed` (derived, lazy), `Resource`
-(async/server/live data), `Effect` (subscriptions). Auto-lowering: a local is
-reactive iff (used in rendered UI or a computed) AND (mutated after init, or
-a `bind` target, or flows into a computed). Detection = AST read/write sets
-+ UI expression scan (`reactivity.py`). `total = price * quantity` becomes a
-computed with edges price,quantity → total → text node. No VDOM: each dynamic
-expression binds to its DOM node; updates are O(1) per changed signal.
+For each page and component, local assignments are collected in order.
+Each name gets:
 
-## 5. Typed IR — PyWeb IR (PIR)
+- a **kind**: `signal` if any handler assigns or mutates it (including
+  `.append()`, item assignment, `del`), or it is a `bind` target;
+  `computed` if its initializer reads reactive names; otherwise `const`;
+- an **origin**: `literal` (via `ast.literal_eval`), `browser` (the
+  initializer translates to JavaScript and doesn't load data), or
+  `server` (anything else: server/helper calls, imports, page-level
+  logic, or derived from another server value).
 
-Decision: **C — both**. A typed IR (dataclasses in `compiler/codegen/ir.py`)
-with a compact optional textual form (`fn add(a: Int) -> Int`) for
-`pyweb inspect` / DevTools. PIR is the compiler target: typed exprs, signals,
-components, RPC edges with source spans. Lowered to JS (+WASM/natives later)
-and Python (server). Types come from annotations; `Email`, models, `Decimal`
-become validated schemas. The textual form is a debugging aid, not a user
-language. Alternatives: real user-facing language (rejected: forces users to
-learn it), untyped IR (rejected: kills typed RPC + interop).
+The set of names browser code reads (markup, handlers, and the inputs of
+browser-computed values) decides what is serialised into page state.
+Secret-looking names in that set are a compile error.
 
-## 6. No-VDOM renderer
+## 4. Python → JavaScript (`pyweb/compiler/pyjs.py`)
 
-Per-component render code creates real DOM once, subscribes text/attr
-bindings to signals, flushes topologically. SSR emits the same tree as an
-HTML string; activation attaches signals/events without re-render.
+An AST visitor translates expressions and statements of the supported
+subset. Name resolution goes through a `Scope` chain whose kinds decide
+emission: signals/computeds/props read as `x()` and write as `x(v)`;
+`@server` calls become `(await $rpc("name", {param: value}))` and mark
+the enclosing function `async` (propagated through handler calls by a
+fixpoint pre-pass); helpers are translated on demand and cached. Python
+semantics that differ from JavaScript go through `$py` helpers
+(`truth`, `eq`, `contains`, `at`, `slice`, `add`, `mul`, `mod`,
+`floordiv`, `m` for method calls, …). Mutations rooted at a signal
+compile to copy-on-write path updates (`$py.mut`, `$py.setp`,
+`$py.delp`). Unsupported constructs raise `CompileError`.
 
-## 7. Placement (`placement.py`)
+## 5. Code generation (`lower.Emitter`)
 
-Symbol/effect/data/security graphs. Ordered rules: (1) DB/secret/server-only
-import/auth/fs → server; (2) browser APIs/DOM/events → browser; (3) pure +
-reachable from UI → browser; (4) pure + only from server fns → server;
-(5) uncertain → server. Every decision records a reason for inspect/DevTools.
+Each page becomes one ES module: the runtime import, used module
+constants, used helpers, used components, and the page function, which
+creates signals/computeds (initial values from the page state JSON with
+literal fallbacks), defines handlers, and returns the UI as nested
+`$h(tag, props, children)` calls. Reactive children/props are thunks;
+`for` becomes `$list(items, row)`, `if` becomes `$when(test, yes, no)`,
+components become calls with getter props. Pages with no signals,
+handlers or events get no module.
 
-## 8. Automatic RPC (`rpc.py`)
+## 6. Browser runtime (`pyweb/runtime/browser/runtime.js`)
 
-`@server`/`@worker`/`@edge` fns get `POST /__pyweb/rpc/<name>` with JSON
-`{args, kwargs, trace}`, annotation-derived validation, auth-cookie
-propagation, CSRF (same-origin + token), typed client exceptions, trace IDs,
-AbortController cancellation, retries only when idempotent. Stubs return
-promises; `mutate()` helper gives optimistic UI with rollback. Live queries
-share the transport over SSE.
+- **Reactivity:** push-pull signals with automatic dependency tracking,
+  lazy cached computeds, effects with ownership (effects created during
+  another effect or `root()` are disposed with it), batching, and
+  equality short-circuiting.
+- **DOM:** `h()` creates elements (SVG aware) and binds reactive
+  props/children with one effect each. Dynamic regions (`dyn`, `list`,
+  `when`) live between comment markers so nested regions can change
+  shape while the enclosing row or branch can still move or remove them
+  as a unit. `list` is keyed by item identity (with a stable composite
+  key for tuples) and reuses DOM for unchanged items. `bind()` handles
+  text, number, checkbox, radio and select controls and registers before
+  other listeners.
+- **Safety:** text is always set as text; `javascript:` URLs are
+  neutralised.
+- **RPC:** `rpc()` posts JSON, maps errors to `RPCError(code, message)`,
+  supports retries, timeouts, abort signals and NDJSON streaming.
 
-## 9. Browser runtime (`runtime/browser/runtime.js`, ~3KB)
+## 7. Server (`app_loader.py`, `runtime/server`, `hosting.py`)
 
-`sig/computed/effect/resource`, `bind_text/bind_attr`, event delegation,
-`rpc()`, `mutate()`, router, error-overlay hooks. Static pages omit the
-runtime import entirely.
+`LoadedApp` executes the Python half of the file as a module (markup
+placeholders are no-ops) and appends, for each page and component, a
+*state function*: a copy of the function without markup statements that
+returns `locals()`. Rendering a page calls it with the route parameters
+(converted by annotation), honours an early `redirect(...)`, renders the
+UI tree with `ssr.Renderer` (real Python evaluation, same rules as the
+browser), and embeds the browser-read values as JSON.
 
-## 10. Server runtime (`runtime/server/`)
+`Server` routes pages, dispatches RPC (validation by annotation, JSON
+and Origin checks, auth/permission gates, rate limiting, timeouts in a
+shared pool, async functions, structured errors with request ids and
+`traceparent`), and runs everything inside a `contextvars` request
+context that powers `request`, `session` and cookies. `hosting.Site`
+adds static files, health checks and security headers and is shared by
+`pyweb dev`, `pyweb.testing` and the ASGI adapter; `pyweb serve` uses
+the same `Server` behind its threaded HTTP handler.
 
-Stdlib-first (http.server-compatible, ASGI adapter later): typed routing,
-SSR/streaming SSR, RPC dispatcher with schema validation, sessions/cookies,
-hashed static assets, structured logs/traces (`X-Request-Id` end to end).
+## 8. Build (`build.py`)
 
-## 11. Routing / Forms / Realtime / Jobs / Cache / Auth / DB
+Copies the source to `dist/app.pyweb`, writes the runtime and page
+modules (rewriting the runtime import to the hashed file name),
+token-aware minification in production mode, the static prerender per
+page, the user's `static/` folder, `manifest.json` (with raw and gzip
+sizes) and a Dockerfile.
 
-Routing: `@app.page` + typed params, layouts, loading/error boundaries,
-metadata/sitemap, per-page `static/server/client/stream`. Forms: single
-schema from model annotations, client+server validation, progressive
-enhancement. Realtime: `live(Model.where(...))` over WS/SSE + fanout,
-long-poll fallback. Jobs: `@task` → reactive job object, pluggable backends.
-Cache: `@cache(minutes=5, tags=[...])`, never auto-cache non-idempotent fns.
-Auth: sessions/OAuth-OIDC/passkeys/magic-link/MFA, RBAC + policies, auth
-context flows into RPC. DB: optional `Model` (Postgres-first, SQLite/MySQL),
-migrations, pooling, raw-SQL escape; SQLAlchemy also fine.
+## Design decisions
 
-## 12. Styling / HTML / a11y / SEO
+- **Compile, don't interpret.** Shipping a Python runtime costs megabytes
+  and seconds; server-driven UIs cost a round trip per interaction. A
+  compiler that targets small JavaScript keeps both costs near zero at
+  the price of supporting a subset of Python in the browser, which is
+  made explicit by compile errors.
+- **Reuse CPython's parser.** The Python half is parsed by `ast`, so
+  every Python construct, error and line number on the server side is
+  exactly Python's.
+- **Infer state from usage.** Developers write variables; the compiler
+  decides what is reactive and why, and `pyweb inspect` makes the
+  decisions visible.
+- **Ship only what the browser reads.** Server values are computed on the
+  server and only the browser-read ones are serialised, which is both a
+  size and a privacy property.
+- **Stateless HTTP everywhere.** Pages per request, RPC as JSON POST,
+  sessions as signed cookies: operationally boring, horizontally
+  scalable, debuggable with curl.
+- **Take-over before hydration.** Rebuilding the DOM after server
+  rendering is simple and correct; true hydration is on the roadmap.
 
-Real semantic HTML, a11y-baked components/forms, SSR + metadata for SEO.
-Styling passes through: plain CSS, modules, Tailwind, tokens, `css={...}`
-dicts, `class_` props. Never a closed abstraction.
+## Testing strategy
 
-## 13. JS/TS interop
-
-`from npm import package("chart.js")`; `.d.ts` → typed Python stubs
-(`pyweb/npm.py` planned); web components, browser APIs, optional React-compat
-island. Core never depends on React.
-
-## 14. Offline / optimistic
-
-`@model(sync=True)` → sync engine (server DB ↔ IndexedDB/SQLite ↔ UI):
-queued mutations, reconnect sync, configurable conflicts; safe mutations
-auto-optimistic with rollback.
-
-## 15. Security
-
-Auto-escaped HTML, parameterized queries, CSRF, secure cookies, secret-flow
-analysis (server-secret → browser = compile error), taint checks
-(XSS/SQLi/SSRF/traversal/injection), advisory hook. AuthZ always re-checked
-server-side.
-
-## 16. Observability / errors / time-travel
-
-Structured logs + traces + metrics, one trace click → RPC → DB → DOM. Errors
-map generated frames to `.pyweb` lines with data-flow context. Signal/RPC
-event log powers DevTools time-travel inspection/replay (replay = later).
-
-## 17. Dev UX
-
-`pyweb new/dev/build/test/check/fmt/lint/db/inspect/deploy`. `dev`: compiler
-+ server + hot reload + error overlay + inspector. `build`: tree-shaken
-bundles, hashed assets, route splitting, source maps,
-`dist/{server,static,workers,migrations,manifest}`. Tests: component/state/
-RPC/virtual-browser/real-browser/DB/e2e. LSP later (completion, boundary
-visualization, go-to-def).
-
-## 18. Packages / deploy / no lock-in
-
-`pip install pyweb`; split into `pyweb-compiler/-runtime/-db/-auth/...`
-later; Rust hot paths later, no premature rewrite. `pyweb deploy` optional;
-`pyweb build && docker build .` anywhere. Standards preserved: Postgres is
-Postgres, HTML is HTML.
-
-## 19. Performance targets
-
-Static ≈ zero runtime; counter ≈ <5KB JS; O(changed nodes) updates; streaming
-SSR; route-split. Benchmark vs React/Next/Svelte/Solid/Django/FastAPI/Reflex
-on the 10 reference apps (counter → offline notes).
-
-## 20. Roadmap
-
-P1 static → P2 exprs → P3 local reactivity → P4 components → P5 RPC →
-P6 placement → P7 models → P8 SSR/hydration → P9 dev server → P10 build
-(this prototype implements P1–P10 minimally for counter + RPC). Then: live
-queries, offline, jobs, DevTools, LSP, mobile/desktop, AI assistant on the
-app graph. Hypotheses H1–H6 map to P3 / P6 / P5 / P3+perf / interop / MVP.
+| Layer | Tests |
+|---|---|
+| Parser | unit tests incl. line-number stability (`tests/test_parser_v1.py`) |
+| Translator | differential tests against CPython in Node (`tests/test_pyjs_semantics.py`) |
+| Runtime | reactive core in Node, DOM behaviour in Chromium (`tests/test_runtime_signals.py`, `tests/e2e/test_runtime_dom.py`) |
+| Compiler/server | `TestClient`-based end-to-end tests (`tests/test_e2e.py`) and contract tests |
+| Examples | every example app driven in Chromium under the production CSP (`tests/e2e/test_examples_browser.py`) |
+| Services | Postgres, MySQL and Redis integration tests (`tests/integration`) |
+| Docs | every `pyweb` code block in the docs compiles (`tests/test_docs.py`) |

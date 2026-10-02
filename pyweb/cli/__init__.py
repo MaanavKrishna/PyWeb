@@ -382,11 +382,37 @@ def _parse_budget(spec):
     return int(float(spec))
 
 
+NEW_APP = """from pyweb import App
+
+app = App(title="{title}")
+
+
+@app.page("/")
+def Home():
+    count = 0
+
+    def increment():
+        count += 1
+
+    <main>
+        <h1>Counter</h1>
+        <button onclick={{increment}}>
+            Count: {{count}}
+        </button>
+    </main>
+"""
+
+
 def cmd_new(args):
-    os.makedirs(args.name, exist_ok=True)
-    with open(f"{args.name}/app.pyweb", "w") as fh:
-        fh.write('from pyweb import App\n\napp = App()\n\n@app.page("/")\ndef Home():\n    count = 0\n\n    def increment():\n        count += 1\n\n    <main>\n        <h1>Counter</h1>\n        <button onclick={increment}>\n            Count: {count}\n        </button>\n    </main>\n')
-    print(f"created {args.name}/app.pyweb")
+    if os.path.exists(os.path.join(args.name, "app.pyweb")):
+        raise SystemExit(f"{args.name}/app.pyweb already exists")
+    os.makedirs(os.path.join(args.name, "static"), exist_ok=True)
+    title = os.path.basename(os.path.abspath(args.name)).replace("-", " ").replace("_", " ").title()
+    with open(os.path.join(args.name, "app.pyweb"), "w", encoding="utf-8") as fh:
+        fh.write(NEW_APP.format(title=title))
+    with open(os.path.join(args.name, ".gitignore"), "w", encoding="utf-8") as fh:
+        fh.write("dist/\n__pycache__/\n*.db\n")
+    print(f"created {args.name}/app.pyweb\nnext: cd {args.name} && pyweb dev app.pyweb")
 
 
 def main(argv=None):
@@ -422,7 +448,17 @@ def main(argv=None):
     if not args.cmd:
         ap.print_help()
         raise SystemExit(2)
-    args.fn(args)
+    from pyweb.compiler.errors import CompileError
+    try:
+        args.fn(args)
+    except (CompileError, SyntaxError) as exc:
+        if isinstance(exc, SyntaxError) and not isinstance(exc, CompileError):
+            where = f"{exc.filename or getattr(args, 'file', '')}:{exc.lineno}" if exc.lineno else ""
+            msg = getattr(exc, "pyweb_msg", None) or exc.msg
+            print(f"error: {where}: {msg}" if where else f"error: {msg}", file=sys.stderr)
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

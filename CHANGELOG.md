@@ -1,66 +1,89 @@
-# PyWeb Changelog
+# Changelog
 
-All notable changes to this project are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+All notable changes to this project are documented here. The format
+follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
+project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-## [1.0.0] — production-grade v1
+## [1.0.0]
 
-### Compiler & reactivity
-- `.pyweb` syntax specified (`docs/14-syntax.md`): Python + markup line
-  rules, `{expr}` holes, control-over-markup, pure-Python alternative.
-- Plain locals lower to fine-grained signals (no VDOM); computed values
-  form a dependency graph; only bound DOM nodes update.
-- Placement inference (browser/server/edge/worker/shared) with security
-  boundary graph; `@server` etc. as overrides; `pyweb inspect` explains
-  every decision.
+The first stable release. Earlier development versions were labelled
+1.0 but only the simplest counter pattern worked in a browser; this
+release rebuilds the compiler, runtime and server around a design that
+works end to end, and is verified in a real browser.
 
-### RPC & transport
-- Typed RPC: endpoint + stub + serialization + validation + auth
-  propagation + CSRF + retries + timeouts + W3C tracing, all generated
-  from annotations. `serve` forwards `X-Request-Id`/`traceparent`
-  end to end; incoming `traceparent` propagates to logs.
-- Rate limiting on by default in `serve` (120/min/IP; `False` disables
-  for tests).
+### Language and compiler
+- `.pyweb` parser with a character scanner: tags and expressions may span
+  lines, braces and strings nest inside `{...}`, `elif` chains, HTML
+  comments, and exact line numbers (the Python half keeps the source's
+  line count; this also fixes crashes on Python 3.10/3.11).
+- Python → JavaScript translation of a documented subset with Python
+  semantics (truthiness, `==` on containers, negative indexing, floor
+  division/modulo, string/list/dict/set methods, Python exceptions).
+  Unsupported code is a compile error with `file:line`. Verified
+  differentially against CPython.
+- State inference: signals (mutated by handlers or bound), computeds,
+  constants; initial values from literals, the browser, or the server.
+  Mutations (`append`, item assignment, `del`, …) are copy-on-write.
+- Components with props, defaults and `children`; `on_mount` hook;
+  page titles; `App(title=, stylesheets=, lang=)`.
+- `@server` calls from handlers compile to awaited typed RPC; async
+  propagates through handler calls.
+- Only values browser code reads are serialised; values derived from
+  server data are computed on the server. Secret-looking names read by
+  browser code are rejected.
 
-### Data
-- Postgres/MySQL/SQLite via parameterized-only queries, pooling,
-  prepared statements, streaming cursors, retries, pagination.
-- Versioned migrations with journal + idempotent apply + status +
-  rollback (`pyweb db migrate|status|new`); orphan `.down.sql` rejected.
-- Live queries (SSE/WebSocket/polling), Redis jobs bus with retries and
-  progress, memory+Redis cache with tags and SWR, offline queue with
-  LWW + tombstones, optimistic UI with rollback.
+### Runtime
+- New browser runtime: dependency-tracked signals, cached computeds,
+  owned effects with disposal, batching; keyed lists and conditionals in
+  marker-bounded regions; two-way binding for text, number, checkbox,
+  radio and select; `javascript:` URL blocking; RPC client with typed
+  errors.
 
-### Auth & security
-- Signed sessions (HttpOnly, SameSite=Lax, `Secure` opt-in for prod),
-  PBKDF2 passwords, RBAC, rotation, magic links, TOTP, OAuth/OIDC,
-  WebAuthn; `pyweb check` gates CI on secret-leak findings.
+### Server
+- Pages render per request with real server values; `request`,
+  `session`, `redirect`, `NotFound`; typed route parameters.
+- `@server` functions are registered automatically in `dev`, `serve`,
+  tests and ASGI.
+- New ASGI adapter: `pyweb.asgi.create_app`.
+- RPC: JSON-only and same-origin checks, rate limiting, timeouts that
+  actually return on time, async functions, JSON conversion for
+  dataclasses/datetimes/Decimals.
+- Content-Security-Policy and security headers on HTML responses.
 
-### Build, serve, deploy
-- `pyweb build --production`: hashed assets, minified split bundles,
-  extracted CSS, importmap for npm, manifest. Budgets enforced in CI
-  on shipped bytes (~10 KB/app incl. shared runtime).
-- `pyweb serve`: threaded static + live-RPC mounting via `--app`,
-  `/healthz`, immutable asset caching, traversal containment.
-- `pyweb deploy`: Dockerfile (healthcheck + serve CMD), compose, K8s
-  with liveness/readiness probes. No mandatory cloud.
-- Branded, overridable HTML error pages (XSS-escaped path + request id).
+### Tooling
+- `pyweb dev`: live reload and an in-browser compile-error overlay.
+- `pyweb build` produces a self-contained `dist/` (source, manifest with
+  gzip sizes, hashed assets, working Dockerfile); `pyweb serve` runs it.
+- Token-aware JS minifier (the previous one altered string literals).
+- `pyweb.testing.TestClient` and `pyweb.testing.serve` for tests.
+- Clean `file:line: message` compile errors from the CLI.
 
-### DX & docs
-- `pyweb dev` hot-reload, `pyweb test|fmt|lint`, `pyweb --version`,
-  `pyweb npm` TS-declaration stubs, 10-page docs site
-  (`website/build.py`, stdlib-only) + guides `00–14`.
-- Every example app (`counter todo blog auth chat showcase`) compiles,
-  builds, and passes `check` in the suite.
+### Data, auth, jobs
+- `?` placeholders work on Postgres and MySQL; lazy connection pools.
+- WebAuthn: challenge, origin and sign-count checks; DER signatures; uses
+  `cryptography` when installed.
+- Redis bus and queue work against real Redis.
 
 ### Fixed
-- SSR stable `data-pw-id` hydration markers; `runtime.js on()` handler
-  refs; `bind_text` computed-thunk resolution; `cache(minutes=)` unit
-  bug; form CSRF token rendering; bench now includes runtime bytes in
-  shipped totals (previously under-reported).
+- `pyweb serve` crashed on startup (logger misconfiguration).
+- Production builds referenced a hashed runtime the page modules never
+  imported.
+- Installed packages were missing the browser runtime file.
+- `transaction()` did not roll back on Postgres/MySQL pools.
+- `sqlite:///file.db` pointed at the filesystem root.
+- `RedisBus.since()` duplicated and mis-ordered messages;
+  `RedisQueue.drain(timeout=0)` blocked forever.
+- Jobs raising `TypeError` ran twice.
+- `Query.order_by()` ignored `-field` and did not validate a single field.
+- The deploy Dockerfile ran a non-existent `serve --dir` flag.
 
-## [0.1.0] — prototype
-- Initial compiler (parser, reactivity, placement, RPC, codegen),
-  runtimes, CLI, counter + todo demos, 141-test suite.
+### Removed
+- The regex-based codegen, the virtual test client that only recorded
+  clicks, documentation "snippets" that did not use PyWeb, island and
+  streaming-SSR string helpers without runtime support, and the no-op
+  `--security-scan` flag.
+
+## [0.1.0]
+- Initial prototype.

@@ -96,7 +96,10 @@ class Query:
 
     def order_by(self, field=None, *rest, **kw):
         if field is not None and not rest and (not kw or set(kw) == {"desc"}):
-            self._order.append((field, kw.get("desc", False)))
+            desc = kw.get("desc", False)
+            if field.startswith("-"):
+                field, desc = field[1:], True
+            self._order.append((_ident(field, "column"), desc))
             return self
         cols = (field,) + tuple(rest) if field is not None else ()
         for col in cols:

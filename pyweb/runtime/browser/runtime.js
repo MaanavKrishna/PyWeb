@@ -984,7 +984,8 @@ export const py = {
   chr: (n) => String.fromCodePoint(n),
   ord: (c) => c.codePointAt(0),
   isinstance: (v, t) => (Array.isArray(t) ? t : [t]).some((x) => x === typeName(v)
-    || (x === "float" && typeof v === "number") || (x === "tuple" && Array.isArray(v))),
+    || (x === "float" && typeof v === "number" && !Number.isInteger(v)) || (x === "int" && typeof v === "boolean")
+    || (x === "tuple" && Array.isArray(v))),
   print: (...a) => console.log(...splitKw(a)[0].map(str)),
   error: (type, msg) => err(type, msg == null ? "" : str(msg)),
   and: (a, f) => (truth(a) ? f() : a),

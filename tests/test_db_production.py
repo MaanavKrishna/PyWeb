@@ -162,3 +162,12 @@ def test_query_builder_paramstyles():
     assert "%s" in sql and list(params)[:1] == ["a"]
     q2 = _db.Query("users").where(name="a")
     assert "?" in q2.sql()[0]
+
+
+def test_order_by_validates_and_supports_desc_prefix():
+    import pytest
+    from pyweb.db import Query
+    sql, _ = Query("posts").order_by("-id").build_select()
+    assert sql.endswith('ORDER BY "id" DESC')
+    with pytest.raises(ValueError):
+        Query("posts").order_by('id" ; drop table posts; --')

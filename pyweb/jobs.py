@@ -40,35 +40,40 @@ class Queue:
         job = Job(uuid.uuid4().hex[:12], getattr(fn, "__name__", "fn"))
         with self._lock:
             self.jobs[job.id] = job
+            self._threads = [t for t in self._threads if t.is_alive()]
         t = threading.Thread(target=self._run, args=(job, fn, args, kwargs, retries), daemon=True)
         self._threads.append(t)
         t.start()
         return job
 
+    @staticmethod
+    def _wants_job(fn):
+        """Does ``fn`` accept the ``_job`` keyword (for progress reporting)?"""
+        import inspect
+        try:
+            params = inspect.signature(fn).parameters
+        except (TypeError, ValueError):
+            return False
+        return "_job" in params or any(p.kind is p.VAR_KEYWORD for p in params.values())
+
     def _run(self, job, fn, args, kwargs, retries):
         attempt = 0
+        call_kwargs = dict(kwargs)
+        if self._wants_job(fn):
+            call_kwargs["_job"] = job
         while True:
             try:
-                kwargs["_job"] = job
-                job.result = fn(*args, **kwargs)
+                job.result = fn(*args, **call_kwargs)
                 job.pending = False
                 return
-            except TypeError:
-                # fn takes no _job kwarg
-                try:
-                    kwargs.pop("_job", None)
-                    job.result = fn(*args, **kwargs)
-                    job.pending = False
-                    return
-                except Exception as exc:  # noqa: BLE001
-                    err = exc
             except Exception as exc:  # noqa: BLE001
                 err = exc
+                tb = traceback.format_exc()
             if attempt >= retries:
                 job.pending = False
                 job.failed = True
                 job.error = f"{type(err).__name__}: {err}"
-                job.traceback = traceback.format_exc()
+                job.traceback = tb
                 return
             attempt += 1
             time.sleep(0.01 * attempt)

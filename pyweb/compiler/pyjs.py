@@ -521,6 +521,15 @@ class Translator:
                 return self.server_call(node, scope)
             if kind == COMPONENT:
                 raise self.error(node, f"components are used as tags: <{f.id} ... />, not called")
+            if kind is None and f.id == "isinstance" and len(node.args) == 2:
+                types = node.args[1].elts if isinstance(node.args[1], ast.Tuple) else [node.args[1]]
+                names = []
+                for t in types:
+                    if not (isinstance(t, ast.Name) and t.id in ("str", "int", "float", "bool", "list",
+                                                                "dict", "set", "tuple", "type")):
+                        raise self.error(node, "isinstance() in browser code supports builtin types only")
+                    names.append(t.id)
+                return f"$py.isinstance({self.expr(node.args[0], scope)}, {json.dumps(names)})"
             if kind is None and f.id in BUILTINS:
                 args = self.args(node, scope)
                 kw = self.kwargs_obj(node, scope)

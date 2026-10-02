@@ -1,7 +1,6 @@
 """Browser APIs, CSS pipeline, production build."""
 
 import asyncio
-import json
 import os
 
 import pytest

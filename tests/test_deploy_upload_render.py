@@ -3,13 +3,13 @@
 import pytest
 
 from pyweb import deploy, uploads
-from pyweb.compiler import parser as P
 
 
 def test_dockerfile_shape():
     df = deploy.dockerfile(python="3.13-slim", port=8000)
     assert "FROM python:3.13-slim" in df and "EXPOSE 8000" in df
-    assert "pyweb.cli" in df
+    assert "RUN pyweb build app.pyweb --out dist --production" in df
+    assert 'CMD ["pyweb", "serve", "dist"' in df and "PYWEB_ENV=production" in df
 
 
 def test_compose_with_and_without_db():

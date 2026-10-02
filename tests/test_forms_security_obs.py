@@ -2,7 +2,7 @@
 
 import io
 
-from pyweb import forms, observability, security
+from pyweb import security
 from pyweb.forms import fields_for, render_form, validate
 from pyweb.models import Email, Model
 from pyweb.npm import from_dts, package

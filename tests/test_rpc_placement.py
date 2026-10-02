@@ -3,7 +3,7 @@
 import ast
 import json
 
-from pyweb import browser, server, worker
+from pyweb import browser, server
 from pyweb.compiler import parser as P
 from pyweb.compiler import compile_source
 from pyweb.compiler.rpc import client_stub, rpc_specs
@@ -32,8 +32,6 @@ def test_non_rpc_fn_ignored():
 def test_explicit_browser_override():
     tree, _, _ = P.parse_source("from pyweb import browser\n@browser\ndef h():\n    pass\n")
     fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef))
-    tree2, ui_all, _ = P.parse_source("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    <p>x</p>\n")
-    fn2 = next(n for n in tree2.body if isinstance(n, ast.FunctionDef))
     from pyweb.compiler.placement import explicit_location
     assert explicit_location(fn) == ("browser", "explicit @browser marker")
 
@@ -80,7 +78,7 @@ def test_rpc_email_validation():
     out = compile_source("from pyweb import server\n@server\ndef f(e: Email) -> str:\n    return e\n")
     s = Server(out)
 
-    def f(e: "Email") -> str:
+    def f(e: "Email") -> str:  # noqa: F821 - annotation is only read by name
         return e
     s.register_rpc(f)
     bad = s.handle(Request("POST", "/__pyweb/rpc/f", body=json.dumps({"args": {"e": "nope"}}).encode()))

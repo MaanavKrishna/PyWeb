@@ -93,6 +93,9 @@ def test_migration_up_down(tmp_path):
 
 
 def test_postgres_guard():
+    import importlib.util
+    if importlib.util.find_spec("psycopg") or importlib.util.find_spec("psycopg2"):
+        pytest.skip("psycopg installed; guard only applies without it")
     with pytest.raises(RuntimeError, match="psycopg"):
         PostgresDB("postgres://localhost/x")
 
@@ -127,9 +130,9 @@ def test_cache_memory_ttl_expiry():
 
 
 def test_cache_redis_guard():
-    import sys
-    if "redis" in sys.modules:
-        pytest.skip("real redis installed; guard path not applicable")
+    import importlib.util
+    if importlib.util.find_spec("redis"):
+        pytest.skip("redis package installed; guard only applies without it")
     with pytest.raises(RuntimeError, match="redis"):
         RedisCache.__new__(RedisCache) and get_cache("redis")
     with pytest.raises(ValueError):

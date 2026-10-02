@@ -1,6 +1,5 @@
 """Every example app, driven in a real browser under the production CSP."""
 
-import pytest
 from playwright.sync_api import expect
 
 from pyweb.testing import serve

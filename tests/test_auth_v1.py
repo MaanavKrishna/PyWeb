@@ -1,5 +1,6 @@
 """Auth v1: Policy RBAC, session rotation, WebAuthn assertion verify."""
 
+import base64
 import hashlib
 import json
 
@@ -75,45 +76,72 @@ def _p256_sign(priv, msg):
         return r.to_bytes(32, "big") + s.to_bytes(32, "big")
 
 
+def _assertion(priv, rp_id="example.com", challenge=b"server-challenge-1", origin=None,
+               count=0, ctype="webauthn.get"):
+    pub = _a._p256_scalar_mult(priv, (_a._P256_GX, _a._P256_GY))
+    raw_point = b"\x04" + pub[0].to_bytes(32, "big") + pub[1].to_bytes(32, "big")
+    auth_data = hashlib.sha256(rp_id.encode()).digest() + b"\x01" + count.to_bytes(4, "big")
+    client = json.dumps({"type": ctype,
+                         "challenge": base64.urlsafe_b64encode(challenge).rstrip(b"=").decode(),
+                         "origin": origin or f"https://{rp_id}"}).encode()
+    sig = _p256_sign(priv, auth_data + hashlib.sha256(client).digest())
+    return raw_point, auth_data, client, sig
+
+
+def _verify(raw, ad, cd, sig, **kw):
+    args = dict(credential_public_key=raw, auth_data=ad, client_data_json=cd, signature=sig,
+                rp_id="example.com", expected_challenge=b"server-challenge-1",
+                expected_origin="https://example.com")
+    args.update(kw)
+    return _a.verify_webauthn_assertion(**args)
+
+
 def test_webauthn_assertion_roundtrip():
     priv = 0xC9AFD9D7724B5E77B4E9D9E9F1A2B3C4D5E6F708192A3B4C5D6E7F8091A2B3
-    pub = _a._p256_scalar_mult(priv, (_a._P256_GX, _a._P256_GY))
-    raw_point = (b"\x04" + pub[0].to_bytes(32, "big")
-                 + pub[1].to_bytes(32, "big"))
-    rp_id = "example.com"
-    auth_data = (hashlib.sha256(rp_id.encode()).digest() + b"\x01\x00\x00\x00"
-                 + b"\x00" * 2)
-    client = json.dumps({"type": "webauthn.get",
-                         "challenge": "abc",
-                         "origin": f"https://{rp_id}"}).encode()
-    sig = _p256_sign(priv, auth_data + hashlib.sha256(client).digest())
-    parsed = _a.verify_webauthn_assertion(
-        credential_public_key=raw_point, auth_data=auth_data,
-        client_data_json=client, signature=sig, rp_id=rp_id)
+    raw, ad, cd, sig = _assertion(priv)
+    parsed = _verify(raw, ad, cd, sig)
     assert parsed["user_present"] and parsed["sign_count"] == 0
     with pytest.raises(_a.AuthError):
-        _a.verify_webauthn_assertion(
-            credential_public_key=raw_point, auth_data=auth_data,
-            client_data_json=client,
-            signature=b"\x00" * 64, rp_id=rp_id)
+        _verify(raw, ad, cd, b"\x00" * 64)
 
 
-def test_webauthn_rejects_wrong_rp_and_ceremony():
+def test_webauthn_rejects_replay_wrong_origin_rp_and_ceremony():
     priv = 0x1234
-    pub = _a._p256_scalar_mult(priv, (_a._P256_GX, _a._P256_GY))
-    raw = b"\x04" + pub[0].to_bytes(32, "big") + pub[1].to_bytes(32, "big")
-    good_ad = hashlib.sha256(b"example.com").digest() + b"\x01\x00\x00\x00\x00"
-    good_cd = json.dumps({"type": "webauthn.get"}).encode()
-    sig = _p256_sign(priv, good_ad + hashlib.sha256(good_cd).digest())
-    with pytest.raises(_a.AuthError):  # wrong rp
-        _a.verify_webauthn_assertion(
-            credential_public_key=raw, auth_data=good_ad,
-            client_data_json=good_cd, signature=sig, rp_id="evil.com")
-    bad_cd = json.dumps({"type": "webauthn.create"}).encode()
-    with pytest.raises(_a.AuthError):  # wrong ceremony
-        _a.verify_webauthn_assertion(
-            credential_public_key=raw, auth_data=good_ad,
-            client_data_json=bad_cd, signature=sig, rp_id="example.com")
+    raw, ad, cd, sig = _assertion(priv)
+    with pytest.raises(_a.AuthError, match="challenge"):
+        _verify(raw, ad, cd, sig, expected_challenge=b"a-different-challenge")
+    with pytest.raises(_a.AuthError, match="origin"):
+        _verify(raw, ad, cd, sig, expected_origin="https://evil.com")
+    with pytest.raises(_a.AuthError, match="rpId"):
+        _verify(raw, ad, cd, sig, rp_id="evil.com")
+    raw2, ad2, cd2, sig2 = _assertion(priv, ctype="webauthn.create")
+    with pytest.raises(_a.AuthError, match="ceremony"):
+        _verify(raw2, ad2, cd2, sig2)
+
+
+def test_webauthn_sign_count_must_increase():
+    raw, ad, cd, sig = _assertion(0x4242, count=5)
+    assert _verify(raw, ad, cd, sig, prior_sign_count=4)["sign_count"] == 5
+    with pytest.raises(_a.AuthError, match="sign count"):
+        _verify(raw, ad, cd, sig, prior_sign_count=5)
+
+
+def test_webauthn_accepts_der_signatures_from_real_crypto():
+    ec = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ec")
+    from cryptography.hazmat.primitives import hashes, serialization
+    key = ec.generate_private_key(ec.SECP256R1())
+    raw = key.public_key().public_bytes(serialization.Encoding.X962,
+                                        serialization.PublicFormat.UncompressedPoint)
+    _r, ad, cd, _s = _assertion(1)
+    der = key.sign(ad + hashlib.sha256(cd).digest(), ec.ECDSA(hashes.SHA256()))
+    assert der[0] == 0x30  # what browsers send
+    assert _verify(raw, ad, cd, der)["user_present"]
+    x = int.from_bytes(raw[1:33], "big")
+    y = int.from_bytes(raw[33:], "big")
+    r, s = _a._der_to_rs(der)
+    msg = ad + hashlib.sha256(cd).digest()
+    assert _a._ecdsa_p256_verify_pure(x, y, msg, r, s)            # fallback agrees
+    assert not _a._ecdsa_p256_verify_pure(x, y, msg + b"x", r, s)
 
 
 def test_cose_to_raw_point():

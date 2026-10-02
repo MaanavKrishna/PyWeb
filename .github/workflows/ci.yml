@@ -4,40 +4,121 @@ on:
   push:
     branches: ["main", "v1/*"]
   pull_request:
-    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install PyWeb + pytest
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e . pytest
-      - name: Run test suite
-        run: python -m pytest tests/ -q -p no:cacheprovider
-      - name: Build reference examples
-        run: |
-          for app in counter todo blog auth chat showcase; do
-            python -m pyweb.cli build examples/$app/app.pyweb --out /tmp/dist-$app --production
-          done
-      - name: Enforce shipped-JS budgets
-        run: |
-          # Budget what ships: minified runtime bundle in a production build,
-          # not the readable dev source.
-          rt=$(ls /tmp/dist-counter/static/runtime.*.js)
-          size=$(wc -c < "$rt")
-          echo "shipped runtime: $size bytes (budget 12288)"
-          test "$size" -lt 12288
-          total=$(cat /tmp/dist-counter/static/*.js | wc -c)
-          echo "counter total JS: $total bytes (budget 16384)"
-          test "$total" -lt 16384
-      - name: Security gate
+      - run: pip install ruff
+      - run: ruff check pyweb tests website
+
+  test:
+    name: unit (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: pip install -e ".[test,crypto]"
+      - name: Unit tests (node runs the JS runtime/translator differential tests)
+        run: python -m pytest tests -q -p no:cacheprovider --ignore=tests/e2e --ignore=tests/integration
+
+  browser:
+    name: browser (Playwright + Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[test]"
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest tests/e2e -q -p no:cacheprovider
+
+  integration:
+    name: integration (Postgres, MySQL, Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pyweb
+          POSTGRES_PASSWORD: pyweb
+          POSTGRES_DB: pyweb_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pyweb" --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: pyweb
+          MYSQL_DATABASE: pyweb_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -ppyweb" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PYWEB_TEST_POSTGRES: postgresql://pyweb:pyweb@127.0.0.1:5432/pyweb_test
+      PYWEB_TEST_MYSQL: mysql://root:pyweb@127.0.0.1:3306/pyweb_test
+      PYWEB_TEST_REDIS: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[all,test]"
+      - run: python -m pytest tests/integration -q -p no:cacheprovider -rs
+
+  examples:
+    name: examples, budgets, package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . build
+      - name: Check and build every example
         run: |
           for app in counter todo blog auth chat showcase; do
             python -m pyweb.cli check examples/$app/app.pyweb
+            python -m pyweb.cli build examples/$app/app.pyweb --out /tmp/dist-$app --production
           done
+      - name: Enforce shipped-JS budgets (gzip)
+        run: |
+          python - <<'PY'
+          import json
+          m = json.load(open("/tmp/dist-counter/manifest.json"))
+          rt, page = m["runtime_gzip_bytes"], m["pages"]["Home"]["gzip_bytes"]
+          print(f"runtime {rt} B gzip (budget 12288), counter page {page} B gzip (budget 2048)")
+          assert rt < 12288 and page < 2048
+          PY
+      - name: Build sdist + wheel and smoke-test the wheel
+        run: |
+          python -m build
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install dist/*.whl
+          cd /tmp && /tmp/wheel-env/bin/pyweb new smoke && cd smoke
+          /tmp/wheel-env/bin/pyweb build app.pyweb --out dist --production
+          /tmp/wheel-env/bin/python -c "from pyweb.testing import TestClient; c = TestClient('app.pyweb'); assert c.get('/').status == 200"

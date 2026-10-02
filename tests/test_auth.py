@@ -1,8 +1,6 @@
 """Auth: hashing, sessions, CSRF, RBAC/permissions."""
 
-import time
 
-from pyweb import auth
 from pyweb.auth import (
     SessionStore,
     can,

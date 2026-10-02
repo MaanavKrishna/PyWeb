@@ -3,8 +3,8 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyweb"
-version = "1.0.0"
+name = "pyweb-framework"
+version = "0.1.0"
 description = "Full-stack web apps in one Python file: server-rendered pages, reactive browser UI, typed RPC."
 readme = "README.md"
 license = { text = "MIT" }
@@ -17,7 +17,7 @@ authors = [
 maintainers = [{ name = "MaanavKrishna", email = "67054795+MaanavKrishna@users.noreply.github.com" }]
 keywords = ["web", "framework", "full-stack", "reactive", "rpc", "ssr", "compiler"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",

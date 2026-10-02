@@ -2,9 +2,12 @@
 
 ## Install
 
+The package is published as `pyweb-framework`; you import it as `pyweb`
+and the command is `pyweb`.
+
 ```bash
-pip install pyweb            # Python 3.10+; no other dependencies
-pip install "pyweb[all]"     # optional: Postgres, MySQL, Redis, cryptography, uvicorn
+pip install pyweb-framework            # Python 3.10+; no other dependencies
+pip install "pyweb-framework[all]"     # optional: Postgres, MySQL, Redis, cryptography, uvicorn
 ```
 
 ## Create and run an app

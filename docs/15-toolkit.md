@@ -58,11 +58,13 @@ example) or via `/__pyweb/poll?channel=NAME&since=ID`.
 
 ## Stability
 
-PyWeb follows [semantic versioning](https://semver.org). From 1.0, the
-following are **stable**: breaking changes only in a new major version,
-with deprecation warnings for at least one minor release first.
+PyWeb follows [semantic versioning](https://semver.org). It is in the
+0.x series, so minor releases (0.2, 0.3, …) may still contain breaking
+changes. For the APIs marked **stable** below, any breaking change is
+listed in the changelog and, where possible, preceded by a deprecation
+warning in an earlier release. They are the intended 1.0 API.
 
-| Stable | |
+| Stable (intended 1.0 API) | |
 |---|---|
 | The `.pyweb` language | markup, expressions, attributes, events, `bind`, control flow, components, `on_mount`, state classification rules |
 | `pyweb` | `App`, `server`, `component`, `request`, `session`, `redirect`, `NotFound`, `RPCError` |

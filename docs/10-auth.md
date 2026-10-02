@@ -101,7 +101,7 @@ parsed = auth.verify_webauthn_assertion(
 It checks the relying-party hash, user presence (and optionally
 verification), the ceremony type, the challenge, the origin and the
 signature counter, and accepts the DER signatures browsers send. With
-`pip install "pyweb[crypto]"` the signature is verified by the
+`pip install "pyweb-framework[crypto]"` the signature is verified by the
 `cryptography` library; otherwise by a pure-Python implementation.
 Registration (attestation) parsing is not included; store the
 credential's COSE key from your registration flow and convert it with

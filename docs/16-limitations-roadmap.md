@@ -1,6 +1,6 @@
 # Limitations and roadmap
 
-PyWeb 1.0 is deliberately focused. These are the current limits, so you
+PyWeb 0.1 is deliberately focused. These are the current limits, so you
 can decide up front whether they matter for your app.
 
 ## Current limitations

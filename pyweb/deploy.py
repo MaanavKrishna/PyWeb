@@ -13,7 +13,7 @@ def dockerfile(python="3.12-slim", port=8000, app_file="app.pyweb"):
     return (
         f"FROM python:{python}\n"
         "WORKDIR /app\n"
-        f"RUN pip install --no-cache-dir pyweb{pin}\n"
+        f"RUN pip install --no-cache-dir pyweb-framework{pin}\n"
         "COPY requirements.tx[t] ./\n"
         "RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi\n"
         "COPY . .\n"

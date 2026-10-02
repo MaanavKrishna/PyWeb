@@ -12,8 +12,8 @@ from pyweb.db import connect
 
 db = connect("sqlite:///app.db")                 # relative path
 # db = connect("sqlite:////var/data/app.db")     # absolute path
-# db = connect("postgresql://user:pw@host/db")   # pip install "pyweb[postgres]"
-# db = connect("mysql://user:pw@host/db")        # pip install "pyweb[mysql]"
+# db = connect("postgresql://user:pw@host/db")   # pip install "pyweb-framework[postgres]"
+# db = connect("mysql://user:pw@host/db")        # pip install "pyweb-framework[mysql]"
 
 db.execute("insert into posts (title) values (?)", ("Hello",))
 rows = db.execute("select id, title from posts where id > ?", (0,)).dicts()

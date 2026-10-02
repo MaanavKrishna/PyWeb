@@ -466,7 +466,7 @@ def test_cli_version():
     proc = subprocess.run(
         [sys.executable, "-m", "pyweb.cli", "--version"],
         capture_output=True, text=True, timeout=60)
-    assert proc.returncode == 0 and proc.stdout.strip().startswith("1.")
+    assert proc.returncode == 0 and proc.stdout.strip() == __import__("re").search(r'^version = "([^"]+)"', open("pyproject.toml").read(), __import__("re").M).group(1)
 
 
 

@@ -11,10 +11,10 @@ license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = []
 authors = [
-    { name = "MaanavKrishna" },
+    { name = "MaanavKrishna", email = "67054795+MaanavKrishna@users.noreply.github.com" },
     { name = "Claude", email = "noreply@anthropic.com" },
 ]
-maintainers = [{ name = "MaanavKrishna" }]
+maintainers = [{ name = "MaanavKrishna", email = "67054795+MaanavKrishna@users.noreply.github.com" }]
 keywords = ["web", "framework", "full-stack", "reactive", "rpc", "ssr", "compiler"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

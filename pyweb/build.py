@@ -285,7 +285,7 @@ def write_dockerfile(path: str, version: str = "") -> None:
         fh.write(
             "FROM python:3.12-slim\n"
             "WORKDIR /app\n"
-            f"RUN pip install --no-cache-dir pyweb-framework{pin}\n"
+            f"RUN pip install --no-cache-dir pyweb-stack{pin}\n"
             "COPY . /app/\n"
             "RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi\n"
             "ENV PYWEB_ENV=production\n"

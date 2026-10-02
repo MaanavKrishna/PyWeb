@@ -8,7 +8,7 @@ project uses [semantic versioning](https://semver.org).
 
 ## [0.1.0]
 
-The first public release, published on PyPI as `pyweb-framework`. The
+The first public release, published on PyPI as `pyweb-stack`. The
 unpublished prototype was labelled "1.0" but only the simplest counter
 pattern worked in a browser; this release rebuilds the compiler, runtime
 and server around a design that works end to end, and is verified in a

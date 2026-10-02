@@ -7,7 +7,7 @@ functions, without a JavaScript toolchain.
 [![CI](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-maanavkrishna.github.io%2FPyWeb-0d9488)](https://maanavkrishna.github.io/PyWeb/)
 ![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab)
-![PyPI](https://img.shields.io/pypi/v/pyweb-framework)
+![PyPI](https://img.shields.io/pypi/v/pyweb-stack)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ```pyweb
@@ -46,7 +46,7 @@ def Home():
 ```
 
 ```bash
-pip install pyweb-framework   # imported as `pyweb`
+pip install pyweb-stack   # imported as `pyweb`
 pyweb dev app.pyweb        # http://localhost:8000
 ```
 

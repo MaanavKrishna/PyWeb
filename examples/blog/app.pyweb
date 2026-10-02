@@ -1,28 +1,84 @@
-from pyweb import App, server
-from pyweb import Model
+"""Blog: SQL database, server functions, server-rendered pages, route params."""
 
-app = App()
+import os
 
-class Post(Model):
-    title: str
+from pyweb import App, NotFound, RPCError, component, server
+from pyweb.db import connect
+
+app = App(title="PyWeb Blog", stylesheets=["/static/app.css"])
+
+db = connect(os.environ.get("DATABASE_URL", "sqlite:///blog.db"))
+db.execute(
+    "create table if not exists posts ("
+    " id integer primary key autoincrement,"
+    " title text not null,"
+    " body text not null)"
+)
+
+
+def all_posts():
+    return db.execute("select id, title, body from posts order by id desc").dicts()
+
 
 @server
-def latest() -> str:
-    return "hello"
+def publish(title: str, body: str) -> list:
+    title, body = title.strip(), body.strip()
+    if not title or not body:
+        raise RPCError("validation_error", "A post needs a title and a body.")
+    db.execute("insert into posts (title, body) values (?, ?)", (title, body))
+    return all_posts()
 
-@app.page("/")
+
+@component
+def PostCard(post):
+    <article>
+        <h2><a href={"/posts/" + str(post["id"])}>{post["title"]}</a></h2>
+        <p class="muted">{post["body"][:140]}</p>
+    </article>
+
+
+@app.page("/", title="PyWeb Blog")
 def Home():
+    posts = all_posts()
     title = ""
-    posts = Post.all()
+    body = ""
+    error = ""
 
-    def publish():
-        Post.create(title=title)
-        title = ""
+    def submit():
+        try:
+            posts = publish(title, body)
+            title = ""
+            body = ""
+            error = ""
+        except RPCError as e:
+            error = str(e)
 
     <main>
         <h1>Blog</h1>
-        <input bind={title} placeholder="Post..." />
-        <button onclick={publish}>Publish</button>
+        <form onsubmit={submit}>
+            <div style={{"flex": "1"}}>
+                <input id="title" bind={title} placeholder="Title" />
+                <textarea id="body" bind={body} placeholder="Write something…"></textarea>
+                <p class="error" id="error">{error}</p>
+                <button id="publish" class="primary">Publish</button>
+            </div>
+        </form>
         for post in posts:
-            <article>{post}</article>
+            <PostCard post={post} />
+        if not posts:
+            <p class="empty">No posts yet.</p>
+    </main>
+
+
+@app.page("/posts/{post_id}")
+def Post(post_id: int):
+    rows = db.execute("select title, body from posts where id = ?", (post_id,)).dicts()
+    if not rows:
+        raise NotFound()
+    post = rows[0]
+
+    <main>
+        <p><a href="/">← All posts</a></p>
+        <h1>{post["title"]}</h1>
+        <p>{post["body"]}</p>
     </main>

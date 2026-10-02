@@ -1,24 +1,41 @@
+"""One page, every layer: reactive state, derived values, server search."""
+
 from pyweb import App, server
 
-app = App()
+app = App(title="PyWeb showcase", stylesheets=["/static/style.css"])
+
+PRODUCTS = [
+    {"name": "Keyboard", "price": 89},
+    {"name": "Monitor", "price": 249},
+    {"name": "Mouse", "price": 39},
+    {"name": "Headphones", "price": 129},
+    {"name": "Webcam", "price": 69},
+]
+
 
 @server
-def search_products(q: str) -> str:
-    return q
+def search_products(q: str) -> list:
+    q = q.strip().lower()
+    return [p for p in PRODUCTS if q in p["name"].lower()]
+
 
 @app.page("/")
 def Home():
     count = 0
-    q = ""
     price = 100
     quantity = 2
     total = price * quantity
+    q = ""
+    results = search_products("")
 
     def increment():
         count += 1
 
     def reset():
         count = 0
+
+    def search():
+        results = search_products(q)
 
     <main class="wrap">
         <nav class="nav">
@@ -27,30 +44,27 @@ def Home():
         </nav>
         <section class="hero">
             <h1>One language. Every layer.</h1>
-            <p>Plain Python variables become reactive state. No useState, no fetch, no API routes.</p>
+            <p>Plain Python variables become reactive state. Server functions become typed RPC.</p>
         </section>
         <section class="card">
             <h2>Reactive counter</h2>
-            <button onclick={increment} class="btn">
-                Count: {count}
-            </button>
-            <button onclick={reset} class="btn ghost">
-                Reset
-            </button>
-            <p class="hint">Signal count updates only its own text node. No virtual DOM.</p>
+            <button id="inc" onclick={increment} class="btn">Count: {count}</button>
+            <button onclick={reset} class="btn ghost" disabled={count == 0}>Reset</button>
+            <p class="hint">count is a signal: only this button's text node updates.</p>
         </section>
         <section class="card">
-            <h2>Computed value</h2>
-            <p>Total {total}</p>
-            <p class="hint">total = price * quantity is a Computed node. Only its text node updates.</p>
+            <h2>Derived values</h2>
+            <label>Quantity <input id="qty" type="number" bind={quantity} /></label>
+            <p id="total">Total: ${total}</p>
+            <p class="hint">total = price * quantity recomputes when quantity changes.</p>
         </section>
         <section class="card">
-            <h2>Two-way binding + server RPC</h2>
-            <input bind={q} placeholder="Search products..." />
-            <p>Type to filter locally. Server echoes it back:</p>
-            <p class="echo">Query: {q}</p>
+            <h2>Server search</h2>
+            <input id="q" bind={q} oninput={search} placeholder="Search products…" />
+            <ul id="results">
+                for p in results:
+                    <li>{p["name"]} <span class="hint">${p["price"]}</span></li>
+            </ul>
+            <p class="hint">Each keystroke calls search_products() on the server over RPC.</p>
         </section>
-        <footer class="foot">
-            <span>Built with PyWeb. SSR HTML plus a tiny signals runtime.</span>
-        </footer>
     </main>

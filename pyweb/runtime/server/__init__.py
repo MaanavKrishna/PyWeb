@@ -15,7 +15,14 @@ class Request:
         self.path = path
         self.headers = headers or {}
         self.body = body
-        self.cookies = cookies or {}
+        if cookies is None:
+            cookies = {}
+            raw = next((v for k, v in self.headers.items() if k.lower() == "cookie"), "")
+            for pair in (raw or "").split(";"):
+                name, sep, value = pair.partition("=")
+                if sep and name.strip():
+                    cookies[name.strip()] = value.strip().strip('"')
+        self.cookies = cookies
         self.id = uuid.uuid4().hex[:12]
 
 
@@ -24,6 +31,26 @@ class Response:
         self.status = status
         self.body = body
         self.headers = headers or {}
+
+
+_POOL = None
+
+
+def _rpc_error():
+    from pyweb.rpc import RPCError
+    return RPCError
+
+
+async def _awaited(aw):
+    return await aw
+
+
+def _rpc_pool():
+    global _POOL
+    if _POOL is None:
+        import concurrent.futures as _fut
+        _POOL = _fut.ThreadPoolExecutor(max_workers=32, thread_name_prefix="pyweb-rpc")
+    return _POOL
 
 
 def _coerce(value, ann):
@@ -43,9 +70,15 @@ class Server:
     #: are rejected with ``413 body-too-large`` before JSON parsing.
     MAX_BODY = 1_048_576
 
-    def __init__(self, compiled, *, auth_secret=None, csrf_secret=None,
+    def __init__(self, compiled=None, *, auth_secret=None, csrf_secret=None,
                  rate_limit=None, rpc_timeout=None, tracer=None,
-                 logger=None, max_body=None):
+                 logger=None, max_body=None, app=None, debug=False,
+                 secure_cookies=False):
+        if compiled is None:
+            compiled = app.compiled if app is not None else {"pages": {}, "rpc": []}
+        self.app = app
+        self.debug = debug
+        self.secure_cookies = secure_cookies
         self.compiled = compiled
         self.rpc_impls: dict[str, object] = {}
         self.routes: list[tuple[re.Pattern, str]] = []
@@ -60,6 +93,9 @@ class Server:
         self.max_body = self.MAX_BODY if max_body is None else max_body
         self.tracer = tracer
         self.logger = logger
+        if app is not None:
+            for fn in app.rpc.values():
+                self.register_rpc(fn)
 
     def register_rpc(self, fn):
         self.rpc_impls[fn.__name__] = fn
@@ -179,6 +215,9 @@ class Server:
                     result = self._call_with_timeout(fn, clean)
                 else:
                     result = fn(**clean)
+                if inspect.isawaitable(result):
+                    import asyncio
+                    result = asyncio.run(_awaited(result))
             except TimeoutError:
                 return self._err(_rpc.Code.TIMEOUT,
                                  f"{name} exceeded {self.rpc_timeout}s",
@@ -200,7 +239,16 @@ class Server:
                        "X-Request-Id": trace_id, "traceparent": traceparent}
             if isinstance(result, dict) and result.get("__pyweb_stream__"):
                 return self._stream_response(result["chunks"], headers)
-            return Response(200, json.dumps({"result": result}), headers)
+            from pyweb.ssr import to_jsonable
+            try:
+                payload = json.dumps({"result": to_jsonable(result)})
+            except TypeError as exc:
+                if self.logger is not None:
+                    self.logger.error(f"rpc {name} returned unserializable value: {exc}",
+                                      request_id=trace_id, rpc=name)
+                return self._err(_rpc.Code.INTERNAL, "internal server error",
+                                 trace_id=trace_id, traceparent=traceparent)
+            return Response(200, payload, headers)
         finally:
             if span is not None and self.tracer is not None:
                 try:
@@ -209,13 +257,19 @@ class Server:
                     pass
 
     def _call_with_timeout(self, fn, clean):
+        """Run ``fn`` but stop waiting after ``rpc_timeout`` seconds.
+
+        Python cannot kill a thread, so a timed-out call keeps running in
+        the background pool; the client gets ``timeout`` immediately.
+        """
         import concurrent.futures as _fut
-        with _fut.ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(fn, **clean)
-            try:
-                return fut.result(timeout=self.rpc_timeout)
-            except _fut.TimeoutError as exc:
-                raise TimeoutError() from exc
+        import contextvars
+        ctx = contextvars.copy_context()
+        fut = _rpc_pool().submit(ctx.run, fn, **clean)
+        try:
+            return fut.result(timeout=self.rpc_timeout)
+        except _fut.TimeoutError as exc:
+            raise TimeoutError() from exc
 
     def _stream_response(self, chunks, headers):
         """NDJSON stream: one {"chunk": ...} object per line."""
@@ -225,18 +279,70 @@ class Server:
         return Response(200, lines, headers)
 
     def handle(self, req: Request):
+        """Dispatch one request inside a :mod:`pyweb.context` request scope."""
+        from pyweb import context as _ctx
+        rc = _ctx.RequestContext(req, auth_secret=self.auth_secret,
+                                 secure_cookies=self.secure_cookies)
+        token = _ctx.activate(rc)
+        try:
+            resp = self._dispatch(req)
+        finally:
+            _ctx.deactivate(token)
+        if resp is not None and rc.set_cookies:
+            existing = resp.headers.get("Set-Cookie")
+            cookies = ([existing] if isinstance(existing, str) else list(existing or [])) + rc.set_cookies
+            resp.headers["Set-Cookie"] = cookies
+        return resp
+
+    def _dispatch(self, req: Request):
         if req.path.startswith("/__pyweb/rpc/"):
+            if req.method != "POST":
+                return self._err(405, "RPC endpoints accept POST only")
             return self.handle_rpc(req)
         if req.path == "/__pyweb/events" or req.path.startswith("/__pyweb/events?"):
             return self.handle_events(req)
         if req.path == "/__pyweb/poll" or req.path.startswith("/__pyweb/poll?"):
             return self.handle_poll(req)
+        path = req.path.split("?")[0]
         for pat, name in self.routes:
-            m = pat.match(req.path)
-            if m:
+            m = pat.match(path)
+            if not m:
+                continue
+            if req.method not in ("GET", "HEAD"):
+                return Response(405, "method not allowed", {"Allow": "GET, HEAD",
+                                                            "Content-Type": "text/plain"})
+            if self.app is None:
                 page = self.compiled["pages"][name]
-                return Response(200, page["html"], {"Content-Type": "text/html", "X-Request-Id": req.id})
+                return Response(200, page["html"], {"Content-Type": "text/html; charset=utf-8",
+                                                    "X-Request-Id": req.id})
+            return self._render_page(req, name, m.groupdict())
         return self.error_page(404, req)
+
+    def _render_page(self, req, name, params):
+        from pyweb.context import NotFound, Redirect
+        from urllib.parse import unquote
+        try:
+            result = self.app.render(name, {k: unquote(v) for k, v in params.items()})
+        except NotFound:
+            return self.error_page(404, req)
+        except _rpc_error() as exc:
+            status = {"not_found": 404, "forbidden": 403, "unauthenticated": 401}.get(exc.code)
+            if status is None:
+                raise
+            return self.error_page(status, req, message=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            import traceback
+            if self.logger is not None:
+                self.logger.error(f"page {name} failed: {exc}", request_id=req.id, page=name)
+            if self.debug:
+                return self.error_page(500, req, title=f"{type(exc).__name__} in {name}()",
+                                       message=traceback.format_exc())
+            return self.error_page(500, req)
+        if isinstance(result, Redirect):
+            return Response(result.status, "", {"Location": result.url, "X-Request-Id": req.id})
+        return Response(200, result, {"Content-Type": "text/html; charset=utf-8",
+                                      "X-Request-Id": req.id,
+                                      "Cache-Control": "no-store"})
 
     def error_page(self, status, req=None, *, title=None, message=None):
         """Branded HTML error shell. Apps override via ``error_pages`` on
@@ -265,7 +371,9 @@ class Server:
             f"<title>{status} {heading}</title>"
             "<body style='font-family:system-ui,sans-serif;max-width:640px;"
             "margin:10vh auto;padding:0 20px;color:#111'>"
-            f"<h1>{status} — {heading}</h1><p>{hint}</p>"
+            f"<h1>{status} — {heading}</h1>"
+            + (f"<pre style='white-space:pre-wrap;background:#f6f6f6;padding:12px;font-size:13px'>{hint}</pre>"
+               if message and "\n" in (message or "") else f"<p>{hint}</p>")
             + (f"<p><a href='/'>Back home</a> · "
                 f"<code>{_html.escape(path)}</code></p>" if status == 404 else "")
             + (f"<p style='color:#666;font-size:13px'>request id: "

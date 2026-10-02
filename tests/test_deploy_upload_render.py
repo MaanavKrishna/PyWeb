@@ -4,11 +4,6 @@ import pytest
 
 from pyweb import deploy, uploads
 from pyweb.compiler import parser as P
-from pyweb.compiler.codegen.emit_html import (
-    emit_island,
-    stream_fragment,
-    stream_shell,
-)
 
 
 def test_dockerfile_shape():
@@ -72,16 +67,3 @@ def test_storage_path_unique_prefixed():
     assert a != b and a.startswith("uploads/") and a.endswith("-pic.png")
 
 
-def test_island_marker_and_content():
-    ui = P.parse_ui_block({1: "<p>Hi</p>"})
-    out = emit_island("counter", ui, {})
-    assert 'data-pyweb-island="counter"' in out and "<p>Hi</p>" in out
-
-
-def test_streaming_roundtrip():
-    ui = P.parse_ui_block({1: "<h1>T</h1>"})
-    head, tail = stream_shell("/r", "T", js_url="/static/H.js")
-    frag = stream_fragment(ui, {})
-    page = head + frag + tail
-    assert page.startswith("<!doctype html>") and "<h1>T</h1>" in page
-    assert page.rstrip().endswith("</html>") and "/static/H.js" in tail

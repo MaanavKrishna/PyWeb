@@ -1,4 +1,4 @@
-"""Prototype tests: reactivity (H1), RPC (H3), SSR/placement/security."""
+"""Compiler: reactivity, RPC, SSR, placement and the secret boundary."""
 
 from pathlib import Path
 
@@ -12,22 +12,36 @@ TODO = Path("examples/todo/app.pyweb").read_text()
 def test_counter_reactive_count():
     out = compile_source(COUNTER, filename="app.pyweb")
     page = out["pages"]["Home"]
-    assert page["signals"] == ["count"], page["signals"]
+    assert page["signals"] == ["count", "step"], page["signals"]
+    assert page["computeds"]["doubled"]["deps"] == ["count"]
     assert page["placement"]["count"][0] == "browser"
     assert page["placement"]["increment"][0] == "browser"
-    assert "Count:" in page["html"] and "Counter" in page["html"]
-    assert "sig(" in page["js"] and "increment" in page["js"]
+    assert "Count: 0" in page["html"] and "Counter" in page["html"]
+    assert "$signal(" in page["js"] and "function increment()" in page["js"]
     assert "Count: {count}" not in page["html"]
 
 
-def test_todo_rpc_and_ssr():
-    out = compile_source(TODO, filename="app.pyweb")
-    assert any(r["name"] == "get_count" for r in out["rpc"])
-    spec = [r for r in out["rpc"] if r["name"] == "get_count"][0]
-    assert spec["returns"] == "int"
-    page = out["pages"]["Home"]
-    assert "Todos" in page["html"] and "buy milk" in page["html"]
-    assert "get_count" in page["js"] and "/__pyweb/rpc/" in Path("pyweb/runtime/browser/runtime.js").read_text()
+def test_server_call_from_handler_becomes_awaited_rpc():
+    src = ("from pyweb import App, server\napp = App()\n@server\ndef add(a: int, b: int) -> int:\n"
+           "    return a + b\n@app.page('/')\ndef H():\n    total = 0\n"
+           "    def go():\n        total = add(total, 2)\n    <button onclick={go}>{total}</button>\n")
+    out = compile_source(src, filename="app.pyweb")
+    js = out["pages"]["H"]["js"]
+    assert "async function go()" in js
+    assert 'total((await $rpc("add", {"a": total(), "b": 2})));' in js
+    spec = out["rpc"][0]
+    assert spec["name"] == "add" and spec["returns"] == "int"
+    assert out["pages"]["H"]["placement"]["go"][0] == "browser"
+
+
+def test_server_only_names_cannot_reach_the_browser():
+    import pytest
+    from pyweb.compiler.errors import CompileError
+    src = ("import sqlite3\nfrom pyweb import App\napp = App()\n@app.page('/')\ndef H():\n"
+           "    n = 0\n    def go():\n        sqlite3.connect('x')\n    <button onclick={go}>{n}</button>\n")
+    with pytest.raises(CompileError) as e:
+        compile_source(src, filename="app.pyweb")
+    assert "app.pyweb:8" in str(e.value) and "only exists on the server" in str(e.value)
 
 
 def test_rpc_validation_and_dispatch():
@@ -51,27 +65,44 @@ def test_rpc_validation_and_dispatch():
 
 def test_computed_graph_and_static_page():
     out = compile_source(
-        "from pyweb import App\napp = App()\n@app.page('/')\ndef Shop():\n    price = 100\n    quantity = 2\n    total = price * quantity\n    <p>{total}</p>\n",
+        "from pyweb import App\napp = App()\n@app.page('/')\ndef Shop():\n    price = 100\n    quantity = 2\n"
+        "    total = price * quantity\n    <input bind={quantity} />\n    <p>{total}</p>\n",
         filename="s.pyweb",
     )
     page = out["pages"]["Shop"]
     assert page["computeds"]["total"]["deps"] == ["price", "quantity"]
-    assert ("price", "total") in out["graph"].edges and ("total", "__dom__") in out["graph"].edges
+    assert ("quantity", "total") in out["graph"].edges and ("total", "__dom__") in out["graph"].edges
     static = compile_source(
         "from pyweb import App\napp = App()\n@app.page('/')\ndef H():\n    <h1>Hello</h1>\n",
         filename="h.pyweb",
     )
-    assert "runtime.js" not in static["pages"]["H"]["js"]
-    assert "<h1>Hello</h1>" in static["pages"]["H"]["html"]
+    assert static["pages"]["H"]["js"] == ""
+    assert "<h1>Hello</h1>" in static["pages"]["H"]["html"] and "<script" not in static["pages"]["H"]["html"]
 
 
 def test_secret_never_goes_to_browser():
-    try:
+    import pytest
+    with pytest.raises(ValueError) as e:
         compile_source(
             "from pyweb import App\napp = App()\n@app.page('/')\ndef H():\n    API_TOKEN = 'x'\n    <p>{API_TOKEN}</p>\n",
             filename="x.pyweb",
         )
-    except ValueError as exc:
-        assert "server secret" in str(exc)
-    else:
-        raise AssertionError("secret leak not rejected")
+    assert "server secret 'API_TOKEN'" in str(e.value) and "x.pyweb:5" in str(e.value)
+
+
+def test_secret_from_server_is_rejected_even_if_not_literal():
+    import pytest
+    src = ("import os\nfrom pyweb import App\napp = App()\n@app.page('/')\ndef H():\n"
+           "    db_password = os.environ['DB_PASSWORD']\n    <p>{db_password}</p>\n")
+    with pytest.raises(ValueError):
+        compile_source(src, filename="x.pyweb")
+
+
+def test_server_values_stay_private_unless_read():
+    src = ("from pyweb import App\napp = App()\ndef load():\n    return {'name': 'a', 'hash': 'x'}\n"
+           "@app.page('/')\ndef H():\n    user = load()\n    name = user['name']\n    n = 0\n"
+           "    def inc():\n        n += 1\n    <p onclick={inc}>{name} {n}</p>\n")
+    out = compile_source(src)
+    page = out["pages"]["H"]
+    assert page["state_keys"] == ["name", "n"]            # `user` (with the hash) is never sent
+    assert page["placement"]["user"][0] == "server"

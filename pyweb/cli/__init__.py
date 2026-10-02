@@ -54,32 +54,14 @@ def cmd_check(args):
 
 def cmd_build(args):
     from pyweb.compiler import compile_source
-    from pyweb.build import build as _production_build
+    from pyweb.build import build as _build
     src = _load(args.file)
     out = compile_source(src, filename=args.file)
-    if getattr(args, "production", False):
-        manifest = _production_build(out, args.out)
-        print(f"built {len(manifest['pages'])} page(s) + "
-              f"{len(manifest.get('rpc', []))} rpc(s) -> {args.out}/ (production)")
-        return
-    os.makedirs(args.out + "/static", exist_ok=True)
-    os.makedirs(args.out + "/server", exist_ok=True)
-    for name, page in out["pages"].items():
-        with open(f"{args.out}/static/{name}.js", "w") as fh:
-            fh.write(page["js"])
-        with open(f"{args.out}/server/{name}.html", "w") as fh:
-            fh.write(page["html"])
-        with open(f"{args.out}/static/{name}.js.map", "w") as fh:
-            json.dump({"page": name, "mappings": page.get("sourcemap", [])}, fh, indent=2)
-    import shutil
-    shutil.copy(os.path.join(os.path.dirname(__file__), "..", "runtime", "browser", "runtime.js"),
-                args.out + "/static/runtime.js")
-    manifest = {"pages": {n: {"route": p["route"], "signals": p["signals"],
-                              "computeds": list(p["computeds"])} for n, p in out["pages"].items()},
-                "rpc": out["rpc"], "ir": out["ir_text"]}
-    with open(args.out + "/manifest.json", "w") as fh:
-        json.dump(manifest, fh, indent=2)
-    print(f"built {len(out['pages'])} page(s) + {len(out['rpc'])} rpc(s) -> {args.out}/")
+    production = getattr(args, "production", False)
+    manifest = _build(out, args.out, source=src, production=production,
+                      app_dir=os.path.dirname(os.path.abspath(args.file)))
+    mode = " (production)" if production else ""
+    print(f"built {len(manifest['pages'])} page(s) + {len(out['rpc'])} rpc(s) -> {args.out}/{mode}")
     from pathlib import Path as _Path
     from pyweb.observability import Timer as _Timer
     with _Timer() as _t:
@@ -99,127 +81,153 @@ def cmd_build(args):
         raise SystemExit(2)
 
 
-def cmd_dev(args):
-    from pyweb.compiler import compile_source
-    from pyweb.runtime.server import Server, Request
+DEV_RELOAD_JS = """<script>(()=>{let v=null;async function t(){try{const r=await fetch('/__pyweb/dev/version');const n=await r.text();if(v!==null&&n!==v)location.reload();v=n}catch{}setTimeout(t,600)}t()})()</script>"""
 
-    src = _load(args.file)
-    out = compile_source(src, filename=args.file)
-    server = Server(out)
-    # Auto-register @server fns by executing module (server-safe subset).
-    ns: dict = {}
+
+def _error_overlay(exc, path):
+    """HTML page shown in the browser while the app has a compile error."""
+    import html as _h
+    lineno = getattr(exc, "lineno", None)
+    snippet = ""
     try:
-        exec(compile(src.split("<")[0], args.file, "exec"), ns)
-        for obj in ns.values():
-            if callable(obj) and getattr(obj, "__pyweb_location__", "") in ("server", "worker", "edge"):
-                server.register_rpc(obj)
-    except Exception as exc:  # noqa: BLE001
-        print(f"note: rpc auto-register skipped ({exc})", file=sys.stderr)
+        lines = _load(path).splitlines()
+        if lineno:
+            lo, hi = max(0, lineno - 4), min(len(lines), lineno + 3)
+            rows = []
+            for i in range(lo, hi):
+                mark = "&gt;" if i + 1 == lineno else "&nbsp;"
+                rows.append(f"{mark} {i + 1:4d} | {_h.escape(lines[i])}")
+            snippet = "<pre class=code>" + "\n".join(rows) + "</pre>"
+    except OSError:
+        pass
+    return ("<!doctype html><meta charset=utf-8><title>PyWeb error</title>"
+            "<style>body{font:15px/1.5 system-ui;margin:0;background:#1b1b1f;color:#eee}"
+            "main{max-width:880px;margin:8vh auto;padding:0 24px}h1{color:#ff6b6b;font-size:20px}"
+            "pre{background:#0f0f12;padding:16px;border-radius:8px;overflow:auto;font-size:13px}"
+            ".code{border-left:3px solid #ff6b6b}</style><main>"
+            f"<h1>{_h.escape(type(exc).__name__)}</h1><pre>{_h.escape(str(exc))}</pre>{snippet}"
+            "<p>Fix the file and save: this page reloads automatically.</p></main>" + DEV_RELOAD_JS)
 
-    dist = os.path.abspath("dist")
-    os.makedirs(dist + "/static", exist_ok=True)
-    for name, page in out["pages"].items():
-        with open(dist + f"/static/{name}.js", "w") as fh:
-            fh.write(page["js"])
-    import shutil
-    shutil.copy(os.path.join(os.path.dirname(__file__), "..", "runtime", "browser", "runtime.js"), dist + "/static/runtime.js")
+
+class _DevState:
+    def __init__(self, path):
+        self.path = path
+        self.site = None
+        self.error = None
+        self.version = 0
+
+
+def _dev_load(state, Site):
+    try:
+        if state.site is None:
+            state.site = Site(state.path, debug=True)
+        else:
+            state.site.reload()
+        state.error = None
+    except Exception as exc:  # noqa: BLE001 - shown in the browser overlay
+        state.error = exc
+    state.version += 1
+
+
+def cmd_dev(args):
+    """Development server: compile on save, live reload, error overlay."""
+    from pyweb.hosting import Site
+    from pyweb.serve import ThreadedServer
+
+    state = _DevState(args.file)
+    _dev_load(state, Site)
+    if state.error is not None:
+        print(f"error: {state.error}", file=sys.stderr)
 
     class H(http.server.BaseHTTPRequestHandler):
-        def _send(self, resp):
-            body = resp.body.encode() if isinstance(resp.body, str) else resp.body
-            self.send_response(resp.status)
-            for k, v in resp.headers.items():
-                self.send_header(k, v)
+        def _send(self, status, headers, body):
+            self.send_response(status)
+            for k, v in headers:
+                if k.lower() != "content-length":
+                    self.send_header(k, v)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if self.command != "HEAD":
+                self.wfile.write(body)
 
-        def do_GET(self):
-            if self.path.startswith("/static/"):
-                from pyweb.security import safe_join, PathTraversalError
-                try:
-                    p = safe_join(os.path.join(dist, "static"),
-                                  self.path[len("/static/"):].split("?")[0])
-                except PathTraversalError:
-                    self.send_response(403); self.end_headers()
-                    return
-                if os.path.isfile(p):
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/javascript" if p.endswith(".js") else "text/html")
-                    if "?v=" in self.path:
-                        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-                    self.end_headers()
-                    with open(p, "rb") as fh:
-                        self.wfile.write(fh.read())
-                else:
-                    self.send_response(404); self.end_headers()
-                return
-            self._send(server.handle(Request("GET", self.path.split("?")[0])))
+        def _handle(self, method, body=b""):
+            if self.path == "/__pyweb/dev/version":
+                return self._send(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")],
+                                  str(state.version).encode())
+            if state.error is not None or state.site is None:
+                html = _error_overlay(state.error, state.path).encode()
+                return self._send(500, [("Content-Type", "text/html; charset=utf-8")], html)
+            status, headers, raw = state.site.respond(method, self.path, dict(self.headers), body)
+            ctype = next((v for k, v in headers if k.lower() == "content-type"), "")
+            if ctype.startswith("text/html") and b"</body>" in raw:
+                raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
+            return self._send(status, headers, raw)
 
-        def do_POST(self):
-            n = int(self.headers.get("Content-Length", 0))
-            self._send(server.handle(Request("POST", self.path, dict(self.headers), self.rfile.read(n))))
+        def do_GET(self):  # noqa: N802
+            self._handle("GET")
+
+        def do_HEAD(self):  # noqa: N802
+            self._handle("HEAD")
+
+        def do_POST(self):  # noqa: N802
+            try:
+                n = int(self.headers.get("Content-Length", 0) or 0)
+            except ValueError:
+                n = 0
+            self._handle("POST", self.rfile.read(n) if n else b"")
 
         def log_message(self, *a):
             pass
 
-    print("PyWeb\n\n\xe2\x9c\x93 compiler\n\xe2\x9c\x93 server\n\xe2\x9c\x93 debugger\n\nLocal: http://localhost:8000")
-    try:
-        from pyweb.serve import ThreadedServer
-        server_cls = ThreadedServer
-    except ImportError:  # pragma: no cover - serve module ships with pyweb
-        server_cls = socketserver.TCPServer
-    with server_cls(("127.0.0.1", args.port), H) as httpd:
+    host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
+    with ThreadedServer((host, args.port), H) as httpd:
+        print(f"PyWeb dev server: http://{host}:{httpd.server_address[1]}/  ({args.file})", flush=True)
         if not getattr(args, "no_reload", False):
-            _watch_and_rebuild(args.file, dist, server)
+            _watch_and_reload(state, Site)
         httpd.serve_forever()
 
 
-def _watch_and_rebuild(path, dist, server):
-    """Poll ``path`` mtime; recompile in place on change (hot reload).
-
-    The browser picks changes up on next navigation/asset fetch because
-    dev assets are served fresh from disk on every request. stdlib-only
-    polling keeps ``pyweb dev`` dependency-free; typical latency <1s.
-    """
+def _watch_and_reload(state, Site):
+    """Poll the app file and sibling ``.py``/``static`` files; reload on change."""
     import threading
     import time
 
-    try:
-        last = os.path.getmtime(path)
-    except OSError:
-        return
+    app_dir = os.path.dirname(os.path.abspath(state.path))
 
-    def recompile():
-        from pyweb.compiler import compile_source
-        from pyweb.runtime.server import Server as _Server
-        src = _load(path)
-        fresh = compile_source(src, filename=path)
-        server.compiled = fresh
-        server.routes = _Server(fresh).routes
-        for name, page in fresh.get("pages", {}).items():
-            with open(os.path.join(dist, "static", f"{name}.js"), "w") as fh:
-                fh.write(page["js"])
-        print(f"reloaded {path} ({len(fresh.get('pages', {}))} page(s))",
-              flush=True)
+    def snapshot():
+        stamps = {}
+        for root, dirs, files in os.walk(app_dir):
+            dirs[:] = [d for d in dirs if not d.startswith((".", "__pycache__", "node_modules", "dist"))]
+            for fn in files:
+                if fn.endswith((".pyweb", ".py", ".css", ".js")):
+                    p = os.path.join(root, fn)
+                    try:
+                        stamps[p] = os.path.getmtime(p)
+                    except OSError:
+                        pass
+        return stamps
+
+    def purge_local_modules():
+        for name, mod in list(sys.modules.items()):
+            f = getattr(mod, "__file__", None) or ""
+            if f and os.path.abspath(f).startswith(app_dir + os.sep) and f.endswith(".py"):
+                del sys.modules[name]
 
     def poll():
-        nonlocal last
+        last = snapshot()
         while True:
-            time.sleep(0.5)
-            try:
-                mtime = os.path.getmtime(path)
-            except OSError:
-                continue
-            if mtime != last:
-                last = mtime
-                try:
-                    recompile()
-                except Exception as exc:  # noqa: BLE001 - stay alive on error
-                    print(f"reload failed: {exc}", flush=True)
+            time.sleep(0.4)
+            now = snapshot()
+            if now != last:
+                last = now
+                purge_local_modules()
+                _dev_load(state, Site)
+                if state.error is not None:
+                    print(f"error: {state.error}", flush=True)
+                else:
+                    print(f"reloaded {state.path}", flush=True)
 
-    thread = threading.Thread(target=poll, daemon=True, name="pyweb-reload")
-    thread.start()
+    threading.Thread(target=poll, daemon=True, name="pyweb-reload").start()
 
 
 def cmd_serve(args):
@@ -402,7 +410,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=False)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
-    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
+    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db"); p.add_argument("db_action", choices=["migrate", "new", "status", "rollback"]); p.add_argument("--database", default=None); p.add_argument("--migrations", default="migrations"); p.add_argument("--name", default="migration"); p.add_argument("--steps", type=int, default=1, help="rollback: how many applied migrations to revert"); p.add_argument("--to", default=None, help="rollback: revert everything applied after this label"); p.set_defaults(fn=cmd_db)
     p = sub.add_parser("new"); p.add_argument("name"); p.set_defaults(fn=cmd_new)

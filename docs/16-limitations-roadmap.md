@@ -1,6 +1,6 @@
 # Limitations and roadmap
 
-PyWeb 0.1 is deliberately focused. These are the current limits, so you
+PyWeb is deliberately focused. These are the current limits, so you
 can decide up front whether they matter for your app.
 
 ## Current limitations
@@ -26,6 +26,16 @@ can decide up front whether they matter for your app.
   unusual lines; there is no completion or inline error reporting yet.
 - **Dev reload is a full page reload.** State is not preserved across
   edits.
+
+## Released so far
+
+- **0.2**: tools for building with AI assistants: the `pyweb mcp` server,
+  an AI guide, project templates with `AGENTS.md`/`CLAUDE.md`, and
+  `llms.txt`.
+- **0.1**: the compiler, reactive runtime, server rendering, typed RPC,
+  sessions, database layer and CLI.
+
+See the [changelog](https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md) for details.
 
 ## Roadmap
 

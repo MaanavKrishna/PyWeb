@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 0.1.x (latest) | yes |
-| older pre-releases | no |
+| latest 0.x release | yes |
+| older releases | no (please upgrade: `pip install -U pyweb-stack`) |
 
 ## Reporting a vulnerability
 

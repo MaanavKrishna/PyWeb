@@ -208,3 +208,4 @@ details.compiled[open] { padding-bottom: 6px; }
   .search input { width: 110px; }
   .logo small { display: none; }
 }
+a.eyebrow:hover { text-decoration: none; filter: brightness(1.05); box-shadow: 0 0 0 1px var(--accent); }

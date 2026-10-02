@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pages, routing and assets · PyWeb</title>
+<meta name="description" content="#Pages and routes
+app.pywebCopyfrom pyweb import App, NotFound
+
+app = App(title=&amp;quot;Library&amp;quot;, stylesheets=[&amp;quot;/static/app.css&amp;quot;], lang=&amp;quot;en&amp;quot;)
+BOOKS = {1: &amp;qu">
+<meta property="og:title" content="Pages, routing and assets · PyWeb">
+<meta property="og:description" content="#Pages and routes
+app.pywebCopyfrom pyweb import App, NotFound
+
+app = App(title=&amp;quot;Library&amp;quot;, stylesheets=[&amp;quot;/static/app.css&amp;quot;], lang=&amp;quot;en&amp;quot;)
+BOOKS = {1: &amp;qu">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/routing.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html">Introduction</a><a href="quickstart.html">Quickstart</a><a href="tutorial.html">Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html">State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html" aria-current=page>Pages, routing &amp; assets</a><a href="data.html">Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html">Security model</a><a href="cli.html">Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>Pages, routing and assets</h1>
+<h2 id="pages-and-routes"><a class="anchor" href="#pages-and-routes">#</a>Pages and routes</h2>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App, NotFound
+
+app = App(title=<span class="s">&quot;Library&quot;</span>, stylesheets=[<span class="s">&quot;/static/app.css&quot;</span>], lang=<span class="s">&quot;en&quot;</span>)
+BOOKS = {<span class="n">1</span>: <span class="s">&quot;Dune&quot;</span>, <span class="n">2</span>: <span class="s">&quot;Emma&quot;</span>}
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Home():
+    <span class="t">&lt;ul</span><span class="t">&gt;</span>
+        <span class="k">for</span> book_id, title <span class="k">in</span> BOOKS.items():
+            <span class="t">&lt;li</span><span class="t">&gt;</span><span class="t">&lt;a</span> href={<span class="s">&quot;/books/&quot;</span> + <span class="b">str</span>(book_id)}<span class="t">&gt;</span>{title}<span class="t">&lt;/a</span><span class="t">&gt;</span><span class="t">&lt;/li</span><span class="t">&gt;</span>
+    <span class="t">&lt;/ul</span><span class="t">&gt;</span>
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/books/{book_id}&quot;</span>, title=<span class="s">&quot;Book&quot;</span>)
+<span class="k">def</span> Book(book_id: <span class="b">int</span>):
+    <span class="k">if</span> book_id <span class="k">not</span> <span class="k">in</span> BOOKS:
+        <span class="k">raise</span> NotFound()
+    title = BOOKS[book_id]
+
+    <span class="t">&lt;h1</span><span class="t">&gt;</span>{title}<span class="t">&lt;/h1</span><span class="t">&gt;</span>
+    <span class="t">&lt;a</span> href=<span class="s">&quot;/&quot;</span><span class="t">&gt;</span>Back<span class="t">&lt;/a</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>none</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><p class="muted">No JavaScript: nothing on this page changes after it loads.</p></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Home  route=/
+page Book  route=/books/{book_id}
+  browser  title          constant</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;/books/1&quot;&gt;Dune&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;/books/2&quot;&gt;Emma&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</code></pre></div></div></div></details>
+<ul><li><code>{name}</code> segments become parameters of the page function. Annotate them as <code>int</code> or <code>float</code> to convert; a value that doesn't convert is a 404.</li><li><code>title=</code> on <code>@app.page</code> sets the <code>&lt;title&gt;</code>; otherwise the app title is used.</li><li>Navigation between pages is ordinary links (full page loads). Each page ships only its own small module plus the shared, cached runtime.</li><li>Routes are matched in definition order; unmatched paths get a 404 page. <code>pyweb dev</code> shows Python tracebacks for errors in pages; <code>serve</code> shows a generic 500 page with a request id and logs the traceback.</li></ul>
+<h2 id="responses-other-than-html"><a class="anchor" href="#responses-other-than-html">#</a>Responses other than HTML</h2>
+<p>Return <code>redirect(url)</code> from a page to send <code>303 See Other</code>. Raise <code>NotFound()</code> for 404. Raise <code>RPCError(&quot;forbidden&quot;)</code> or <code>RPCError(&quot;unauthenticated&quot;)</code> for 403/401. Anything else that escapes a page is a 500.</p>
+<h2 id="page-level-python"><a class="anchor" href="#page-level-python">#</a>Page-level Python</h2>
+<p>A page function body runs on the server for every request, top to bottom, until the markup. You can use any Python there: queries, <code>if</code> statements, loops, early returns. Values assigned that way are computed on the server; see <a href="reactivity.html">State and reactivity</a>.</p>
+<h2 id="static-files-and-stylesheets"><a class="anchor" href="#static-files-and-stylesheets">#</a>Static files and stylesheets</h2>
+<p>Put files in a <code>static/</code> folder next to <code>app.pyweb</code>. They are served at <code>/static/...</code> by <code>pyweb dev</code>, copied into <code>dist/static/</code> by <code>pyweb build</code>, and served with long-lived caching by <code>pyweb serve</code>.</p>
+<div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">myapp/
+  app.pyweb
+  static/
+    app.css
+    logo.svg</code></pre></div>
+<p>Add stylesheets for every page with <code>App(stylesheets=[...])</code>. Any CSS approach works: hand-written CSS, a CSS framework's built file, or Tailwind's CLI output written into <code>static/</code>.</p>
+<h2 id="the-html-document"><a class="anchor" href="#the-html-document">#</a>The HTML document</h2>
+<p>Every page response is:</p>
+<div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;&lt;head&gt;…title, stylesheets…&lt;/head&gt;
+&lt;body&gt;
+  &lt;div data-pw-root=&quot;Home&quot;&gt; …server-rendered markup… &lt;/div&gt;
+  &lt;script id=&quot;pw-state&quot; type=&quot;application/json&quot;&gt;{…state the browser reads…}&lt;/script&gt;
+  &lt;script type=&quot;module&quot; src=&quot;/static/Home.&lt;hash&gt;.js&quot;&gt;&lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;</code></pre></div>
+<p>Pages with no interactivity have neither script tag.</p>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/08-pages-routing-assets.md">Edit this page</a><nav class="pager"><a class="prev" href="server-functions.html"><small>Previous</small>Server functions &amp; RPC</a><a class="next" href="data.html"><small>Next</small>Data &amp; databases</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#pages-and-routes">Pages and routes</a><a class="l2" href="#responses-other-than-html">Responses other than HTML</a><a class="l2" href="#page-level-python">Page-level Python</a><a class="l2" href="#static-files-and-stylesheets">Static files and stylesheets</a><a class="l2" href="#the-html-document">The HTML document</a></nav>
+</div>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

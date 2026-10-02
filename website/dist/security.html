@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security model · PyWeb</title>
+<meta name="description" content="#What reaches the browser
+Only three things are sent to a browser:">
+<meta property="og:title" content="Security model · PyWeb">
+<meta property="og:description" content="#What reaches the browser
+Only three things are sent to a browser:">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/security.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html">Introduction</a><a href="quickstart.html">Quickstart</a><a href="tutorial.html">Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html">State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html">Pages, routing &amp; assets</a><a href="data.html">Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html" aria-current=page>Security model</a><a href="cli.html">Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>Security model</h1>
+<h2 id="what-reaches-the-browser"><a class="anchor" href="#what-reaches-the-browser">#</a>What reaches the browser</h2>
+<p>Only three things are sent to a browser:</p>
+<ol><li><strong>HTML</strong> rendered from your markup.</li><li><strong>The page module</strong>: JavaScript compiled from event handlers, markup expressions, computed values, browser-callable helpers and the literal module constants they reference.</li><li><strong>The page state</strong>: JSON containing the values of page variables that browser code reads.</li></ol>
+<p>Everything else stays on the server: imports, database handles, classes, <code>@server</code> function bodies, module objects, and page variables that browser code doesn't read. Referencing a server-only name from browser code is a compile error. <code>pyweb inspect</code> lists, per name, whether it runs in the browser or on the server and why.</p>
+<p>Treat everything in (1)–(3) as public. Authorization belongs in <code>@server</code> functions and page bodies (<code>session.require(...)</code>), never in browser code.</p>
+<h2 id="secrets"><a class="anchor" href="#secrets">#</a>Secrets</h2>
+<p>The compiler rejects, with file and line, a page variable whose name looks like a credential (<code>secret</code>, <code>password</code>, <code>token</code>, <code>api_key</code>, <code>private_key</code>, <code>credential</code>) if browser code or markup reads it and its value is not an empty literal. Empty form fields (<code>password = &quot;&quot;</code> bound to an input) are allowed because the value comes from the user.</p>
+<p><code>pyweb check</code> adds pattern-based checks over the source (environment reads, credential-like literals) and exits non-zero on findings.</p>
+<h2 id="cross-site-scripting"><a class="anchor" href="#cross-site-scripting">#</a>Cross-site scripting</h2>
+<ul><li>Text and attribute values are escaped on the server and set as text (never as HTML) in the browser.</li><li>URLs in <code>href</code>, <code>src</code>, <code>action</code> and <code>formaction</code> that start with <code>javascript:</code>, <code>vbscript:</code> or <code>data:text/html</code> are replaced by <code>#</code>.</li><li>The default Content-Security-Policy only allows scripts from your origin: Override it with <code>PYWEB_CSP</code> if you load scripts from a CDN.<div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;self&#x27;;
+frame-ancestors &#x27;self&#x27;; img-src &#x27;self&#x27; data: https:;
+style-src &#x27;self&#x27; &#x27;unsafe-inline&#x27; https:; font-src &#x27;self&#x27; data: https:;
+connect-src &#x27;self&#x27;</code></pre></div></li></ul>
+<h2 id="cross-site-request-forgery"><a class="anchor" href="#cross-site-request-forgery">#</a>Cross-site request forgery</h2>
+<p>RPC endpoints only accept <code>POST</code> with a JSON content type (cross-site form posts are rejected with <code>415</code>) and reject requests whose <code>Origin</code> header names another site (<code>403 csrf_failed</code>). Session cookies are <code>SameSite=Lax</code> and <code>HttpOnly</code>. Setting <code>PYWEB_CSRF_SECRET</code> adds a token check for RPCs marked <code>@pyweb.decorators.auth_required</code>.</p>
+<h2 id="sql-injection"><a class="anchor" href="#sql-injection">#</a>SQL injection</h2>
+<p><code>pyweb.db</code> only executes parameterised statements; <code>Query</code> validates table and column identifiers.</p>
+<h2 id="other-protections"><a class="anchor" href="#other-protections">#</a>Other protections</h2>
+<ul><li>Request bodies are capped (1 MiB by default, <code>413</code> beyond).</li><li>RPC calls are rate-limited (120/minute per client by default).</li><li>Static file serving is confined to the static directory (path traversal returns <code>403</code>).</li><li><code>pyweb.security.safe_next</code> / <code>is_safe_redirect</code> validate redirect targets; <code>pyweb.uploads.validate_upload</code> checks size, declared type and magic bytes, and generates safe storage names.</li><li>Passwords use PBKDF2-HMAC-SHA256 with per-user salts; session cookies are HMAC-SHA256 signed and compared in constant time.</li></ul>
+<h2 id="reporting-a-vulnerability"><a class="anchor" href="#reporting-a-vulnerability">#</a>Reporting a vulnerability</h2>
+<p>See <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/13-security.md">Edit this page</a><nav class="pager"><a class="prev" href="deployment.html"><small>Previous</small>Deployment</a><a class="next" href="cli.html"><small>Next</small>Command line</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#what-reaches-the-browser">What reaches the browser</a><a class="l2" href="#secrets">Secrets</a><a class="l2" href="#cross-site-scripting">Cross-site scripting</a><a class="l2" href="#cross-site-request-forgery">Cross-site request forgery</a><a class="l2" href="#sql-injection">SQL injection</a><a class="l2" href="#other-protections">Other protections</a><a class="l2" href="#reporting-a-vulnerability">Reporting a vulnerability</a></nav>
+</div>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

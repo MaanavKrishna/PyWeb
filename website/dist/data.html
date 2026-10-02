@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data and databases · PyWeb</title>
+<meta name="description" content="Database code runs on the server: at the top of page functions and in @server functions. You can use any Python library (SQLAlchemy, Django ORM, an HTTP client). PyWeb also ships a">
+<meta property="og:title" content="Data and databases · PyWeb">
+<meta property="og:description" content="Database code runs on the server: at the top of page functions and in @server functions. You can use any Python library (SQLAlchemy, Django ORM, an HTTP client). PyWeb also ships a">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/data.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html">Introduction</a><a href="quickstart.html">Quickstart</a><a href="tutorial.html">Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html">State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html">Pages, routing &amp; assets</a><a href="data.html" aria-current=page>Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html">Security model</a><a href="cli.html">Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>Data and databases</h1>
+<p>Database code runs on the server: at the top of page functions and in <code>@server</code> functions. You can use any Python library (SQLAlchemy, Django ORM, an HTTP client). PyWeb also ships a small, dependency-free database layer.</p>
+<h2 id="pywebdb"><a class="anchor" href="#pywebdb">#</a><code>pyweb.db</code></h2>
+<div class="code"><div class="code-head"><span>Python</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-python"><span class="k">from</span> pyweb.db <span class="k">import</span> connect
+
+db = connect(<span class="s">&quot;sqlite:///app.db&quot;</span>)                 <span class="c"># relative path</span>
+<span class="c"># db = connect(&quot;sqlite:////var/data/app.db&quot;)     # absolute path</span>
+<span class="c"># db = connect(&quot;postgresql://user:pw@host/db&quot;)   # pip install &quot;pyweb[postgres]&quot;</span>
+<span class="c"># db = connect(&quot;mysql://user:pw@host/db&quot;)        # pip install &quot;pyweb[mysql]&quot;</span>
+
+db.execute(<span class="s">&quot;insert into posts (title) values (?)&quot;</span>, (<span class="s">&quot;Hello&quot;</span>,))
+rows = db.execute(<span class="s">&quot;select id, title from posts where id &gt; ?&quot;</span>, (<span class="n">0</span>,)).dicts()
+first = db.execute(<span class="s">&quot;select count(*) from posts&quot;</span>).fetchone()</code></pre></div>
+<ul><li><strong>Parameters only.</strong> Values are always passed separately from SQL.</li><li><strong>Portable placeholders.</strong> Write <code>?</code>; it is rewritten to <code>%s</code> for Postgres and MySQL drivers (and literal <code>%</code> is escaped). SQL that already uses <code>%s</code> is passed through unchanged.</li><li><strong>Pooling.</strong> Connections open lazily, up to <code>pool_size</code> (default 5), and are safe to share between request threads.</li><li><strong>Results.</strong> <code>.fetchall()</code>, <code>.fetchone()</code>, <code>.dicts()</code>, <code>.columns</code>, <code>.rowcount</code>, <code>.lastrowid</code>.</li></ul>
+<h3 id="transactions"><a class="anchor" href="#transactions">#</a>Transactions</h3>
+<div class="code"><div class="code-head"><span>Python</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-python"><span class="k">with</span> db.transaction():
+    db.execute(<span class="s">&quot;update accounts set balance = balance - ? where id = ?&quot;</span>, (<span class="n">10</span>, <span class="n">1</span>))
+    db.execute(<span class="s">&quot;update accounts set balance = balance + ? where id = ?&quot;</span>, (<span class="n">10</span>, <span class="n">2</span>))
+<span class="c"># committed here; any exception rolls both back</span></code></pre></div>
+<h3 id="streaming-large-results"><a class="anchor" href="#streaming-large-results">#</a>Streaming large results</h3>
+<div class="code"><div class="code-head"><span>Python</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-python"><span class="k">for</span> page <span class="k">in</span> db.stream(<span class="s">&quot;select * from events where day = ?&quot;</span>, (<span class="s">&quot;2026-01-01&quot;</span>,), chunksize=<span class="n">1000</span>):
+    handle(page.dicts())</code></pre></div>
+<h3 id="retries"><a class="anchor" href="#retries">#</a>Retries</h3>
+<p><code>db.execute(sql, params, attempts=3)</code> retries transient failures (deadlocks, serialization failures, dropped connections) and raises <code>TransientDBError</code> if they persist.</p>
+<h2 id="migrations"><a class="anchor" href="#migrations">#</a>Migrations</h2>
+<div class="code"><div class="code-head"><span>Terminal</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-bash"><span class="k">pyweb</span> db new --name create_posts --migrations migrations<span class="c">   # writes 001_create_posts.up.sql / .down.sql</span>
+<span class="k">pyweb</span> db migrate --database <span class="s">&quot;$DATABASE_URL&quot;</span><span class="c">              # applies pending, records them</span>
+<span class="k">pyweb</span> db status --database <span class="s">&quot;$DATABASE_URL&quot;</span>
+<span class="k">pyweb</span> db rollback --database <span class="s">&quot;$DATABASE_URL&quot;</span> --steps 1<span class="c">   # runs .down.sql files</span></code></pre></div>
+<p>Applied versions are recorded in a <code>pyweb_migrations</code> table. Applying is idempotent; a <code>.down.sql</code> without its <code>.up.sql</code> is rejected.</p>
+<p>From Python: <code>pyweb.db.migrate.migrate(db_or_url, &quot;migrations&quot;)</code>, <code>status(...)</code>, <code>rollback(..., steps=1)</code>.</p>
+<h2 id="choosing-sqlite-postgres-or-mysql"><a class="anchor" href="#choosing-sqlite-postgres-or-mysql">#</a>Choosing SQLite, Postgres or MySQL</h2>
+<p>SQLite is ideal for single-server apps and tests. Use Postgres or MySQL when several app servers share data. The drivers are tested against real Postgres 16, MySQL 8.4 and SQLite in CI. DDL syntax differs between engines (for example auto-increment keys), so keep schema in migrations per engine if you need to support more than one.</p>
+<h2 id="query-builder"><a class="anchor" href="#query-builder">#</a>Query builder</h2>
+<p><code>pyweb.db.Query</code> builds parameterised SQL with validated identifiers:</p>
+<div class="code"><div class="code-head"><span>Python</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-python"><span class="k">from</span> pyweb.db <span class="k">import</span> Query
+
+sql, params = Query(<span class="s">&quot;posts&quot;</span>).select(<span class="s">&quot;id&quot;</span>, <span class="s">&quot;title&quot;</span>).where(author=<span class="s">&quot;ada&quot;</span>).order_by(<span class="s">&quot;-id&quot;</span>).limit(<span class="n">10</span>).build_select()</code></pre></div>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/09-data.md">Edit this page</a><nav class="pager"><a class="prev" href="routing.html"><small>Previous</small>Pages, routing &amp; assets</a><a class="next" href="auth.html"><small>Next</small>Authentication</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#pywebdb">pyweb.db</a><a class="l3" href="#transactions">Transactions</a><a class="l3" href="#streaming-large-results">Streaming large results</a><a class="l3" href="#retries">Retries</a><a class="l2" href="#migrations">Migrations</a><a class="l2" href="#choosing-sqlite-postgres-or-mysql">Choosing SQLite, Postgres or MySQL</a><a class="l2" href="#query-builder">Query builder</a></nav>
+</div>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

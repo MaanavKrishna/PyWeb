@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Introduction · PyWeb</title>
+<meta name="description" content="PyWeb lets you build a complete web application in Python, in one file. You write pages as Python functions with HTML-like markup, keep interactive state in ordinary local variable">
+<meta property="og:title" content="Introduction · PyWeb">
+<meta property="og:description" content="PyWeb lets you build a complete web application in Python, in one file. You write pages as Python functions with HTML-like markup, keep interactive state in ordinary local variable">
+<link rel="canonical" href="https://maanavkrishna.github.io/PyWeb/introduction.html">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css?v=1">
+<script>try{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="doc">
+<header class="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>1.0.0</small></a>
+  <nav class="main-nav"><a href="introduction.html" aria-current=page>Docs</a><a href="examples.html">Examples</a><a href="benchmarks.html">Benchmarks</a></nav>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
+  <a class="icon gh" href="https://github.com/MaanavKrishna/PyWeb" aria-label="GitHub repository">GitHub</a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+</header>
+<div class="layout">
+<aside class="side" id="side"><div class=group><h4>Start</h4><a href="introduction.html" aria-current=page>Introduction</a><a href="quickstart.html">Quickstart</a><a href="tutorial.html">Tutorial</a></div><div class=group><h4>Language</h4><a href="language.html">The .pyweb language</a><a href="reactivity.html">State &amp; reactivity</a><a href="browser-python.html">Python in the browser</a></div><div class=group><h4>Server</h4><a href="server-functions.html">Server functions &amp; RPC</a><a href="routing.html">Pages, routing &amp; assets</a><a href="data.html">Data &amp; databases</a><a href="auth.html">Authentication</a></div><div class=group><h4>Ship</h4><a href="testing.html">Testing</a><a href="deployment.html">Deployment</a><a href="security.html">Security model</a><a href="cli.html">Command line</a></div><div class=group><h4>Reference</h4><a href="toolkit.html">Toolkit &amp; stability</a><a href="roadmap.html">Limitations &amp; roadmap</a></div><div class=group><h4>Examples</h4><a href="example-counter.html">Counter</a><a href="example-todo.html">Todos</a><a href="example-blog.html">Blog</a><a href="example-auth.html">Accounts</a><a href="example-chat.html">Chat rooms</a><a href="example-showcase.html">Showcase</a></div></aside>
+<main class="content" id="content"><article class="prose"><h1>Introduction</h1>
+<p>PyWeb lets you build a complete web application in Python, in one file. You write pages as Python functions with HTML-like markup, keep interactive state in ordinary local variables, and mark the functions that must run on the server with <code>@server</code>. The compiler works out what runs where and produces:</p>
+<ul><li><strong>server-rendered HTML</strong> for every page, so the first paint is complete and works for search engines and slow devices;</li><li><strong>a small JavaScript module per interactive page</strong>, compiled from your Python event handlers and expressions (no Python runtime in the browser);</li><li><strong>typed RPC endpoints</strong> for your <code>@server</code> functions, with generated browser calls, argument validation and structured errors.</li></ul>
+<div class="code"><div class="code-head"><span>app.pyweb</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-pyweb"><span class="k">from</span> pyweb <span class="k">import</span> App, server
+
+app = App(title=<span class="s">&quot;Guestbook&quot;</span>)
+ENTRIES = []
+
+
+<span class="d">@server</span>
+<span class="k">def</span> sign(name: <span class="b">str</span>) -<span class="t">&gt;</span> <span class="b">list</span>:
+    ENTRIES.append(name.strip() <span class="k">or</span> <span class="s">&quot;anonymous&quot;</span>)
+    <span class="k">return</span> ENTRIES
+
+
+<span class="d">@app.page</span>(<span class="s">&quot;/&quot;</span>)
+<span class="k">def</span> Home():
+    entries = <span class="b">list</span>(ENTRIES)     <span class="c"># runs on the server for each request</span>
+    name = <span class="s">&quot;&quot;</span>                   <span class="c"># bound to the input below: browser state</span>
+
+    <span class="k">def</span> submit():               <span class="c"># compiled to JavaScript</span>
+        entries = sign(name)    <span class="c"># calls the server over RPC</span>
+        name = <span class="s">&quot;&quot;</span>
+
+    <span class="t">&lt;main</span><span class="t">&gt;</span>
+        <span class="t">&lt;h1</span><span class="t">&gt;</span>Guestbook ({<span class="b">len</span>(entries)})<span class="t">&lt;/h1</span><span class="t">&gt;</span>
+        <span class="t">&lt;form</span> onsubmit={submit}<span class="t">&gt;</span>
+            <span class="t">&lt;input</span> bind={name} placeholder=<span class="s">&quot;Your name&quot;</span> <span class="t">/&gt;</span>
+            <span class="t">&lt;button</span><span class="t">&gt;</span>Sign<span class="t">&lt;/button</span><span class="t">&gt;</span>
+        <span class="t">&lt;/form</span><span class="t">&gt;</span>
+        <span class="t">&lt;ul</span><span class="t">&gt;</span>
+            <span class="k">for</span> entry <span class="k">in</span> entries:
+                <span class="t">&lt;li</span><span class="t">&gt;</span>{entry}<span class="t">&lt;/li</span><span class="t">&gt;</span>
+        <span class="t">&lt;/ul</span><span class="t">&gt;</span>
+    <span class="t">&lt;/main</span><span class="t">&gt;</span></code></pre></div>
+<details class="compiled"><summary>What this compiles to</summary><div class="tabs"><div role="tablist"><button type="button" role="tab" aria-selected="true">Browser JS <small>388 B gzip</small></button><button type="button" role="tab" aria-selected="false">Placement <small>pyweb inspect</small></button><button type="button" role="tab" aria-selected="false">Server HTML <small>first paint</small></button></div><div class="pane"><div class="code"><div class="code-head"><span>JavaScript</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-js"><span class="c">// Home.js</span>
+<span class="k">const</span> ENTRIES = [];
+<span class="k">function</span> Home($s) {
+  <span class="k">const</span> entries = $signal(<span class="s">&quot;entries&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;entries&quot;</span>] : $py.list(ENTRIES));
+  <span class="k">const</span> name = $signal(<span class="s">&quot;name&quot;</span> <span class="k">in</span> $s ? $s[<span class="s">&quot;name&quot;</span>] : <span class="s">&quot;&quot;</span>);
+  <span class="k">async</span> <span class="k">function</span> submit() {
+    entries((<span class="k">await</span> $rpc(<span class="s">&quot;sign&quot;</span>, {<span class="s">&quot;name&quot;</span>: name()})));
+    name(<span class="s">&quot;&quot;</span>);
+  }
+  <span class="k">return</span> [$h(<span class="s">&quot;main&quot;</span>, <span class="k">null</span>, [
+      $h(<span class="s">&quot;h1&quot;</span>, <span class="k">null</span>, [
+        <span class="s">&quot;Guestbook (&quot;</span>,
+        () =&gt; $py.len(entries()),
+        <span class="s">&quot;)&quot;</span>
+      ]),
+      $h(<span class="s">&quot;form&quot;</span>, {<span class="s">&quot;onsubmit&quot;</span>: submit}, [
+        $h(<span class="s">&quot;input&quot;</span>, {<span class="s">&quot;$bind&quot;</span>: name, <span class="s">&quot;placeholder&quot;</span>: <span class="s">&quot;Your name&quot;</span>}),
+        $h(<span class="s">&quot;button&quot;</span>, <span class="k">null</span>, [<span class="s">&quot;Sign&quot;</span>])
+      ]),
+      $h(<span class="s">&quot;ul&quot;</span>, <span class="k">null</span>, [$list(() =&gt; entries(), (entry) =&gt; [$h(<span class="s">&quot;li&quot;</span>, <span class="k">null</span>, [$py.text(entry)])])])
+    ])];
+}
+$mount(<span class="s">&quot;Home&quot;</span>, Home);</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>Output</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-text">page Home  route=/
+  browser  entries        reactive state: assigned in submit(); initial value computed in the browser
+  browser  name           reactive state: bound to an input (line 25); literal initial value
+  browser  submit         event handler (compiled to JavaScript)
+rpc POST /__pyweb/rpc/sign  (name: str) -&gt; list</code></pre></div></div><div class="pane" hidden><div class="code"><div class="code-head"><span>HTML</span><button class="copy" type="button" aria-label="Copy code">Copy</button></div><pre><code class="lang-html">&lt;main&gt;
+&lt;h1&gt;Guestbook (0)&lt;/h1&gt;
+&lt;form&gt;
+&lt;input value=&quot;&quot; placeholder=&quot;Your name&quot;&gt;&lt;button&gt;Sign&lt;/button&gt;
+&lt;/form&gt;&lt;ul&gt;
+&lt;/ul&gt;&lt;/main&gt;</code></pre></div></div></div></details>
+<p>Run it with <code>pyweb dev app.pyweb</code> and open <a href="http://localhost:8000">http://localhost:8000</a>.</p>
+<h2 id="the-problem-it-solves"><a class="anchor" href="#the-problem-it-solves">#</a>The problem it solves</h2>
+<p>Python developers who need a real web UI usually pick one of these:</p>
+<div class="table"><table><thead><tr><th>Approach</th><th>What you write</th><th>The cost</th></tr></thead><tbody><tr><td>Django / Flask / FastAPI + a JS framework</td><td>Python API <strong>and</strong> a React/Vue/Svelte app</td><td>Two languages, two builds, a hand-written API layer between them</td></tr><tr><td>Server templates + htmx</td><td>Python views, HTML templates, endpoints per interaction</td><td>Every interaction is a server round trip; client state is awkward</td></tr><tr><td>Server-driven Python UI (Reflex, NiceGUI, Streamlit)</td><td>Python only</td><td>UI state lives on the server; each click is a network round trip over a WebSocket, and servers hold per-user sessions</td></tr><tr><td>Python in the browser (PyScript / Pyodide)</td><td>Python only</td><td>A multi-megabyte runtime download before anything is interactive</td></tr></tbody></table></div>
+<p>PyWeb takes the architecture of modern JavaScript meta-frameworks (server rendering + fine-grained client reactivity + server functions) and makes Python the source language for all of it:</p>
+<ul><li><strong>Interactions run in the browser.</strong> Typing, toggling and filtering update the DOM locally. The network is used only when your code calls a <code>@server</code> function.</li><li><strong>Servers stay stateless.</strong> Pages render per request and RPC calls are plain JSON over HTTP, so any number of processes can sit behind an ordinary load balancer. No sticky sessions or WebSocket fan-out.</li><li><strong>What ships is small.</strong> The shared runtime is about 10 KB gzipped and cached; a typical page adds well under 1 KB. Pages without interactivity ship no JavaScript at all.</li><li><strong>Boundaries are explicit and checked.</strong> Code that can't run in a browser (database access, imports, secrets) is a compile error with a file and line, not a runtime surprise. <code>pyweb inspect</code> explains where every name runs and why.</li></ul>
+<h2 id="when-pyweb-is-a-good-fit"><a class="anchor" href="#when-pyweb-is-a-good-fit">#</a>When PyWeb is a good fit</h2>
+<ul><li>Internal tools, admin panels, dashboards and CRUD apps.</li><li>Product sites and small SaaS apps where pages should be fast and indexable but still interactive.</li><li>Teams that know Python and want a web UI without adopting a separate JavaScript stack.</li></ul>
+<h2 id="when-to-choose-something-else"><a class="anchor" href="#when-to-choose-something-else">#</a>When to choose something else</h2>
+<ul><li><strong>Large single-page apps</strong> with heavy client-side logic and a need for the npm component ecosystem: use React/Svelte/Vue directly.</li><li><strong>Scientific Python in the browser</strong> (NumPy, pandas client-side): use Pyodide/PyScript. PyWeb compiles a defined subset of Python to JavaScript; it does not run CPython in the browser.</li><li><strong>Notebook-style data apps</strong> where a script re-running on every interaction is the desired model: Streamlit is purpose-built for that.</li></ul>
+<h2 id="how-it-works-briefly"><a class="anchor" href="#how-it-works-briefly">#</a>How it works, briefly</h2>
+<ol><li><strong>Parse.</strong> A <code>.pyweb</code> file is Python plus markup statements. The parser separates the two, keeping line numbers exact for both.</li><li><strong>Classify.</strong> For each page, every local variable is classified: <em>signal</em> (changed by an event handler or bound to an input), <em>computed</em> (derived from signals), or <em>constant</em>; and by where its first value comes from: a literal, the browser, or the server.</li><li><strong>Place.</strong> Event handlers and markup expressions are compiled to JavaScript. Calls to <code>@server</code> functions become awaited RPC calls. Everything else stays on the server.</li><li><strong>Render.</strong> On each request the server runs the page function, renders HTML, and embeds only the values the browser code reads as JSON.</li><li><strong>Take over.</strong> The page's module rebuilds the DOM with live bindings; from then on, each signal update touches only the nodes that depend on it.</li></ol>
+<p>Read on: <a href="quickstart.html">Quickstart</a> · <a href="tutorial.html">Tutorial</a> · <a href="language.html">The .pyweb language</a>.</p>
+</article><a class="edit" href="https://github.com/MaanavKrishna/PyWeb/edit/main/docs/01-introduction.md">Edit this page</a><nav class="pager"><a class="next" href="quickstart.html"><small>Next</small>Quickstart</a></nav></main>
+<nav class="toc" aria-label="On this page"><h4>On this page</h4><a class="l2" href="#the-problem-it-solves">The problem it solves</a><a class="l2" href="#when-pyweb-is-a-good-fit">When PyWeb is a good fit</a><a class="l2" href="#when-to-choose-something-else">When to choose something else</a><a class="l2" href="#how-it-works-briefly">How it works, briefly</a></nav>
+</div>
+<footer class="foot">
+  <div><span class="logo small"><span class="mark">py</span>web</span> 1.0.0 · MIT licensed</div>
+  <div><a href="https://github.com/MaanavKrishna/PyWeb">GitHub</a> · <a href="https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.md">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+</footer>
+<script src="assets/site.js?v=1" defer></script>
+</body>
+</html>

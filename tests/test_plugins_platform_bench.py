@@ -76,3 +76,11 @@ def test_bench_reports_shapes():
     assert results["todo"]["js_bytes"] == results["todo"]["page_js_bytes"] + results["todo"]["runtime_js_bytes"]
     counter = results["counter"]
     assert counter["signals"] >= 1  # count detected as reactive
+
+
+def test_bench_budgets_fail_the_run():
+    results = {"x": {"app": "x", "ssr_ms": 5.0, "compile_ms": 1.0}}
+    assert _bench.over_budget(results, max_ssr_ms=10) == []
+    assert _bench.over_budget(results, max_ssr_ms=2, max_compile_ms=0.5) == [
+        "x: server render 5.0 ms > 2 ms", "x: compile 1.0 ms > 0.5 ms"]
+    assert _bench.main(["--json", "--max-ssr-ms", "1000"]) == 0

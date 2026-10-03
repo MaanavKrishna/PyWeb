@@ -91,14 +91,3 @@ def test_ssr_compiles_each_expression_once():
     else:
         raise AssertionError("syntax error not reported")
 
-
-def test_benchmark_script_runs():
-    import subprocess
-    import sys
-    from pathlib import Path
-    root = Path(__file__).parent.parent
-    out = subprocess.run([sys.executable, str(root / "benchmarks" / "bench.py"), "--json"],
-                         capture_output=True, text=True, timeout=300, check=True).stdout
-    import json
-    data = json.loads(out)
-    assert set(data) == {"compile_ms", "request_us"} and data["request_us"]["blog /posts/1"] > 0

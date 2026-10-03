@@ -87,15 +87,39 @@ def run(apps=None) -> dict:
     return {name: bench_app(name, src) for name, src in apps.items()}
 
 
-def main():
+def over_budget(results, *, max_ssr_ms=None, max_compile_ms=None) -> list:
+    """Lines describing every app that exceeds a budget."""
+    out = []
+    for r in results.values():
+        if max_ssr_ms is not None and r["ssr_ms"] > max_ssr_ms:
+            out.append(f"{r['app']}: server render {r['ssr_ms']} ms > {max_ssr_ms} ms")
+        if max_compile_ms is not None and r["compile_ms"] > max_compile_ms:
+            out.append(f"{r['app']}: compile {r['compile_ms']} ms > {max_compile_ms} ms")
+    return out
+
+
+def main(argv=None):
+    import argparse
+    import sys
+    ap = argparse.ArgumentParser(prog="python -m pyweb.bench", description="Measure compile time, "
+                                 "shipped JavaScript and server render time.")
+    ap.add_argument("--json", action="store_true", help="print only JSON")
+    ap.add_argument("--max-ssr-ms", type=float, help="fail if any server render is slower")
+    ap.add_argument("--max-compile-ms", type=float, help="fail if any compile is slower")
+    args = ap.parse_args(argv)
     results = run()
     print(json.dumps(results, indent=2))
-    rt = runtime_sizes()
-    print(f"\nshared runtime: {rt['bytes']} B minified, {rt['gzip_bytes']} B gzip "
-          "(downloaded once, cached across pages)")
-    for r in results.values():
-        print(f"{r['app']:>8}: page JS {r['page_js_gzip']} B gzip, server render {r['ssr_ms']} ms")
+    if not args.json:
+        rt = runtime_sizes()
+        print(f"\nshared runtime: {rt['bytes']} B minified, {rt['gzip_bytes']} B gzip "
+              "(downloaded once, cached across pages)")
+        for r in results.values():
+            print(f"{r['app']:>8}: page JS {r['page_js_gzip']} B gzip, server render {r['ssr_ms']} ms")
+    failed = over_budget(results, max_ssr_ms=args.max_ssr_ms, max_compile_ms=args.max_compile_ms)
+    for line in failed:
+        print("over budget:", line, file=sys.stderr)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

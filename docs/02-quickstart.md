@@ -1,5 +1,10 @@
 # Quickstart
 
+To try PyWeb without installing anything, open the
+[playground](https://maanavkrishna.github.io/PyWeb/playground.html): it
+runs the compiler, server rendering and your `@server` functions in the
+browser.
+
 ## Install
 
 The package is published as `pyweb-stack`; you import it as `pyweb`

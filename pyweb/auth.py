@@ -37,14 +37,36 @@ def _b64d(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
+def _pbkdf2_sha256(password: bytes, salt: bytes, iterations: int) -> bytes:
+    """PBKDF2-HMAC-SHA256 (32-byte key). Uses hashlib's C version when it
+    exists; Pythons built without OpenSSL (e.g. Pyodide) get this pure
+    Python one, which gives the same result."""
+    fast = getattr(hashlib, "pbkdf2_hmac", None)
+    if fast is not None:
+        return fast("sha256", password, salt, iterations)
+    mac = hmac.new(password, digestmod=hashlib.sha256)
+
+    def prf(data):
+        m = mac.copy()
+        m.update(data)
+        return m.digest()
+
+    u = prf(salt + b"\x00\x00\x00\x01")
+    acc = int.from_bytes(u, "big")
+    for _ in range(iterations - 1):
+        u = prf(u)
+        acc ^= int.from_bytes(u, "big")
+    return acc.to_bytes(32, "big")
+
+
 def hash_password(password, *, salt=None, rounds=None, iterations=_ITERATIONS):
     if salt is None:
         salt_bytes = secrets.token_bytes(16)
-        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt_bytes, iterations)
+        dk = _pbkdf2_sha256(password.encode(), salt_bytes, iterations)
         return f"{_HASH_ALGO}${iterations}${_b64e(salt_bytes)}${_b64e(dk)}"
     salt_bytes = salt if isinstance(salt, bytes) else bytes.fromhex(salt)
     n = rounds if rounds is not None else iterations
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt_bytes, n)
+    dk = _pbkdf2_sha256(password.encode(), salt_bytes, n)
     return f"pbkdf2${n}${salt_bytes.hex()}${dk.hex()}"
 
 
@@ -63,7 +85,7 @@ def verify_password(password, stored):
             expected = bytes.fromhex(dk_part)
     except (ValueError, base64.binascii.Error):
         return False
-    candidate = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iters_i)
+    candidate = _pbkdf2_sha256(password.encode(), salt, iters_i)
     if algo == _HASH_ALGO:
         return hmac.compare_digest(candidate, expected)
     return hmac.compare_digest(candidate.hex(), expected.hex() if isinstance(expected, bytes) else dk_part)

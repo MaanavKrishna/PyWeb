@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import sys
+import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -352,12 +353,20 @@ def markdown(text, *, compile_pyweb=True):
 
 # ------------------------------------------------------------------ layout
 
-CSS_VERSION = "1"
+CSS_VERSION = "2"
+
+#: Pyodide (CPython for WebAssembly) for the playground. PYWEB_PYODIDE_DIR
+#: points at an unpacked `pyodide` npm package to serve it from the site
+#: instead (tests do this to run offline).
+PYODIDE_VERSION = "0.29.5"
+PYODIDE_CDN = f"https://cdn.jsdelivr.net/npm/pyodide@{PYODIDE_VERSION}/"
+PLAYGROUND_EXAMPLES = [("counter", "Counter"), ("todo", "Todo list"), ("showcase", "Showcase: server search"),
+                       ("auth", "Sign-in and sessions"), ("chat", "Chat with live updates")]
 
 
 def nav(active):
     items = [("introduction.html", "Docs", "docs"), ("examples.html", "Examples", "examples"),
-             ("benchmarks.html", "Benchmarks", "benchmarks")]
+             ("playground.html", "Playground", "playground"), ("benchmarks.html", "Benchmarks", "benchmarks")]
     links = "".join(f'<a href="{h}"{" aria-current=page" if a == active else ""}>{t}</a>' for h, t, a in items)
     return f"""<header class="top">
   <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>{__version__}</small></a>
@@ -551,7 +560,7 @@ def landing(bench, demo_gz):
     <p class="sub">Server-rendered pages, reactive UI compiled from Python, and typed calls to server
     functions. No JavaScript toolchain, no WebSocket per user, no runtime download.</p>
     <div class="cta"><a class="btn primary" href="quickstart.html">Get started</a>
-    <a class="btn" href="introduction.html">Why PyWeb?</a></div>
+    <a class="btn" href="playground.html">Try it in your browser</a></div>
     {install}
   </div>
   <div class="hero-code">{code_block(sample, "pyweb", "app.pyweb")}</div>
@@ -647,6 +656,72 @@ its own module; pages with nothing dynamic ship no JavaScript at all.</p>
 
 # -------------------------------------------------------------------- build
 
+def playground_page():
+    """playground.html plus the files it loads: PyWeb as a zip, the runtime, the host module."""
+    base = os.path.join(OUT, "playground")
+    os.makedirs(base, exist_ok=True)
+    with zipfile.ZipFile(os.path.join(base, "pyweb.zip"), "w", zipfile.ZIP_DEFLATED) as z:
+        for root, dirs, files in os.walk(os.path.join(ROOT, "pyweb")):
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
+            for fn in files:
+                full = os.path.join(root, fn)
+                z.write(full, os.path.relpath(full, ROOT))
+    shutil.copy(os.path.join(ROOT, "pyweb", "runtime", "browser", "runtime.js"), os.path.join(base, "runtime.js"))
+    shutil.copy(os.path.join(HERE, "playground", "host.py"), os.path.join(base, "host.py"))
+    static = {}
+    for name, _title in PLAYGROUND_EXAMPLES:
+        folder = os.path.join(ROOT, "examples", name, "static")
+        for fn in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            static.setdefault(fn, os.path.join(folder, fn))
+    os.makedirs(os.path.join(base, "static"), exist_ok=True)
+    for fn, src in static.items():
+        shutil.copy(src, os.path.join(base, "static", fn))
+    pyodide = PYODIDE_CDN
+    local = os.environ.get("PYWEB_PYODIDE_DIR")
+    if local:
+        shutil.copytree(local, os.path.join(OUT, "pyodide"), dirs_exist_ok=True)
+        pyodide = "pyodide/"
+    examples = {}
+    for name, title in PLAYGROUND_EXAMPLES:
+        with open(os.path.join(ROOT, "examples", name, "app.pyweb"), encoding="utf-8") as fh:
+            examples[name] = {"title": title, "source": fh.read()}
+    config = json.dumps({"pyodide": pyodide, "base": "playground/", "static": sorted(static),
+                         "examples": examples}).replace("</", "<\\/")
+    return f"""<main class="playground">
+<div class="pg-bar">
+  <h1>Playground</h1>
+  <label class="pg-pick"><span>Example</span><select id="pg-example"><option value="" hidden>Shared code</option></select></label>
+  <button id="pg-run" class="btn primary" type="button" title="Ctrl/⌘ + Enter">Run</button>
+  <button id="pg-share" class="btn" type="button">Copy link</button>
+  <span id="pg-status" class="pg-status busy" role="status">Starting…</span>
+</div>
+<div class="pg-split">
+  <section class="pg-editor" aria-label="Editor">
+    <div class="pg-file">app.pyweb</div>
+    <div class="pg-code"><pre id="pg-gutter" aria-hidden="true"></pre><textarea id="pg-source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="app.pyweb source"></textarea></div>
+    <div id="pg-error" class="pg-error" role="alert" hidden></div>
+  </section>
+  <section class="pg-output" aria-label="Output">
+    <div class="pg-tabs" role="tablist">
+      <button type="button" role="tab" data-tab="preview" aria-selected="true">Preview</button>
+      <button type="button" role="tab" data-tab="js" aria-selected="false">JavaScript</button>
+      <button type="button" role="tab" data-tab="place" aria-selected="false">What runs where</button>
+    </div>
+    <div class="pg-urlbar"><select id="pg-page" aria-label="Page"></select><input id="pg-url" aria-label="Path" value="/"></div>
+    <iframe id="pg-frame" title="App preview"></iframe>
+    <pre id="pg-js" class="pg-panel" hidden></pre>
+    <div id="pg-place" class="pg-panel" hidden></div>
+  </section>
+</div>
+<p class="pg-note">Everything runs in your browser: PyWeb's compiler, server rendering and your <code>@server</code>
+functions run in real Python (<a href="https://pyodide.org">Pyodide</a>, CPython compiled to WebAssembly). Nothing
+is sent anywhere. Apps that need a database file or other packages run with <code>pyweb dev</code>; see the
+<a href="quickstart.html">quickstart</a>.</p>
+</main>
+<script id="pg-config" type="application/json">{config}</script>
+<script src="assets/playground.js?v={CSS_VERSION}" defer></script>"""
+
+
 def write(name, text):
     path = os.path.join(OUT, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -662,7 +737,7 @@ def build(out=None):
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(os.path.join(OUT, "assets"))
-    for asset in ("style.css", "site.js", "icon.svg"):
+    for asset in ("style.css", "site.js", "icon.svg", "playground.js"):
         shutil.copy(os.path.join(HERE, "assets", asset), os.path.join(OUT, "assets", asset))
     write(".nojekyll", "")
     search = []
@@ -719,6 +794,15 @@ def build(out=None):
     search.append({"url": "changelog.html", "title": "Changelog", "group": "Reference",
                    "headings": [[a, t] for _, a, t in log_toc], "text": re.sub(r"<[^>]+>", " ", log_html)[:6000]})
 
+    write("playground.html", shell("playground.html", "Playground · PyWeb",
+                                   "Write a PyWeb app and run it in your browser: compiler, server rendering and "
+                                   "server functions included.", playground_page(), active="playground",
+                                   layout="home wide"))
+    pages.append("playground.html")
+    search.append({"url": "playground.html", "title": "Playground", "group": "Start", "headings": [],
+                   "text": "Run PyWeb apps in the browser. Edit code, see the preview, compiled JavaScript and "
+                           "what runs where."})
+
     bench_html = benchmarks_page(bench, example_sizes)
     body = f'<div class="layout">{sidebar("benchmarks")}<main class="content"><article class="prose"><h1>Benchmarks</h1>{bench_html}</article></main><nav class="toc"></nav></div>'
     write("benchmarks.html", shell("benchmarks.html", "Benchmarks · PyWeb", "What PyWeb ships and how fast it renders.", body, active="benchmarks"))
@@ -769,5 +853,5 @@ def write_llms_txt():
 
 
 if __name__ == "__main__":
-    built = build()
+    built = build(sys.argv[1] if len(sys.argv) > 1 else None)
     print(f"built {len(built)} pages -> {os.path.relpath(OUT)}")

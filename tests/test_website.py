@@ -72,3 +72,20 @@ def test_search_index_and_sitemap(site):
     assert any(e["url"] == "server-functions.html" for e in index)
     sitemap = (out / "sitemap.xml").read_text()
     assert sitemap.count("<url>") == len(pages)
+
+
+def test_playground_page_and_bundle(site):
+    import json
+    import zipfile
+    wb, out, _ = site
+    html = (out / "playground.html").read_text()
+    config = json.loads(re.search(r'<script id="pg-config" type="application/json">(.*?)</script>', html, re.S).group(1))
+    assert config["pyodide"] == wb.PYODIDE_CDN and set(config["examples"]) == {n for n, _ in wb.PLAYGROUND_EXAMPLES}
+    assert config["examples"]["counter"]["source"] == (ROOT / "examples" / "counter" / "app.pyweb").read_text()
+    names = zipfile.ZipFile(out / "playground" / "pyweb.zip").namelist()
+    assert "pyweb/__init__.py" in names and "pyweb/runtime/browser/runtime.js" in names
+    assert not any("__pycache__" in n for n in names)
+    for name in config["static"]:
+        assert (out / "playground" / "static" / name).exists()
+    compile((out / "playground" / "host.py").read_text(), "host.py", "exec")
+    assert 'href="playground.html"' in (out / "index.html").read_text()

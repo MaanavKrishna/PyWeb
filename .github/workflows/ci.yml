@@ -81,6 +81,12 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[test]"
       - run: python -m playwright install --with-deps chromium
+      - name: Pyodide for the playground tests
+        run: |
+          v=$(python -c "import re; print(re.search(r'PYODIDE_VERSION = \"(.+?)\"', open('website/build.py').read()).group(1))")
+          mkdir -p "$RUNNER_TEMP/pyodide" && cd "$RUNNER_TEMP/pyodide"
+          npm pack "pyodide@$v" --silent && tar xzf pyodide-*.tgz
+          echo "PYWEB_PYODIDE_DIR=$RUNNER_TEMP/pyodide/package" >> "$GITHUB_ENV"
       - run: python -m pytest tests/e2e -q -p no:cacheprovider
 
   integration:

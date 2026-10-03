@@ -124,7 +124,8 @@ def test_specs_are_signed(bus, db):
     key = livedata.adopt_spec(token, "secret")
     assert key in livedata.REGISTRY.entries
     assert livedata.adopt_spec(token, "other secret") is None
-    assert livedata.adopt_spec(token[:-1] + "0", "secret") is None
+    tampered = token[:-1] + ("1" if token[-1] == "0" else "0")
+    assert livedata.adopt_spec(tampered, "secret") is None
     forged = livedata.make_spec("secret", "nope", "select * from todos", (), ["todos"])
     assert livedata.adopt_spec(forged, "secret") is None               # an unknown database
 

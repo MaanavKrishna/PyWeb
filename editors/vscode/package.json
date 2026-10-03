@@ -1,8 +1,8 @@
 {
   "name": "pyweb",
   "displayName": "PyWeb",
-  "description": "PyWeb (.pyweb) support: highlighting, errors as you type, hover that shows what runs in the browser or on the server, completion and go to definition.",
-  "version": "0.4.1",
+  "description": "PyWeb (.pyweb) support: highlighting, errors as you type, hover that shows what runs in the browser or on the server, completion, go to definition, tag closing, Emmet, and commands to create and run apps.",
+  "version": "0.4.2",
   "publisher": "maanavkrishna",
   "license": "MIT",
   "homepage": "https://maanavkrishna.github.io/PyWeb/",
@@ -19,13 +19,16 @@
   },
   "categories": [
     "Programming Languages",
-    "Snippets"
+    "Snippets",
+    "Linters"
   ],
   "keywords": [
     "pyweb",
     "python",
     "web",
-    "full-stack"
+    "full-stack",
+    "html",
+    "mcp"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -39,7 +42,11 @@
         "extensions": [
           ".pyweb"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/file.svg",
+          "dark": "./images/file.svg"
+        }
       }
     ],
     "grammars": [
@@ -60,8 +67,40 @@
     ],
     "commands": [
       {
+        "command": "pyweb.runDev",
+        "title": "Run App (dev server)",
+        "category": "PyWeb",
+        "icon": "$(play)"
+      },
+      {
+        "command": "pyweb.newApp",
+        "title": "New App...",
+        "category": "PyWeb"
+      },
+      {
+        "command": "pyweb.check",
+        "title": "Check App",
+        "category": "PyWeb"
+      },
+      {
+        "command": "pyweb.addPackage",
+        "title": "Add npm Package...",
+        "category": "PyWeb"
+      },
+      {
+        "command": "pyweb.installPyweb",
+        "title": "Install or Update PyWeb",
+        "category": "PyWeb"
+      },
+      {
+        "command": "pyweb.setUpMcp",
+        "title": "Set Up AI Assistant (MCP)",
+        "category": "PyWeb"
+      },
+      {
         "command": "pyweb.restartServer",
-        "title": "PyWeb: Restart Language Server"
+        "title": "Restart Language Server",
+        "category": "PyWeb"
       }
     ],
     "configuration": {
@@ -73,8 +112,77 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Command that starts the language server, e.g. `[\"/path/to/venv/bin/pyweb\", \"lsp\"]`. Empty: use the interpreter selected in the Python extension (`python -m pyweb.cli lsp`), else `pyweb lsp` from `PATH`."
+          "markdownDescription": "Command that starts the language server, e.g. `[\"/path/to/venv/bin/pyweb\", \"lsp\"]`. Empty: the first that has PyWeb 0.3+ of the Python extension's interpreter, `pyweb` on `PATH`, `python3` and `python`. When it ends in `lsp`, the rest is also used for the Run, New App and other commands."
+        },
+        "pyweb.dev.port": {
+          "type": "integer",
+          "default": 8000,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Port for PyWeb: Run App."
+        },
+        "pyweb.dev.openBrowser": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open the app in the browser after PyWeb: Run App starts it."
+        },
+        "pyweb.autoCloseTags": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Add the closing tag when you type the `>` of an opening tag in markup."
         }
+      }
+    },
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "pyweb.runDev",
+          "when": "resourceLangId == pyweb",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "pyweb.runDev",
+          "when": "resourceExtname == .pyweb",
+          "group": "pyweb@1"
+        },
+        {
+          "command": "pyweb.check",
+          "when": "resourceExtname == .pyweb",
+          "group": "pyweb@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "pyweb.runDev",
+          "when": "resourceLangId == pyweb || workspaceFolderCount > 0"
+        },
+        {
+          "command": "pyweb.check",
+          "when": "resourceLangId == pyweb || workspaceFolderCount > 0"
+        },
+        {
+          "command": "pyweb.addPackage",
+          "when": "resourceLangId == pyweb || workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "pyweb.runDev",
+        "key": "ctrl+f5",
+        "mac": "cmd+f5",
+        "when": "editorLangId == pyweb"
+      }
+    ],
+    "configurationDefaults": {
+      "emmet.includeLanguages": {
+        "pyweb": "html"
+      },
+      "[pyweb]": {
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
       }
     }
   },
@@ -89,5 +197,10 @@
     "@vscode/vsce": "^3.2.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.1.0"
+  },
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
   }
 }

@@ -326,7 +326,7 @@ Upgrade with `pip install -U pyweb-stack`.
 
 | Version | Highlights |
 |---|---|
-| 0.4 | npm packages without Node, layouts and client-side navigation, streaming server functions and `<Markdown>` for AI apps, live queries, page head tags, `.pyweb` error pages; 0.4.1: richer MCP tools |
+| 0.4 | npm packages without Node, layouts and client-side navigation, streaming server functions and `<Markdown>` for AI apps, live queries, page head tags, `.pyweb` error pages; 0.4.1: richer MCP tools; 0.4.2: VS Code run, new-app and MCP commands |
 | 0.3 | Hydration, live updates (SSE), multi-file apps, language server + VS Code extension, browser playground, faster rendering, screenshot/test MCP tools |
 | 0.2 | MCP server for AI assistants, AI guide, project templates, `AGENTS.md`/`CLAUDE.md`, `llms.txt` |
 | 0.1 | First public release: compiler, reactive runtime, server rendering, typed RPC, sessions, databases, CLI |

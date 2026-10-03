@@ -6,6 +6,25 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.4.2]
+
+### Added
+- VS Code extension: **PyWeb: Run App** (a run button on `.pyweb`
+  files, Ctrl+F5), **New App** from any template, **Check App**, **Add
+  npm Package**, **Install or Update PyWeb** and **Set Up AI Assistant
+  (MCP)**, which adds the PyWeb MCP server to `.vscode/mcp.json`.
+- VS Code extension: closing tags are added as you type, Emmet works in
+  markup, new snippets (`layout`, `error`, `stream`, `livequery`, `npm`,
+  `mount`), a status item that shows the PyWeb version in use, and an
+  icon.
+
+### Fixed
+- VS Code extension: the language server failed with
+  `spawn python ENOENT` when no Python interpreter was selected. The
+  extension now looks for a Python with PyWeb (the selected
+  interpreter, `pyweb`, `py`, `python3`, `python`), offers to install
+  PyWeb when it's missing, and restarts when you change interpreter.
+
 ## [0.4.1]
 
 ### Added

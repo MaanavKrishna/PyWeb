@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2
+
+- Fixed "spawn python ENOENT" when no Python interpreter is selected: the
+  extension finds a Python that has PyWeb, offers to install it when it's
+  missing, and restarts the server when you change interpreter.
+- New commands: Run App (run button and Ctrl+F5), New App, Check App, Add
+  npm Package, Install or Update PyWeb, Set Up AI Assistant (MCP).
+- Closing tags are added as you type (`pyweb.autoCloseTags`), and Emmet
+  works in markup.
+- New snippets: `layout`, `error`, `stream`, `livequery`, `npm`, `mount`.
+- A status item shows the PyWeb version the language server uses.
+- An icon.
+
 ## 0.4.1
 
 - Released with PyWeb 0.4.1. The marketplace page lists the npm, layout

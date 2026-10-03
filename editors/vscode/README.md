@@ -5,6 +5,10 @@ files: full-stack web apps written in Python.
 
 ## Features
 
+- **Run your app** with the ▶ button on a `.pyweb` file (or Ctrl+F5).
+  `pyweb dev` starts in a terminal and reloads as you edit.
+- **New App** from a starter: counter, to-do, blog, auth, chat or a
+  streaming AI chat.
 - **Highlighting** for Python and markup together: tags, components,
   attributes, event handlers and `{expressions}` (highlighted as Python).
 - **Errors as you type** from the PyWeb compiler, on the right line,
@@ -17,32 +21,71 @@ files: full-stack web apps written in Python.
 - **Completion** for components and HTML tags after `<`, a component's
   props inside its tag, names after `from pyweb import`, installed npm
   packages inside `npm("`, and a package's exports after `name.`.
+- **Closing tags** are added when you type the `>` of an opening tag, and
+  **Emmet** abbreviations work in markup.
 - **Go to definition** for components, server functions and helpers,
   across files.
 - **Outline** of pages, layouts, error pages, components and server
   functions.
-- **Snippets**: `pyweb` (new app), `page`, `component`, `server`,
-  `handler`, `for`, `live`.
+- **Snippets**: `pyweb` (new app), `page`, `layout`, `component`,
+  `server`, `stream`, `handler`, `mount`, `for`, `live`, `livequery`,
+  `npm`, `error`.
+- **AI assistants**: **Set Up AI Assistant (MCP)** adds the PyWeb MCP
+  server to `.vscode/mcp.json`, so Copilot's agent mode can check,
+  render, test and build your app.
+
+## Commands
+
+Open the Command Palette (Ctrl+Shift+P) and type "PyWeb":
+
+| Command | What it does |
+|---|---|
+| PyWeb: Run App (dev server) | `pyweb dev` for the open file, or the workspace's `app.pyweb` |
+| PyWeb: New App... | Pick a template and a name, then open the new app |
+| PyWeb: Check App | `pyweb check`: compile and run the security checks |
+| PyWeb: Add npm Package... | `pyweb add`: an npm package for browser code, no Node.js needed |
+| PyWeb: Install or Update PyWeb | `pip install -U pyweb-stack` with the Python VS Code found |
+| PyWeb: Set Up AI Assistant (MCP) | Add `pyweb mcp` to `.vscode/mcp.json` |
+| PyWeb: Restart Language Server | After changing environments |
+
+The status item on `.pyweb` files (bottom right, next to "PyWeb") shows
+the PyWeb version in use, or what's wrong and how to fix it.
 
 ## Requirements
 
-Highlighting and snippets work on their own. Everything else comes from
-the language server that ships with PyWeb 0.3 or later (0.4 or later for
-npm packages, layouts and error pages):
+Highlighting, snippets and tag closing work on their own. Everything else
+comes from PyWeb 0.3 or later (0.4 or later for npm packages, layouts
+and error pages):
 
 ```bash
 pip install -U pyweb-stack
 ```
 
-The extension starts `python -m pyweb.cli lsp` with the interpreter
-selected in the Python extension, or `pyweb lsp` from your `PATH`. To use
-something else, set `pyweb.server.command`, for example:
+The extension uses the first of these that has PyWeb: the interpreter
+selected in the Python extension, `pyweb` on your `PATH`, `py -3` (on
+Windows), `python3`, `python`. If PyWeb isn't installed, it offers to
+install it. It restarts by itself when you pick another interpreter.
 
-```json
-"pyweb.server.command": ["/path/to/venv/bin/pyweb", "lsp"]
-```
+## Settings
 
-Run **PyWeb: Restart Language Server** after changing environments.
+| Setting | Default | |
+|---|---|---|
+| `pyweb.server.command` | `[]` | The command that starts the language server, e.g. `["/path/to/venv/bin/pyweb", "lsp"]`. When it ends in `lsp`, the rest runs the other commands too. |
+| `pyweb.dev.port` | `8000` | Port for Run App |
+| `pyweb.dev.openBrowser` | `false` | Open the browser after Run App starts |
+| `pyweb.autoCloseTags` | `true` | Add closing tags as you type |
+
+## Troubleshooting
+
+**"spawn python ENOENT"** (extension 0.4.1 and older): no interpreter was
+selected, so `python` was used and doesn't exist. Update the extension,
+or run **Python: Select Interpreter**, or set
+`"pyweb.server.command": ["python3", "-m", "pyweb.cli", "lsp"]`.
+
+**"PyWeb isn't installed for ..."**: click **Install PyWeb**, or run the
+`pip install` command it shows, then **PyWeb: Restart Language Server**.
+
+The **Output** panel ("PyWeb" channel) shows the language server's log.
 
 ## Other editors
 

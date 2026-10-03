@@ -83,5 +83,64 @@
       "    </main>",
       ""
     ]
+  },
+  "Layout": {
+    "prefix": "layout",
+    "description": "A layout around every page (header, nav, footer)",
+    "body": [
+      "@app.layout",
+      "def ${1:Shell}(children):",
+      "    <header>",
+      "        <nav>",
+      "            <a href=\"/\">${2:Home}</a>",
+      "        </nav>",
+      "    </header>",
+      "    <main>{children}</main>$0"
+    ]
+  },
+  "Error page": {
+    "prefix": "error",
+    "description": "A custom 404 or 500 page",
+    "body": [
+      "@app.error(${1:404})",
+      "def ${2:Missing}(path):",
+      "    <h1>${3:Nothing at {path\\}}</h1>",
+      "    <a href=\"/\">Home</a>$0"
+    ]
+  },
+  "Streaming server function": {
+    "prefix": "stream",
+    "description": "A server function that streams values to the browser as they're produced",
+    "body": [
+      "@server",
+      "def ${1:reply}(${2:prompt: str}):",
+      "    for ${3:piece} in ${4:pieces}:",
+      "        yield ${3:piece}$0"
+    ]
+  },
+  "Live query": {
+    "prefix": "livequery",
+    "description": "Rows that update in every browser when the table changes",
+    "body": [
+      "${1:rows} = live(db, \"${2:select * from ${3:todos} order by id}\")$0"
+    ]
+  },
+  "npm package": {
+    "prefix": "npm",
+    "description": "Use an npm package in browser code (install it with: pyweb add NAME)",
+    "body": [
+      "${1:Chart} = npm(\"${2:chart.js/auto}\")$0"
+    ]
+  },
+  "Mount hook": {
+    "prefix": "mount",
+    "description": "Run browser code when the page appears, and clean up when it goes",
+    "body": [
+      "def on_mount():",
+      "    ${1:pass}",
+      "",
+      "def on_unmount():",
+      "    ${2:pass}$0"
+    ]
   }
 }

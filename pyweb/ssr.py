@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import functools
 import html as _html
 import json
 import re
@@ -104,6 +105,17 @@ def state_json(state):
     return raw.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
+@functools.lru_cache(maxsize=4096)
+def _compiled(code):
+    """Template expressions repeat on every request; compile each once."""
+    return compile(code, "<pyweb-ssr>", "eval")
+
+
+@functools.lru_cache(maxsize=1024)
+def _loop_target(target):
+    return ast.parse(target, mode="eval").body
+
+
 class Renderer:
     """Render UI nodes.
 
@@ -122,7 +134,7 @@ class Renderer:
         scope = dict(self.globals)
         scope.update(env)
         try:
-            return eval(compile(code, "<pyweb-ssr>", "eval"), scope)  # noqa: S307 - app's own code
+            return eval(_compiled(code), scope)  # noqa: S307 - app's own code
         except Exception as exc:  # noqa: BLE001
             if self.strict:
                 raise RenderError(f"{{{code}}} raised {type(exc).__name__}: {exc}", lineno) from exc
@@ -140,7 +152,7 @@ class Renderer:
             items = self.eval(n.iterable, env, n.line)
             if items is None:
                 return ""
-            target = ast.parse(n.target, mode="eval").body
+            target = _loop_target(n.target)
             out = []
             for item in items:
                 scope = dict(env)

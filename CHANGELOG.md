@@ -20,6 +20,13 @@ project uses [semantic versioning](https://semver.org).
   after the render is missed. `pyweb dev`, `pyweb serve` and the ASGI
   adapter stream; `realtime.use_bus()` shares the bus (e.g. Redis)
   between processes. The chat example uses it instead of polling.
+- **Multi-file apps.** `from widgets import Card, save, COLOR` imports
+  components, `@server` functions and constants from `widgets.pyweb` (or
+  `ui/cards.pyweb` as `ui.cards`). Each file keeps its own names in the
+  generated JavaScript, imported files run as real modules on the
+  server, `pyweb build` copies them into `dist/`, and errors name the
+  file they're in. Pages stay in the app file; circular imports and
+  duplicate server-function names are compile errors.
 - `python -m pyweb.bench --max-ssr-ms N --max-compile-ms N` fails when
   a benchmark exceeds its budget; CI runs it.
 

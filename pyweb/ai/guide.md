@@ -135,8 +135,13 @@ def Home():
 
 Props are parameters (defaults = optional). Pass callbacks as props
 (`on_delete={lambda: delete(i)}`) and use them as handlers inside
-(`onclick={on_delete}`). Components must be in the same file and their
-initial state must be computable in the browser (pass server data as props).
+(`onclick={on_delete}`). A component's initial state must be computable in
+the browser (pass server data as props).
+
+Bigger apps can split into files: put components, `@server` functions and
+constants in e.g. `widgets.pyweb` (or `ui/cards.pyweb`) next to `app.pyweb`
+and `from widgets import Card, save`. Pages stay in `app.pyweb`; import
+server functions without `as`; each file keeps its own constants.
 
 ## 6. Server functions, sessions, routing
 
@@ -199,7 +204,7 @@ JS functions, server-only names. Move such code into `@server` functions.
 | `cannot assign to ... derived/read-only` | Assign to a variable the handler owns (make it state), not a computed/constant. |
 | `server secret ... would be sent to the browser` | Keep the value inside `@server` functions; don't read it in markup/handlers. |
 | `bind={x} must name a local variable` | Declare `x = ""` (or a number/bool) in the page before the markup. |
-| `unknown component <X>` | Define `def X(...)` with markup in the same file (capitalized). |
+| `unknown component <X>` | Define `def X(...)` with markup (capitalized) in this file, or import it: `from widgets import X`. |
 | `mismatched </tag>` / `is never closed` | Close every tag; void tags (`input`, `img`, `br`) need no close (`<input ... />`). |
 | `... is not supported in browser code` | Rewrite with supported constructs or move it to `@server`. |
 

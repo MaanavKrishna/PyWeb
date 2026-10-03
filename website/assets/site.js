@@ -1,6 +1,24 @@
-// PyWeb site: theme toggle, mobile menu, copy buttons, tabs, TOC highlight, search.
+// PyWeb site: theme toggle, mobile menu, copy buttons, tabs, TOC highlight,
+// search, header shadow and reveal-on-scroll.
 (function () {
   const root = document.documentElement;
+
+  const top = document.getElementById("top");
+  if (top) {
+    const onScroll = () => top.classList.toggle("scrolled", window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+  }
+
+  const reveals = document.querySelectorAll(".reveal");
+  if (reveals.length && "IntersectionObserver" in window) {
+    const seen = new IntersectionObserver((entries) => {
+      entries.forEach((en) => { if (en.isIntersecting) { en.target.classList.add("in"); seen.unobserve(en.target); } });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    reveals.forEach((el) => seen.observe(el));
+  } else {
+    reveals.forEach((el) => el.classList.add("in"));
+  }
 
   const theme = document.getElementById("theme");
   if (theme) {
@@ -20,7 +38,7 @@
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".copy");
     if (!btn) return;
-    const code = btn.closest(".code").querySelector("code").innerText;
+    const code = btn.closest(".code").querySelector("code").innerText.replace(/\n$/, "");
     navigator.clipboard.writeText(code).then(() => {
       btn.textContent = "Copied";
       setTimeout(() => { btn.textContent = "Copy"; }, 1400);
@@ -105,7 +123,8 @@
     });
     document.addEventListener("click", (e) => { if (!e.target.closest(".search")) results.hidden = true; });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "/" && document.activeElement !== input && !e.target.closest("input, textarea")) {
+      const cmdK = e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey);
+      if ((cmdK || e.key === "/") && document.activeElement !== input && (cmdK || !e.target.closest("input, textarea"))) {
         e.preventDefault();
         input.focus();
       }

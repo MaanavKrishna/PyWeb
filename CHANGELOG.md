@@ -6,6 +6,14 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+- New website design: a colour system where blue means the browser and
+  amber the server, self-hosted Inter / Bricolage Grotesque / JetBrains
+  Mono, dark code windows, and a landing page that shows each line of an
+  app with where it runs (worked out by the compiler) next to the real
+  compiled output.
+- The example apps and the `pyweb new` stylesheet use the new palette.
+
 ## [0.3.0]
 
 Faster pages that feel like an app, apps that span several files, and

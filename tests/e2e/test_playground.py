@@ -101,3 +101,19 @@ def test_share_link_round_trip(page, site):
     page.goto("about:blank")
     app = open_playground(page, site, "#" + link.split("#", 1)[1])
     expect(app.locator("h1")).to_have_text("Shared counter")
+
+
+def test_multi_page_site_with_a_layout(page, site):
+    app = open_playground(page, site, "#site")
+    expect(app.locator(".site-nav a[aria-current=page]")).to_have_text("Home")
+    app.locator("a", has_text="low light").click()
+    expect(page.locator("#pg-url")).to_have_value("/plants?light=low")
+    expect(app.locator("#plants li")).to_have_count(3)
+
+
+def test_ai_chat_with_the_demo_model(page, site):
+    app = open_playground(page, site, "#ai-chat")
+    app.locator("#prompt").fill("Hi there")
+    app.locator("#prompt").press("Enter")
+    expect(app.locator(".bubble.assistant strong").first).to_have_text("Hi there", timeout=20000)
+    expect(app.locator("#send")).to_be_visible()

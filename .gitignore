@@ -12,3 +12,6 @@ node_modules/
 .DS_Store
 .agent_tmp/
 
+
+# databases created by running the examples
+examples/**/*.db

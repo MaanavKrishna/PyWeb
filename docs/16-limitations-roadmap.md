@@ -16,6 +16,10 @@ can decide up front whether they matter for your app.
 
 ## Released so far
 
+- **0.4**: npm packages without Node.js, layouts and client-side
+  navigation, page head tags and `.pyweb` error pages, typed query
+  parameters, streaming server functions and `<Markdown>` for AI apps,
+  live queries, and the dashboard, site and AI chat examples.
 - **0.3**: hydration, live updates over Server-Sent Events, multi-file
   apps, the `pyweb lsp` language server and VS Code extension, the
   browser playground, faster server rendering, and screenshot and test

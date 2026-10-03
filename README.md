@@ -69,6 +69,15 @@ pyweb dev app.pyweb        # http://localhost:8000
 - **Boundaries are checked.** Database handles, imports and secrets can't
   leak into browser code: it's a compile error with a line number.
   `pyweb inspect` explains where every name runs and why.
+- **Pages that keep up.** `live(db, "select ...")` keeps page data in
+  step with the database in every open window; `@server` functions that
+  `yield` stream to the browser (AI replies included, with a Stop
+  button that really stops).
+- **Real multi-page apps.** Shared layouts that keep their state, links
+  that load without a full reload, typed query parameters, per-page
+  titles and social tags, error pages written in `.pyweb`.
+- **npm without Node.** `pyweb add chart.js/auto` vendors a package for
+  browser code; no `node_modules`, no bundler.
 - **Stateless servers.** Signed-cookie sessions and plain HTTP RPC scale
   horizontally behind any load balancer. Deploy with `pyweb serve`,
   uvicorn/gunicorn (ASGI) or the generated Dockerfile.
@@ -83,9 +92,9 @@ ship no JavaScript.
 small SaaS products and content sites with interactive parts, built by
 people who'd rather stay in Python.
 
-**Not a fit:** large client-heavy single-page apps that need the npm
-ecosystem (use React/Svelte/Vue), or running scientific Python in the
-browser (use Pyodide/PyScript). See the
+**Not a fit:** large client-heavy single-page apps built around a
+JavaScript component framework (use React/Svelte/Vue), or running
+scientific Python in the browser (use Pyodide/PyScript). See the
 [comparison](https://maanavkrishna.github.io/PyWeb/introduction.html)
 and [current limitations](docs/16-limitations-roadmap.md).
 
@@ -114,10 +123,10 @@ See [AI assistants & MCP](docs/17-ai-assistants.md).
 | | |
 |---|---|
 | Start | [Introduction](docs/01-introduction.md) · [Quickstart](docs/02-quickstart.md) · [Tutorial](docs/03-tutorial.md) · [AI assistants & MCP](docs/17-ai-assistants.md) |
-| Language | [`.pyweb` files](docs/04-pyweb-files.md) · [State & reactivity](docs/05-reactivity.md) · [Python in the browser](docs/07-browser-python.md) |
-| Server | [Server functions & RPC](docs/06-server-functions.md) · [Pages & routing](docs/08-pages-routing-assets.md) · [Data](docs/09-data.md) · [Auth](docs/10-auth.md) |
+| Language | [`.pyweb` files](docs/04-pyweb-files.md) · [State & reactivity](docs/05-reactivity.md) · [Python in the browser](docs/07-browser-python.md) · [npm packages](docs/18-npm-packages.md) |
+| Server | [Server functions & RPC](docs/06-server-functions.md) · [Pages & routing](docs/08-pages-routing-assets.md) · [Layouts & navigation](docs/19-layouts-navigation.md) · [Data](docs/09-data.md) · [Live data](docs/21-live-data.md) · [Building AI apps](docs/20-ai-apps.md) · [Auth](docs/10-auth.md) |
 | Ship | [Testing](docs/11-testing.md) · [Deployment](docs/12-deployment.md) · [Security](docs/13-security.md) · [CLI](docs/14-cli.md) |
-| Reference | [Toolkit & stability](docs/15-toolkit.md) · [Limitations & roadmap](docs/16-limitations-roadmap.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) |
+| Reference | [Recipe: wallets & web3](docs/22-recipe-web3.md) · [Toolkit & stability](docs/15-toolkit.md) · [Limitations & roadmap](docs/16-limitations-roadmap.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) |
 
 The same docs are published at
 **[maanavkrishna.github.io/PyWeb](https://maanavkrishna.github.io/PyWeb/)**,
@@ -136,11 +145,15 @@ a real browser by the test suite.
 | [`auth`](examples/auth/app.pyweb) | registration, password hashing, sessions, protected pages |
 | [`chat`](examples/chat/app.pyweb) | route params, shared server state, live updates with `publish`/`subscribe` |
 | [`showcase`](examples/showcase/app.pyweb) | everything on one page, with a stylesheet |
+| [`site`](examples/site/app.pyweb) | a layout, client-side navigation, query parameters, page titles, a 404 page |
+| [`dashboard`](examples/dashboard/app.pyweb) | live queries and a Chart.js chart from npm, in every open window |
+| [`ai-chat`](examples/ai-chat/app.pyweb) | streaming AI replies with Stop and Markdown (Anthropic, OpenAI-compatible or a demo model) |
 
 ## Command line
 
 ```bash
-pyweb new myapp --template todo                  # scaffold (blank|counter|todo|blog|auth|chat)
+pyweb new myapp --template todo                  # scaffold (blank|counter|todo|blog|auth|chat|ai-chat)
+pyweb add chart.js/auto                          # an npm package for browser code (no Node.js)
 pyweb dev app.pyweb                              # dev server: live reload + error overlay
 pyweb inspect app.pyweb                          # where each name runs, and why
 pyweb check app.pyweb                            # compile + security checks for CI
@@ -164,9 +177,12 @@ and changes to them are announced in the [changelog](CHANGELOG.md) (see
 
 | Version | Highlights |
 |---|---|
+| 0.4 | npm packages without Node, layouts and client-side navigation, streaming server functions and `<Markdown>` for AI apps, live queries, page head tags, `.pyweb` error pages |
 | 0.3 | Hydration, live updates (SSE), multi-file apps, language server + VS Code extension, browser playground, faster rendering, screenshot/test MCP tools |
 | 0.2 | MCP server for AI assistants, AI guide, project templates, `AGENTS.md`/`CLAUDE.md`, `llms.txt` |
-| 0.1 | First public release: compiler, reactive runtime, server rendering, typed RPC, sessions, databases, CLI | The test suite covers the
+| 0.1 | First public release: compiler, reactive runtime, server rendering, typed RPC, sessions, databases, CLI |
+
+The test suite covers the
 parser, the Python→JavaScript translation (differentially, against
 CPython), the reactive runtime, server rendering, RPC, sessions, every
 example app in Chromium, and the database/Redis layers against real

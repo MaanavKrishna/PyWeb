@@ -39,6 +39,7 @@ NODE_BUILTINS = {"assert", "buffer", "child_process", "cluster", "crypto", "dgra
                  "worker_threads", "zlib"}
 EXTENSIONS = (".js", ".mjs")
 MAX_FILES = 2000
+EMPTY_MODULE = "__pyweb_empty__.js"   # stands in for modules a package's ``browser`` field turns off
 
 
 class PackageError(Exception):
@@ -511,10 +512,38 @@ class _Install:
             rng = self.packages[name]["requested"] if name in self.packages else "latest"
         pkg = self.package(name, rng, wanted_by)
         entry = entry_for(pkg["pkg"], sub, pkg["raw"])
+        if entry:
+            entry = self.swap(pkg, entry)
         if not entry:
             raise PackageError(f"can't find the file for {spec!r} in {name}@{pkg['version']}")
         self.imports[spec] = self.url(pkg, entry)
         self.crawl(pkg, entry)
+
+    @staticmethod
+    def browser_map(pkg):
+        """package.json's ``browser`` object: files and modules to swap for browser versions."""
+        field = pkg["pkg"].get("browser")
+        if not isinstance(field, dict):
+            return {}
+        out = {}
+        for key, value in field.items():
+            key = key[2:] if key.startswith("./") else key
+            if isinstance(value, str) and value.startswith("./"):
+                value = value[2:]
+            out[key] = value
+        return out
+
+    def swap(self, pkg, path):
+        """The file to use for ``path`` in a browser (``browser`` field), or the empty module."""
+        mapped = self.browser_map(pkg).get(path, path)
+        if mapped is False:
+            return self.empty(pkg)
+        return _existing(posixpath.normpath(mapped), pkg["raw"]) or path
+
+    @staticmethod
+    def empty(pkg):
+        pkg["raw"].setdefault(EMPTY_MODULE, b"export default {};\n")
+        return EMPTY_MODULE
 
     def crawl(self, pkg, path):
         stack = [path]
@@ -530,14 +559,27 @@ class _Install:
                     raise PackageError(f"{pkg['name']}@{pkg['version']} is CommonJS ({current}); PyWeb needs a package "
                                        "that ships ES modules. Look for an \"-es\" or \"esm\" variant of it")
             pieces, last = [], 0
+            here = posixpath.dirname(current)
             for start, end, spec in _specifiers(text):
+                target = None
                 if spec.startswith((".", "/")):
-                    target = _existing(posixpath.normpath(posixpath.join(posixpath.dirname(current), spec)), pkg["raw"])
+                    target = _existing(posixpath.normpath(posixpath.join(here, spec)), pkg["raw"])
                     if not target:
                         raise PackageError(f"{pkg['name']}: {current} imports missing file {spec!r}")
-                    rel = posixpath.relpath(target, posixpath.dirname(current) or ".")
-                    rel = rel if rel.startswith(".") else "./" + rel
-                    pieces.append(text[last:start] + rel)
+                    target = self.swap(pkg, target)
+                elif spec in self.browser_map(pkg):            # a module the browser field swaps
+                    mapped = self.browser_map(pkg)[spec]
+                    if mapped is False:
+                        target = self.empty(pkg)
+                    elif _existing(posixpath.normpath(mapped), pkg["raw"]):
+                        target = _existing(posixpath.normpath(mapped), pkg["raw"])
+                    else:
+                        pieces.append(text[last:start] + mapped)
+                        last = end
+                        spec = mapped
+                if target is not None:
+                    rel = posixpath.relpath(target, here or ".")
+                    pieces.append(text[last:start] + (rel if rel.startswith(".") else "./" + rel))
                     last = end
                     stack.append(target)
                 elif not spec.startswith(("http:", "https:", "data:")):

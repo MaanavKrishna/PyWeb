@@ -186,7 +186,9 @@ def Item(item_id: int):
 - Error pages: `@app.error(404)` on a page function taking `path` (and/or
   `status`, `message`, `request_id`).
 - Run code after load with a handler named `on_mount`; stop timers in
-  `on_unmount` (runs when the user navigates away).
+  `on_unmount` (runs when the user navigates away). React to a value
+  changing with `watch(lambda: value, handler)` in `on_mount`
+  (`from pyweb.browser import watch`).
 - Live data: `rows = live(db, "select ... where x = ?", (x,))` in a page
   (`from pyweb import live`) renders the rows and keeps them current in
   every open page when the tables are written through `pyweb.db`. No

@@ -1,5 +1,7 @@
 """Client-side navigation in a real browser: layouts keep their state, pages swap, history works."""
 
+from pathlib import Path
+
 from playwright.sync_api import expect
 
 from pyweb.testing import serve
@@ -143,3 +145,82 @@ def test_navigate_from_browser_code(page, tmp_path):
         page.wait_for_url(url + "/?from=next")
         expect(page.locator("#next")).to_be_visible()
         assert documents(page) == 1
+
+
+WATCHER = '''from pyweb import App, channel, subscribe
+from pyweb.browser import watch
+
+app = App()
+
+
+@app.page("/")
+def Home():
+    feed = channel("news")
+    n = 0
+    seen = []
+
+    def on_mount():
+        subscribe(feed, lambda msg: None)
+        watch(lambda: n, changed)
+
+    def changed(value):
+        seen.append(value)
+
+    def inc():
+        n += 1
+
+    <button id="inc" onclick={inc}>{n}</button>
+    <p id="seen">{seen}</p>
+    <a id="away" href="/away">away</a>
+
+
+@app.page("/away")
+def Away():
+    m = 0
+
+    def bump():
+        m += 1
+
+    <button id="bump" onclick={bump}>{m}</button>
+'''
+
+TRACK_SOURCES = """
+const Real = window.EventSource;
+window.__closed = 0;
+window.EventSource = class extends Real { close() { window.__closed++; super.close(); } };
+"""
+
+
+def test_watch_and_on_mount_cleanup(page, tmp_path):
+    page.add_init_script(TRACK_SOURCES)
+    with serve(app_file(tmp_path, WATCHER)) as url:
+        page.goto(url)
+        ready(page)
+        expect(page.locator("#seen")).to_have_text("[]")          # not called for the first value
+        page.click("#inc")
+        page.click("#inc")
+        expect(page.locator("#seen")).to_have_text("[1, 2]")
+        assert page.evaluate("window.__closed") == 0
+        page.click("#away")
+        expect(page.locator("#bump")).to_be_visible()
+        assert page.evaluate("window.__closed") == 1               # the page's live feed was closed
+
+
+def test_site_example(page):
+    site = str(Path(__file__).parent.parent.parent / "examples" / "site" / "app.pyweb")
+    with serve(site) as url:
+        page.goto(url)
+        ready(page)
+        page.evaluate("window.loads = 1")
+        page.click("#cart")
+        page.click("text=low light")
+        expect(page.locator("#plants li")).to_have_count(3)
+        expect(page.locator(".site-nav a[aria-current=page]")).to_have_text("Plants")
+        page.click("text=Pothos")
+        expect(page.locator("h1")).to_have_text("Pothos")
+        assert page.title() == "Pothos - Plant shop"
+        expect(page.locator(".site-nav a[aria-current=true]")).to_have_text("Plants")
+        expect(page.locator("#cart")).to_have_text("Cart: 1")            # the layout kept its state
+        page.goto(url + "/plants/99")
+        expect(page.locator("h1")).to_have_text("Not found")
+        assert documents(page) == 0                                       # that one was a real load

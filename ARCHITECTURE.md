@@ -129,7 +129,22 @@ handlers or events get no module.
 - **Safety:** text is always set as text; `javascript:` URLs are
   neutralised.
 - **RPC:** `rpc()` posts JSON, maps errors to `RPCError(code, message)`,
-  supports retries, timeouts, abort signals and NDJSON streaming.
+  supports retries, timeouts and abort signals. Calls to server functions
+  that `yield` return an `RpcStream`: an async iterable that reads the
+  NDJSON response as it arrives and aborts the request on `cancel()` or
+  when the loop is left.
+- **Pages, layouts and navigation:** each page and layout is a reactive
+  root mounted into its `[data-pw-root]` element; a layout renders a
+  `slot()` element that holds the page. Same-origin link clicks fetch the
+  next page's HTML, keep the leading layouts whose fingerprint
+  (`data-pw-layout`) matches, dispose the roots below them, swap in the
+  new HTML and mount the new modules (imported with `import()`; mounting
+  is deferred through a registry on `window`, so a re-imported module
+  still mounts). Anything unexpected falls back to a full load.
+- **Live data:** `live(sig, meta)` subscribes a page variable to its
+  query's feed; `watch(get, fn)` runs a handler when a value changes.
+  `markdown.js` (loaded only by pages that use `<Markdown>`) renders
+  Markdown with the same rules as `pyweb/markdown.py`.
 
 ## 7. Server (`app_loader.py`, `runtime/server`, `hosting.py`)
 
@@ -153,13 +168,26 @@ adds static files, health checks and security headers and is shared by
 `pyweb dev`, `pyweb.testing` and the ASGI adapter; `pyweb serve` uses
 the same `Server` behind its threaded HTTP handler.
 
+Streaming server functions return an `RPCStream` body that steps the
+generator inside the request's context and closes it when the client
+disconnects. Live data (`livedata.py`) hooks `pyweb.db`: committed writes
+publish their table on the realtime bus; a per-process registry of
+distinct live queries re-runs those whose tables changed (debounced, once
+for all viewers) and publishes rows that changed to the query's channel,
+which pages follow over the same SSE feeds as `channel()`.
+
 ## 8. Build (`build.py`)
 
 Copies the source to `dist/app.pyweb`, writes the runtime and page
 modules (rewriting the runtime import to the hashed file name),
 token-aware minification in production mode, the static prerender per
 page, the user's `static/` folder, imported `.pyweb` files,
-`manifest.json` (with raw and gzip sizes) and a Dockerfile.
+`manifest.json` (with raw and gzip sizes) and a Dockerfile. Layout
+modules and `markdown.js` are written the same way; npm packages are
+already in `static/vendor/` (put there by `pyweb add`, see
+`packages.py`: a registry client, semver resolution, and a crawler that
+follows imports from the browser entry point, applies the `browser`
+field and records everything in `pyweb.lock`).
 
 ## 9. Tools around the compiler
 

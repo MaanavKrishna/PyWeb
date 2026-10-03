@@ -9,7 +9,13 @@ and @server calls. Results go back to JavaScript as JSON strings.
 import json
 import os
 import sys
+import time
 import traceback
+
+# Pyodide runs on the page's main thread: a sleeping server function (like the
+# AI chat's demo model) would freeze the page, and streams arrive in one piece
+# here anyway.
+time.sleep = lambda _seconds: None
 
 sys.path.insert(0, "/home/pyodide/lib")
 

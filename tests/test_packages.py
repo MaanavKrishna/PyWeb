@@ -167,6 +167,28 @@ def test_unusable_packages_are_explained(tmp_path, spec, message):
     assert not (tmp_path / "pyweb.lock").exists()
 
 
+SWAPPY = {
+    "package.json": json.dumps({"module": "./lib/index.js", "dependencies": {"ws": "^8", "events-web": "^1"},
+                                "browser": {"./lib/net.js": "./lib/net-browser.js", "ws": False,
+                                            "./lib/fs.js": False, "events-node": "events-web"}}),
+    "lib/index.js": 'import { get } from "./net.js";\nimport WS from "ws";\nimport fs from "./fs.js";\n'
+                    'import { on } from "events-node";\nexport { get, WS, fs, on };\n',
+    "lib/net.js": 'import http from "http";\nexport const get = http.get;\n',
+    "lib/net-browser.js": "export const get = (u) => fetch(u);\n",
+    "lib/fs.js": 'import fs from "fs";\nexport default fs;\n',
+}
+
+
+def test_the_browser_field_swaps_node_files_and_modules(tmp_path):
+    reg = FakeRegistry({"swappy": {"1.0.0": SWAPPY}, "events-web": {"1.0.0": {**TINY, "index.mjs": "export const on = 1;\n"}}})
+    lock = P.install(str(tmp_path), ["swappy"], registry=reg)
+    swappy = lock["packages"]["swappy"]
+    assert swappy["files"] == ["__pyweb_empty__.js", "lib/index.js", "lib/net-browser.js"]
+    index = (tmp_path / "static/vendor/swappy@1.0.0/lib/index.js").read_text()
+    assert 'from "./net-browser.js"' in index and 'from "../__pyweb_empty__.js"' in index
+    assert 'from "events-web"' in index and set(lock["imports"]) == {"swappy", "events-web"}
+
+
 def test_checksum_mismatch_is_refused(tmp_path):
     reg = registry()
     url = reg.docs["tiny-color"]["versions"]["3.0.0"]["dist"]["tarball"]

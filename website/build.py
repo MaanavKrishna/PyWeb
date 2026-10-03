@@ -54,6 +54,7 @@ DOCS = [
     ("13-security.md", "security", "Security model", "Ship"),
     ("14-cli.md", "cli", "Command line", "Ship"),
     ("15-toolkit.md", "toolkit", "Toolkit & stability", "Reference"),
+    ("22-recipe-web3.md", "web3", "Recipe: wallets & web3", "Reference"),
     ("16-limitations-roadmap.md", "roadmap", "Limitations & roadmap", "Reference"),
 ]
 DOC_SLUG = {f: s for f, s, _, _ in DOCS}
@@ -66,6 +67,12 @@ EXAMPLES = [
     ("auth", "Accounts", "Registration, password hashing, sessions and protected pages.", False),
     ("chat", "Chat rooms", "Route parameters, shared server state and live updates over Server-Sent Events.", False),
     ("showcase", "Showcase", "Reactive state, derived values and a server-backed search on one page.", False),
+    ("site", "Plant shop", "A layout, client-side navigation, typed query parameters, page titles and a 404 page.",
+     False),
+    ("dashboard", "Sales dashboard", "Live queries and a Chart.js chart from npm, updating in every open window.",
+     False),
+    ("ai-chat", "AI chat", "Streaming replies with a Stop button and Markdown, from Anthropic, an OpenAI-compatible "
+     "server or a demo model.", False),
 ]
 
 
@@ -439,7 +446,8 @@ def icon(name):
 PYODIDE_VERSION = "0.29.5"
 PYODIDE_CDN = f"https://cdn.jsdelivr.net/npm/pyodide@{PYODIDE_VERSION}/"
 PLAYGROUND_EXAMPLES = [("counter", "Counter"), ("todo", "Todo list"), ("showcase", "Showcase: server search"),
-                       ("auth", "Sign-in and sessions"), ("chat", "Chat with live updates")]
+                       ("site", "Multi-page site with a layout"), ("auth", "Sign-in and sessions"),
+                       ("chat", "Chat with live updates"), ("ai-chat", "AI chat (demo model)")]
 
 
 def nav(active):
@@ -655,6 +663,15 @@ def landing(bench, demo_gz):
         ("shield", "server", "Checked boundaries",
          "Database handles, imports and secrets can't reach browser code: it's a compile error with a line number. "
          "<code>pyweb inspect</code> explains every decision."),
+        ("pulse", "both", "Data that keeps up",
+         "<code>live(db, \"select ...\")</code> keeps a page in step with the database in every open window, and "
+         "server functions that <code>yield</code> stream to the page: AI replies with a Stop that really stops."),
+        ("link", "browser", "Real multi-page apps",
+         "Shared layouts that keep their state, links that load without a full reload, typed query parameters, "
+         "per-page titles and social tags."),
+        ("box", "browser", "npm without Node",
+         "<code>pyweb add chart.js/auto</code> vendors a package for browser code, pinned in "
+         "<code>pyweb.lock</code>. No <code>node_modules</code>, no bundler."),
         ("box", "both", "Boring to operate",
          "Stateless servers, signed-cookie sessions, plain JSON over HTTP. Run <code>pyweb serve</code>, uvicorn or "
          "the generated Dockerfile behind any load balancer."),
@@ -683,7 +700,7 @@ def landing(bench, demo_gz):
 <div class="hero-wrap">
 <section class="hero">
   <div class="hero-text">
-    <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: hydration, live updates, playground →</a>
+    <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: npm packages, layouts, streaming AI, live queries →</a>
     <h1>Full-stack web apps in <span class="grad">one Python file.</span></h1>
     <p class="sub">Server-rendered pages, reactive UI compiled from Python, and typed calls to server functions.
     No JavaScript toolchain, no WebSocket per user, no runtime download.</p>

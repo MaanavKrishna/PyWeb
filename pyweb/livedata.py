@@ -153,6 +153,7 @@ class _Registry:
         self.lock = threading.Lock()
         self.event = threading.Event()
         self.thread = None
+        self.inline = False                     # no threads (e.g. Pyodide): re-run right after each write
 
     def key(self, dbid, sql, params, tables):
         raw = json.dumps([dbid, sql, list(params), tables], default=str)
@@ -177,7 +178,10 @@ class _Registry:
         return entry
 
     def wake(self):
-        self.event.set()
+        if self.inline:
+            self.check()
+        else:
+            self.event.set()
 
     def invalidate(self, dbid, tables):
         with self.lock:
@@ -194,9 +198,13 @@ class _Registry:
 
     def _start(self):
         with self.lock:
-            if self.thread is None or not self.thread.is_alive():
+            if self.inline or (self.thread is not None and self.thread.is_alive()):
+                return
+            try:
                 self.thread = threading.Thread(target=self._loop, name="pyweb-live", daemon=True)
                 self.thread.start()
+            except RuntimeError:
+                self.inline = True
 
     def _loop(self):
         while True:

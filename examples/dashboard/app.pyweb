@@ -1,0 +1,86 @@
+"""Sales dashboard: live queries and a Chart.js chart from npm.
+
+Open it in two windows and record a sale: both update at once.
+Set up with `pyweb add chart.js/auto` (already done here: see pyweb.lock).
+"""
+
+import random
+
+from pyweb import App, live, npm, server
+from pyweb.browser import watch
+from pyweb.db import connect
+
+Chart = npm("chart.js/auto")
+
+app = App(title="Sales dashboard", stylesheets=["/static/app.css"])
+db = connect("sqlite:///dashboard.db")
+db.execute("create table if not exists sales (id integer primary key, product text, amount real)")
+PRODUCTS = ["Lamp", "Desk", "Chair", "Shelf"]
+if not db.execute("select count(*) from sales").fetchone()[0]:
+    with db.transaction():
+        for i in range(12):
+            db.execute("insert into sales (product, amount) values (?, ?)", (PRODUCTS[i % 4], 20 + i * 7))
+
+
+@server
+def record(product: str, amount: float) -> None:
+    if product not in PRODUCTS or not 0 < amount < 10_000:
+        return
+    db.execute("insert into sales (product, amount) values (?, ?)", (product, round(amount, 2)))
+
+
+@server
+def simulate() -> None:
+    """Ten random sales in one transaction: pages get one update."""
+    with db.transaction():
+        for _ in range(10):
+            db.execute("insert into sales (product, amount) values (?, ?)",
+                       (random.choice(PRODUCTS), round(random.uniform(10, 200), 2)))
+
+
+@app.page("/")
+def Dashboard():
+    totals = live(db, "select count(*) as n, coalesce(sum(amount), 0) as revenue from sales")
+    by_product = live(db, "select product, sum(amount) as revenue from sales group by product order by product")
+    recent = live(db, "select id, product, amount from sales order by id desc limit 6")
+    canvas = None
+    chart = None
+    product = "Lamp"
+    amount = "49"
+
+    def on_mount():
+        chart = Chart(canvas, {"type": "bar", "options": {"animation": False, "plugins": {"legend": {"display": False}}},
+                               "data": {"labels": [r["product"] for r in by_product],
+                                        "datasets": [{"data": [r["revenue"] for r in by_product]}]}})
+        watch(lambda: by_product, redraw)
+
+    def redraw(rows):
+        chart.data.labels = [r["product"] for r in rows]
+        chart.data.datasets[0].data = [r["revenue"] for r in rows]
+        chart.update()
+
+    def add():
+        record(product, float(amount or 0))
+
+    <main>
+        <h1>Sales</h1>
+        <div class="row">
+            <div class="card-stat"><b id="count">{totals[0]["n"]}</b> sales</div>
+            <div class="card-stat"><b id="revenue">{f"${totals[0]['revenue']:,.2f}"}</b> revenue</div>
+        </div>
+        <canvas id="chart" ref={canvas} height="160"></canvas>
+        <form onsubmit={add}>
+            <select bind={product}>
+                for p in PRODUCTS:
+                    <option value={p}>{p}</option>
+            </select>
+            <input bind={amount} type="number" step="0.01" min="0" style={{"max-width": "120px"}} />
+            <button>Record sale</button>
+        </form>
+        <button id="simulate" onclick={lambda: simulate()}>Simulate 10 sales</button>
+        <h2>Latest</h2>
+        <ul id="recent">
+            for s in recent:
+                <li><span>{s["product"]}</span><span class="muted">{f"${s['amount']:.2f}"}</span></li>
+        </ul>
+    </main>

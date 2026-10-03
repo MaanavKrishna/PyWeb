@@ -48,3 +48,7 @@ a { color: var(--accent); }
 .site-nav a[aria-current="page"] { font-weight: 600; }
 .site-nav .spacer { flex: 1; }
 .site-footer { max-width: 640px; margin: 40px auto; padding: 0 20px; color: var(--muted); font-size: 14px; }
+.card-stat { flex: 1; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.card-stat b { display: block; font-size: 24px; letter-spacing: -.02em; }
+select { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font: inherit; color: inherit; }
+#recent .muted { margin-left: auto; }

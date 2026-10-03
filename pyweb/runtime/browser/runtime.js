@@ -526,13 +526,31 @@ export function when(test, yes, no) {
 
 /** Run `fn` once the current page/component is in the document. */
 export function onMount(fn) {
+  const owner = Owner; // what on_mount sets up (subscriptions, watches) ends with the page
   const run = () => {
+    const po = Owner;
+    Owner = owner;
     try {
       const r = batch(fn);
       if (r && typeof r.then === "function") r.then(null, reportError);
-    } catch (e) { reportError(e); }
+    } catch (e) { reportError(e); } finally { Owner = po; }
   };
   queueMicrotask(run);
+}
+
+/** Call `fn(value)` whenever `get()` changes (not for the current value). Stops with the page. */
+export function watch(get, fn) {
+  let first = true;
+  effect(() => {
+    const v = get();
+    if (first) { first = false; return; }
+    untrack(() => {
+      try {
+        const r = batch(() => fn(v));
+        if (r && typeof r.then === "function") r.then(null, reportError);
+      } catch (e) { reportError(e); }
+    });
+  });
 }
 
 // Pages and layouts. Each is a reactive root mounted into its server-rendered
@@ -622,7 +640,7 @@ export function linkCurrent(href, path) {
 }
 
 function markActive() {
-  if (typeof document === "undefined") return;
+  if (typeof document === "undefined" || !/^https?:$/.test(location.protocol)) return; // keep the server's marks
   const here = location.pathname;
   for (const a of document.querySelectorAll("a[href]")) {
     const cur = a.getAttribute("aria-current");
@@ -1409,6 +1427,7 @@ function getp(v, path) {
 
 export const py = {
   go: (url) => navigate(String(url)),
+  watch,
   aiter,
   kw, truth, iter, str, repr, text, eq, contains, len, at, slice, add, mul, mod, div, floordiv,
   int, float, round, range, sorted, format, m, mut, setp, getp, setitem, delitem, cmp, call, callm,

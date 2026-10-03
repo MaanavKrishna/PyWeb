@@ -42,3 +42,9 @@ a { color: var(--accent); }
 .bubble { padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); max-width: 90%; }
 .bubble.user { align-self: flex-end; background: var(--accent-soft); border-color: transparent; }
 .typing { color: var(--muted); font-size: 14px; }
+.site-nav { display: flex; gap: 6px; align-items: center; max-width: 640px; margin: 20px auto 0; padding: 0 20px; flex-wrap: wrap; }
+.site-nav a { padding: 6px 12px; border-radius: 999px; text-decoration: none; color: var(--ink); }
+.site-nav a[aria-current] { background: var(--accent-soft); color: var(--accent); }
+.site-nav a[aria-current="page"] { font-weight: 600; }
+.site-nav .spacer { flex: 1; }
+.site-footer { max-width: 640px; margin: 40px auto; padding: 0 20px; color: var(--muted); font-size: 14px; }

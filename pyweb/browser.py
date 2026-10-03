@@ -230,6 +230,20 @@ class _Navigate(Api):
 navigate = _Navigate()
 
 
+class _Watch(Api):
+    """``watch(lambda: value, handler)``: run ``handler(new_value)`` whenever ``value`` changes.
+
+    Call it in ``on_mount``; it stops when the page is left.
+    """
+    _js = "$py.watch"
+
+    def __call__(self, get, handler):
+        self._call("watch", get, handler)
+
+
+watch = _Watch()
+
+
 def bindings() -> dict:
     """Name -> JS binding for every browser API (used by codegen)."""
     import sys as _sys

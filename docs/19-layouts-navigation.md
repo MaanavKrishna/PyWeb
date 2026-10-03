@@ -108,6 +108,9 @@ def Clock():
     <p>{ticks} seconds on this page</p>
 ```
 
+Subscriptions (`subscribe(...)`) and watches set up in `on_mount` stop
+by themselves when the page is left.
+
 The browser falls back to a normal page load whenever navigation can't
 be done in place: links with `target`, `download`, `rel="external"` or
 `data-pw-reload`; other sites; files under `/static/`; responses that

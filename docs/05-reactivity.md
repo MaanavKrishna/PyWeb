@@ -91,6 +91,38 @@ changed item re-render; the rest keep their DOM.
 Assigning to a computed value or constant from a handler is a compile
 error, because the value would immediately be recomputed or ignored.
 
+## Reacting to changes
+
+Markup updates by itself. For anything else that should follow a value
+(redrawing a chart, saving a draft, scrolling a log), call
+`watch(lambda: value, handler)` from `on_mount`. `handler(new_value)`
+runs each time the value changes, not for the current value:
+
+```pyweb
+from pyweb import App
+from pyweb.browser import watch
+
+app = App()
+
+
+@app.page("/")
+def Notes():
+    draft = ""
+
+    def on_mount():
+        draft = localStorage.getItem("draft") or ""
+        watch(lambda: draft, save)
+
+    def save(text):
+        localStorage.setItem("draft", text)
+
+    <textarea bind={draft}></textarea>
+```
+
+Watches, `subscribe(...)` calls and other cleanups set up in `on_mount`
+stop when the page is left (see
+[Layouts & navigation](19-layouts-navigation.md)).
+
 ## Batching and ordering
 
 All writes made synchronously in one event handler are batched: each

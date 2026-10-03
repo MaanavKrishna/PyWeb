@@ -396,6 +396,12 @@ def _layout_info(node, prefix, ui_all, filename):
         return out
 
     info.ui = swap(_ui_of(node, ui_all))
+    for stmt in node.body:   # `{children}` on a line of its own parses as Python (a one-item set)
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Set) and len(stmt.value.elts) == 1 \
+                and isinstance(stmt.value.elts[0], ast.Name) and stmt.value.elts[0].id == "children":
+            found.append(stmt.lineno)
+            info.ui.append(SlotNode(node.name, stmt.lineno))
+            info.ui.sort(key=lambda n: getattr(n, "line", 0))
     if len(found) != 1:
         where = "has no {children}" if not found else f"uses {{children}} {len(found)} times"
         raise CompileError(f"layout {node.name!r} {where}; put {{children}} exactly once where pages go",

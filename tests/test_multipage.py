@@ -315,3 +315,12 @@ def test_editor_outline_shows_layouts_and_error_pages():
     from pyweb import lsp
     kinds = {s["name"]: s["kind"] for s in lsp.symbols(APP)}
     assert kinds["Shell"] == "layout" and kinds["Missing"] == "error page" and kinds["Home"] == "page"
+
+
+def test_children_can_sit_on_a_line_of_its_own():
+    src = APP.replace("        <main>{children}</main>\n    </div>",
+                      "    </div>\n    {children}\n    <footer>end</footer>")
+    assert src != APP
+    out = compile_source(src, filename="app.pyweb")
+    body = out["layouts"]["Shell"]["body"]
+    assert body.index("</div>") < body.index('data-pw-slot="Shell"') < body.index("<footer>")

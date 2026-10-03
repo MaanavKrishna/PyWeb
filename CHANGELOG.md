@@ -6,6 +6,12 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+Apps that are bigger, livelier and smarter: npm packages without
+Node.js, multi-page apps with layouts and client-side navigation,
+streaming for AI features, and page data that follows the database.
+
 ### Added
 - **npm packages without Node.js.** `pyweb add chart.js/auto` downloads a
   package from the npm registry, checks its sha512 checksum, follows its
@@ -78,6 +84,21 @@ project uses [semantic versioning](https://semver.org).
   `RedisBus` it works across processes, and any process can take over a
   query from the page's signed description.
 - New docs page: Live data.
+- **`watch(lambda: value, handler)`** (from `pyweb.browser`) runs a
+  handler whenever a value changes, for work outside markup such as
+  redrawing a chart or saving a draft.
+- `pyweb add` applies packages' `browser` field (browser versions of
+  files, modules turned off), so packages such as ethers install.
+- New examples: **dashboard** (live queries and a Chart.js chart from
+  npm), **site** (layouts, navigation, query parameters, a 404 page) and
+  **ai-chat**. The playground has the site and AI chat examples.
+- New docs page: Recipe: wallets & web3 (wallet sign-in with ethers and
+  eth-account).
+- A layout's `{children}` can sit on a line of its own.
+
+### Fixed
+- Subscriptions and cleanups set up in `on_mount` now end when the page
+  is left (they were never stopped).
 
 ### Changed
 - The experimental `pyweb.live` module (in-memory live tables) is now

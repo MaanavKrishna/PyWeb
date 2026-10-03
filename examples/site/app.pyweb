@@ -1,0 +1,96 @@
+"""A small multi-page site: a shared layout, client-side navigation, search
+with typed query parameters, per-page titles and descriptions, and a 404 page.
+"""
+
+from pyweb import App, NotFound, head
+
+app = App(title="Plant shop", stylesheets=["/static/app.css"], description="Houseplants, delivered.",
+          base_url="https://plants.example")
+
+PLANTS = {
+    1: {"name": "Monstera", "price": 35, "light": "bright", "about": "Big split leaves; forgiving and fast-growing."},
+    2: {"name": "Snake plant", "price": 22, "light": "low", "about": "Upright leaves; thrives on neglect."},
+    3: {"name": "Pothos", "price": 15, "light": "low", "about": "Trailing vines for shelves and hanging pots."},
+    4: {"name": "Fiddle-leaf fig", "price": 48, "light": "bright", "about": "Glossy statement tree; likes a routine."},
+    5: {"name": "ZZ plant", "price": 28, "light": "low", "about": "Waxy leaves that store water."},
+}
+
+
+@app.layout
+def Shell(children):
+    cart = 0
+
+    def add_to_cart():
+        cart += 1
+
+    <nav class="site-nav">
+        <a href="/">Home</a>
+        <a href="/plants">Plants</a>
+        <a href="/about">About</a>
+        <span class="spacer"></span>
+        <button id="cart" onclick={add_to_cart}>Cart: {cart}</button>
+    </nav>
+    {children}
+    <footer class="site-footer">The cart lives in the layout, so it survives moving between pages.</footer>
+
+
+@app.page("/", title="Plant shop")
+def Home():
+    <main>
+        <h1>Plants for every room</h1>
+        <p>Browse <a href="/plants">all plants</a>, or pick by light:
+            <a href="/plants?light=low">low light</a>,
+            <a href="/plants?light=bright">bright light</a>.</p>
+    </main>
+
+
+@app.page("/plants", title="Plants", description="Every plant we sell.")
+def Plants(q: str = "", light: str = "", max_price: int = 0):
+    found = [(pid, p) for pid, p in PLANTS.items()
+             if q.lower() in p["name"].lower() and (not light or p["light"] == light)
+             and (not max_price or p["price"] <= max_price)]
+
+    <main>
+        <h1>Plants</h1>
+        <form>
+            <input name="q" value={q} placeholder="Search plants" />
+            <button>Search</button>
+        </form>
+        <ul id="plants">
+            for pid, plant in found:
+                <li><a href={"/plants/" + str(pid)}>{plant["name"]}</a><span class="muted">${plant["price"]}</span></li>
+        </ul>
+        if not found:
+            <p class="empty">Nothing matches.</p>
+    </main>
+
+
+@app.page("/plants/{plant_id}")
+def Plant(plant_id: int):
+    if plant_id not in PLANTS:
+        raise NotFound()
+    plant = PLANTS[plant_id]
+    head(title=plant["name"] + " - Plant shop", description=plant["about"])
+
+    <main>
+        <p><a href="/plants">All plants</a></p>
+        <h1>{plant["name"]}</h1>
+        <p>{plant["about"]}</p>
+        <p class="muted">${plant["price"]} · {plant["light"]} light</p>
+    </main>
+
+
+@app.page("/about", title="About", description="Who we are.")
+def About():
+    <main>
+        <h1>About</h1>
+        <p>We are a small shop that loves plants.</p>
+    </main>
+
+
+@app.error(404)
+def Missing(path):
+    <main>
+        <h1>Not found</h1>
+        <p>There is nothing at <code>{path}</code>. Try <a href="/plants">the plant list</a>.</p>
+    </main>

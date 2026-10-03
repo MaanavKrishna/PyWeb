@@ -1,0 +1,182 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "PyWeb",
+  "scopeName": "source.pyweb",
+  "fileTypes": [
+    "pyweb"
+  ],
+  "patterns": [
+    {
+      "include": "#markup-line"
+    },
+    {
+      "include": "source.python"
+    }
+  ],
+  "repository": {
+    "markup-line": {
+      "comment": "A line whose first character is `<` is markup; Python never starts a line with `<`.",
+      "begin": "^(?=\\s*<(?:[A-Za-z/]|!--))",
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#markup"
+        }
+      ]
+    },
+    "markup": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#tag-close"
+        },
+        {
+          "include": "#tag-open"
+        },
+        {
+          "include": "#expression"
+        },
+        {
+          "include": "#entity"
+        }
+      ]
+    },
+    "comment": {
+      "begin": "<!--",
+      "end": "-->",
+      "name": "comment.block.html.pyweb"
+    },
+    "tag-open": {
+      "begin": "(<)(?:([A-Z][\\w.]*)|([a-z][\\w-]*))",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.pyweb"
+        },
+        "2": {
+          "name": "entity.name.type.class.component.pyweb support.class.component.pyweb"
+        },
+        "3": {
+          "name": "entity.name.tag.pyweb"
+        }
+      },
+      "end": "(/?>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.pyweb"
+        }
+      },
+      "name": "meta.tag.pyweb",
+      "patterns": [
+        {
+          "include": "#attributes"
+        }
+      ]
+    },
+    "tag-close": {
+      "match": "(</)(?:([A-Z][\\w.]*)|([a-z][\\w-]*))\\s*(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.pyweb"
+        },
+        "2": {
+          "name": "entity.name.type.class.component.pyweb support.class.component.pyweb"
+        },
+        "3": {
+          "name": "entity.name.tag.pyweb"
+        },
+        "4": {
+          "name": "punctuation.definition.tag.end.pyweb"
+        }
+      },
+      "name": "meta.tag.pyweb"
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "match": "\\b(on[a-z]+|bind)\\b(?=\\s*=)",
+          "name": "entity.other.attribute-name.event.pyweb"
+        },
+        {
+          "match": "[A-Za-z_:][\\w:.-]*",
+          "name": "entity.other.attribute-name.pyweb"
+        },
+        {
+          "match": "=",
+          "name": "punctuation.separator.key-value.pyweb"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "string": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.pyweb",
+          "patterns": [
+            {
+              "include": "#entity"
+            }
+          ]
+        },
+        {
+          "begin": "'",
+          "end": "'",
+          "name": "string.quoted.single.pyweb",
+          "patterns": [
+            {
+              "include": "#entity"
+            }
+          ]
+        }
+      ]
+    },
+    "expression": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.pyweb"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.pyweb"
+        }
+      },
+      "contentName": "meta.embedded.expression.pyweb source.python",
+      "patterns": [
+        {
+          "include": "#braces"
+        },
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "braces": {
+      "comment": "Nested {...} (dicts, sets) inside an expression.",
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#braces"
+        },
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "entity": {
+      "match": "&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);",
+      "name": "constant.character.entity.pyweb"
+    }
+  }
+}

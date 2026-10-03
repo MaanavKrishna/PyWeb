@@ -18,6 +18,7 @@ pyweb db migrate|status|rollback|new [--database URL] [--migrations DIR]
 pyweb deploy [--target docker|compose|k8s] [--out deploy] [--port 8000]
                                      write deployment files
 pyweb mcp                            MCP server over stdio for AI assistants (see AI assistants & MCP)
+pyweb lsp                            language server over stdio for editors (see below)
 pyweb test [PATH]                    run pytest
 pyweb fmt [PATH] / pyweb lint [PATH] run ruff format / ruff check (if installed)
 pyweb --version
@@ -29,3 +30,49 @@ pyweb --version
 
 `check` and `build` exit `1` on compile or security errors and `2` on
 budget breaches, so they can gate CI.
+
+## Editor support
+
+`pyweb lsp` is a Language Server Protocol server for `.pyweb` files. It
+reports compile errors and security warnings as you type (including
+errors in imported `.pyweb` files), shows on hover whether a name runs
+in the browser or on the server and why, completes components, props and
+HTML tags, jumps to definitions across files, and outlines pages,
+components and server functions.
+
+### VS Code
+
+Install the **PyWeb** extension. It's in the VS Code Marketplace once
+published; every [GitHub release](https://github.com/MaanavKrishna/PyWeb/releases)
+also has a `.vsix` file (Extensions view → `...` → *Install from VSIX...*).
+It adds highlighting and snippets, and starts `pyweb lsp` with the Python
+interpreter selected in the Python extension. PyWeb 0.3 or later must be
+installed in that environment; set `pyweb.server.command` to use a
+different command.
+
+### Other editors
+
+Any LSP client works. Use `pyweb lsp` as the command and `.pyweb` as the
+file type. Neovim (0.11+):
+
+```lua
+vim.filetype.add({ extension = { pyweb = "pyweb" } })
+vim.lsp.config("pyweb", { cmd = { "pyweb", "lsp" }, filetypes = { "pyweb" }, root_markers = { "app.pyweb" } })
+vim.lsp.enable("pyweb")
+```
+
+Helix (`languages.toml`):
+
+```toml
+[language-server.pyweb]
+command = "pyweb"
+args = ["lsp"]
+
+[[language]]
+name = "pyweb"
+scope = "source.pyweb"
+file-types = ["pyweb"]
+language-servers = ["pyweb"]
+grammar = "python"
+```
+

@@ -27,8 +27,20 @@ project uses [semantic versioning](https://semver.org).
   server, `pyweb build` copies them into `dist/`, and errors name the
   file they're in. Pages stay in the app file; circular imports and
   duplicate server-function names are compile errors.
+- **Editor support.** `pyweb lsp` is a language server (stdio, standard
+  library only): compile errors and security warnings as you type,
+  hover showing where each name runs and why, completion for components,
+  props and tags, go to definition across files, and an outline. The new
+  VS Code extension (`editors/vscode`) adds highlighting and snippets and
+  starts it; releases attach a `.vsix`. Setup for Neovim and Helix is in
+  the command-line docs.
 - `python -m pyweb.bench --max-ssr-ms N --max-compile-ms N` fails when
   a benchmark exceeds its budget; CI runs it.
+
+### Removed
+- The old `pyweb.lsp` helper functions (`complete`, `DocumentState`,
+  `complete_*`, `diagnostics_for_compile_error`, `hover(compiled, name)`,
+  `boundary_lens`); they described an earlier API and no editor used them.
 
 ### Changed
 - `/__pyweb/events` and `/__pyweb/poll` require a signed `?feed=`; the

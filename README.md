@@ -144,7 +144,12 @@ pyweb check app.pyweb                            # compile + security checks for
 pyweb build app.pyweb --out dist --production    # self-contained, hashed, minified dist/
 pyweb serve dist                                 # production server (/healthz, CSP, graceful shutdown)
 pyweb mcp                                        # MCP server for AI assistants (stdio)
+pyweb lsp                                        # language server for editors (stdio)
 ```
+
+Editors: the [VS Code extension](editors/vscode) adds highlighting, errors as you
+type, hover that shows where code runs, completion and go to definition. Any
+other LSP editor can run `pyweb lsp` ([setup](docs/14-cli.md#editor-support)).
 
 ## Status
 

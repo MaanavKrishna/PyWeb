@@ -40,6 +40,25 @@ jobs:
       - name: Unit tests (node runs the JS runtime/translator differential tests)
         run: python -m pytest tests -q -p no:cacheprovider --ignore=tests/e2e --ignore=tests/integration
 
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm test
+      - run: npx vsce package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyweb-vscode
+          path: editors/vscode/*.vsix
+
   bench:
     name: benchmarks
     runs-on: ubuntu-latest

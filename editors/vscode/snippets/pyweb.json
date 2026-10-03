@@ -1,0 +1,87 @@
+{
+  "Page": {
+    "prefix": "page",
+    "description": "A page at a route",
+    "body": [
+      "@app.page(\"${1:/}\")",
+      "def ${2:Home}():",
+      "    ${3:count = 0}",
+      "",
+      "    <main>",
+      "        $0",
+      "    </main>"
+    ]
+  },
+  "Component": {
+    "prefix": "component",
+    "description": "A component with props and children",
+    "body": [
+      "def ${1:Card}(${2:title}, children=None):",
+      "    <section>",
+      "        <h2>{${2:title}}</h2>",
+      "        {children}",
+      "    </section>"
+    ]
+  },
+  "Server function": {
+    "prefix": "server",
+    "description": "A function that runs on the server and is called from the browser over RPC",
+    "body": [
+      "@server",
+      "def ${1:save}(${2:item: str}) -> ${3:None}:",
+      "    $0"
+    ]
+  },
+  "Event handler": {
+    "prefix": "handler",
+    "description": "An event handler (runs in the browser)",
+    "body": [
+      "def ${1:on_click}():",
+      "    $0"
+    ]
+  },
+  "For loop in markup": {
+    "prefix": "for",
+    "description": "Render a list",
+    "body": [
+      "for ${1:item} in ${2:items}:",
+      "    <li>{${1:item}}</li>"
+    ]
+  },
+  "Live updates": {
+    "prefix": "live",
+    "description": "Subscribe a page to a channel (publish() from server code)",
+    "body": [
+      "feed = channel(\"${1:updates}\")",
+      "",
+      "def ${2:received}(message):",
+      "    $0",
+      "",
+      "def on_mount():",
+      "    subscribe(feed, ${2:received})"
+    ]
+  },
+  "New app": {
+    "prefix": "pyweb",
+    "description": "A complete one-page app",
+    "body": [
+      "from pyweb import App, server",
+      "",
+      "app = App(title=\"${1:My app}\")",
+      "",
+      "",
+      "@app.page(\"/\")",
+      "def Home():",
+      "    count = 0",
+      "",
+      "    def increment():",
+      "        count += 1",
+      "",
+      "    <main>",
+      "        <h1>${1:My app}</h1>",
+      "        <button onclick={increment}>Clicked {count} times</button>",
+      "    </main>",
+      ""
+    ]
+  }
+}

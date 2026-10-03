@@ -387,6 +387,12 @@ def cmd_new(args):
     print(f"next: cd {args.name} && pyweb dev app.pyweb")
 
 
+def cmd_lsp(args):
+    """Language server for editors (stdio)."""
+    from pyweb.lsp import serve_stdio
+    serve_stdio()
+
+
 def cmd_mcp(args):
     from pyweb.mcp import serve_stdio
     serve_stdio()
@@ -404,6 +410,7 @@ def main(argv=None):
     p = sub.add_parser("db"); p.add_argument("db_action", choices=["migrate", "new", "status", "rollback"]); p.add_argument("--database", default=None); p.add_argument("--migrations", default="migrations"); p.add_argument("--name", default="migration"); p.add_argument("--steps", type=int, default=1, help="rollback: how many applied migrations to revert"); p.add_argument("--to", default=None, help="rollback: revert everything applied after this label"); p.set_defaults(fn=cmd_db)
     p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=["blank", "counter", "todo", "blog", "auth", "chat"], help="starter app"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
+    p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
     p = sub.add_parser("npm"); p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_npm)
     p = sub.add_parser("deploy")

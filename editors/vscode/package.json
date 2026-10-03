@@ -1,0 +1,93 @@
+{
+  "name": "pyweb",
+  "displayName": "PyWeb",
+  "description": "PyWeb (.pyweb) support: highlighting, errors as you type, hover that shows what runs in the browser or on the server, completion and go to definition.",
+  "version": "0.3.0",
+  "publisher": "maanavkrishna",
+  "license": "MIT",
+  "homepage": "https://maanavkrishna.github.io/PyWeb/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaanavKrishna/PyWeb",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/MaanavKrishna/PyWeb/issues"
+  },
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "pyweb",
+    "python",
+    "web",
+    "full-stack"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "pyweb",
+        "aliases": [
+          "PyWeb",
+          "pyweb"
+        ],
+        "extensions": [
+          ".pyweb"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "pyweb",
+        "scopeName": "source.pyweb",
+        "path": "./syntaxes/pyweb.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.expression.pyweb": "python"
+        }
+      }
+    ],
+    "snippets": [
+      {
+        "language": "pyweb",
+        "path": "./snippets/pyweb.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "pyweb.restartServer",
+        "title": "PyWeb: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "PyWeb",
+      "properties": {
+        "pyweb.server.command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Command that starts the language server, e.g. `[\"/path/to/venv/bin/pyweb\", \"lsp\"]`. Empty: use the interpreter selected in the Python extension (`python -m pyweb.cli lsp`), else `pyweb lsp` from `PATH`."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node test/grammar.test.js && node test/extension.test.js",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.1",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.1.0"
+  }
+}

@@ -82,8 +82,8 @@ warning in an earlier release. They are the intended 1.0 API.
 **Experimental** (importable, tested, but may change in any release):
 `pyweb.models` (ORM-style models), `pyweb.live` (live queries),
 `pyweb.sync` (offline sync), `pyweb.css` helpers, `pyweb.plugins`,
-`pyweb.platform`, `pyweb.lsp` (editor helpers; no language server is
-shipped yet), `pyweb.npm` (TypeScript declaration stub generator; npm
+`pyweb.platform`, `pyweb.lsp` (its Python functions; the `pyweb lsp`
+command itself is supported), `pyweb.npm` (TypeScript declaration stub generator; npm
 packages cannot yet be imported into browser code), `pyweb.browser`
 server-side stubs, the `pyweb.compiler` internals and the generated
 JavaScript.

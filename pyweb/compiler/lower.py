@@ -29,7 +29,7 @@ import os
 import re
 
 from . import pyjs
-from .ast import ControlFor, ControlIf, Element, ExprNode, SlotNode
+from .ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode, SlotNode
 from .errors import CompileError
 from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
                    ModuleContext, Translator, jsname)
@@ -39,10 +39,12 @@ RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when a
                   "subscribe as $subscribe, slot as $slot, onCleanup as $onCleanup } "
                   "from \"./runtime.js\";")
 
+MARKDOWN_IMPORT = 'import { markdown as $markdown } from "./markdown.js";'
 SECRET_NAME = re.compile(r"(?i)(secret|password|passwd|api_?key|token|private_?key|credential)")
 
 PAGE_DECORATOR_ATTRS = ("page",)
 LAYOUT_DECORATOR = "layout"
+BUILTIN_COMPONENTS = ("Markdown",)
 ERROR_DECORATOR = "error"
 PAGE_OPTIONS = ("title", "description", "image", "canonical", "noindex", "layout")
 SERVER_DECORATORS = ("server", "worker", "edge", "task")
@@ -109,6 +111,19 @@ def is_ui_stmt(stmt):
     if isinstance(stmt, (ast.For, ast.If)):
         body = stmt.body + stmt.orelse
         return bool(body) and all(is_ui_stmt(s) for s in body)
+    return False
+
+
+def is_generator(fn):
+    """Does ``fn`` itself ``yield`` (nested functions don't count)?"""
+    stack = list(fn.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Yield, ast.YieldFrom)):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
     return False
 
 
@@ -199,6 +214,8 @@ def _import_library(ctx, lib, node, filename):
                 raise CompileError(f"import server function {name!r} from {where} without `as` "
                                    "(its RPC name is its own name)", node.lineno, filename)
             ctx.server_fns[name] = lib.ctx.server_fns[name]
+            if name in lib.ctx.stream_fns:
+                ctx.stream_fns.add(name)
         elif name in lib.ctx.modconsts:
             ctx.modconsts[local] = lib.ctx.modconsts[name]
         elif name in lib.ctx.npm_bindings:
@@ -236,6 +253,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                 local = alias.asname or alias.name.split(".")[0]
                 if mod == "pyweb" and alias.name == "subscribe":
                     ctx.browser_globals[local] = "$subscribe"
+                elif mod == "pyweb" and alias.name in BUILTIN_COMPONENTS:
+                    ctx.builtin_components[local] = alias.name
                 elif mod == "pyweb.browser" and alias.name in browser_bindings:
                     ctx.browser_globals[local] = browser_bindings[alias.name]
                 elif mod == "pyweb.browser" and alias.name in pyjs.JS_GLOBALS:
@@ -267,6 +286,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                     raise CompileError(f"@server function {node.name!r} cannot take *args/**kwargs "
                                        "(RPC arguments are named)", node.lineno, filename)
                 ctx.server_fns[node.name] = [p.arg for p in a.args + a.kwonlyargs]
+                if is_generator(node):
+                    ctx.stream_fns.add(node.name)
             elif "component" in decos or (not decos and has_ui(node)):
                 if not node.name[:1].isupper():
                     raise CompileError(f"component {node.name!r} must start with a capital letter "
@@ -308,6 +329,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                 break
     for info in pages + components:
         info.ui = _ui_of(info.node, ui_all)
+    for info in pages + components + layouts:
+        info.ui = _builtins(info.ui, ctx, filename)
     for info in pages:
         info.layouts = _layouts_for(info, layouts, filename)
     ctx.layouts = {info.name: info for info in layouts}
@@ -317,6 +340,32 @@ def scan_module(tree, ui_all, filename, resolve=None):
 def _ui_of(node, ui_all):
     span = (node.lineno, getattr(node, "end_lineno", node.lineno))
     return [n for n in ui_all if span[0] <= getattr(n, "line", 0) <= span[1]]
+
+
+def _builtins(nodes, ctx, filename):
+    """Replace ``<Markdown .../>`` (imported from pyweb, not shadowed by a component) with its node."""
+    out = []
+    for n in nodes:
+        if isinstance(n, Element) and n.tag in ctx.builtin_components and n.tag not in ctx.components:
+            if n.children:
+                raise CompileError(f"<{n.tag}> takes its text as text={{...}}, not as children", n.line, filename)
+            if "text" not in n.attrs or n.attrs["text"] is True:
+                raise CompileError(f"<{n.tag}> needs text=, e.g. <{n.tag} text={{reply}} />", n.line, filename)
+            bad = [k for k in n.attrs if k.startswith("on") or k in ("bind", "ref")]
+            if bad:
+                raise CompileError(f"<{n.tag}> doesn't take {bad[0]}=; wrap it in an element that does",
+                                   n.line, filename)
+            out.append(MarkdownNode(dict(n.attrs), n.line))
+            continue
+        if isinstance(n, Element):
+            n.children = _builtins(n.children, ctx, filename)
+        elif isinstance(n, ControlFor):
+            n.body = _builtins(n.body, ctx, filename)
+        elif isinstance(n, ControlIf):
+            n.body = _builtins(n.body, ctx, filename)
+            n.orelse = _builtins(n.orelse, ctx, filename)
+        out.append(n)
+    return out
 
 
 def _layout_info(node, prefix, ui_all, filename):
@@ -409,14 +458,14 @@ def ui_refs(nodes):
         for n in ns:
             if isinstance(n, ExprNode):
                 names.update(_expr_names(n.code))
-            elif isinstance(n, Element):
+            elif isinstance(n, (Element, MarkdownNode)):
                 for key, val in n.attrs.items():
                     if not isinstance(val, tuple) or val[0] != "expr":
                         continue
                     if key in ("bind", "ref"):
                         binds[val[1]] = (val[2], key)
                     names.update(_expr_names(val[1]))
-                walk(n.children)
+                walk(getattr(n, "children", []))
             elif isinstance(n, ControlFor):
                 names.update(_expr_names(n.iterable))
                 walk(n.body)
@@ -448,6 +497,8 @@ def used_components(nodes):
 
 def _has_events(nodes):
     for n in nodes:
+        if isinstance(n, MarkdownNode):
+            return True
         if isinstance(n, Element):
             if any(k.startswith("on") or k in ("bind", "ref") for k in n.attrs) or _has_events(n.children):
                 return True
@@ -683,6 +734,8 @@ class Emitter:
         parts.append(f"$mount({json.dumps(info.name)}, {jsname(info.name)});")
         body = "\n".join(parts) + "\n"
         imports = [RUNTIME_IMPORT]
+        if "$markdown(" in body:
+            imports.append(MARKDOWN_IMPORT)
         info.npm = []
         for alias in sorted(set(re.findall(r"\$npm_[A-Za-z0-9_]+", body))):
             spec, export = self.ctx.npm_aliases[alias]
@@ -837,6 +890,16 @@ class Emitter:
             return f"$t({json.dumps(n.text)})"
         if t == "SlotNode":
             return f"$slot({json.dumps(n.layout)})"
+        if t == "MarkdownNode":
+            kind, code, line = n.attrs["text"]
+            if kind == "lit":
+                text = json.dumps(code)
+            else:
+                node, js = self._expr(code, line, scope)
+                text = _thunk(js) if self.tr.is_reactive(node, scope) else js
+            props = self.props_js(Element("div", {k: v for k, v in n.attrs.items() if k != "text"}, [], n.line),
+                                  scope)
+            return f"$markdown({text}, {props})"
         if t == "ExprNode":
             node, js = self._expr(n.code, n.line, scope)
             if self.tr.is_reactive(node, scope):
@@ -870,6 +933,15 @@ class Emitter:
         return ""
 
     def element_js(self, n, scope, ind):
+        p = self.props_js(n, scope)
+        children = self.ui_js(n.children, scope, ind) if n.children else None
+        if children:
+            # A thunk, so children are created (or claimed, when hydrating)
+            # after their parent, in document order.
+            return f"$h({json.dumps(n.tag)}, {p}, () => {children})"
+        return f"$h({json.dumps(n.tag)}, {p})"
+
+    def props_js(self, n, scope):
         props = []
         for key, val in n.attrs.items():
             name = "class" if key in ("class_", "className") else key
@@ -893,13 +965,7 @@ class Emitter:
                 props.append(f"{json.dumps(name)}: {_thunk(js)}")
             else:
                 props.append(f"{json.dumps(name)}: {js}")
-        children = self.ui_js(n.children, scope, ind) if n.children else None
-        p = "{" + ", ".join(props) + "}" if props else "null"
-        if children:
-            # A thunk, so children are created (or claimed, when hydrating)
-            # after their parent, in document order.
-            return f"$h({json.dumps(n.tag)}, {p}, () => {children})"
-        return f"$h({json.dumps(n.tag)}, {p})"
+        return "{" + ", ".join(props) + "}" if props else "null"
 
     def handler_js(self, code, line, scope):
         node = self._parse(code, line)

@@ -30,3 +30,15 @@ article h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.01em; }
 a { color: var(--accent); }
 .msg { padding: 8px 0; border-bottom: 1px solid var(--line); }
 .msg b { margin-right: 8px; }
+.markdown > :first-child { margin-top: 0; } .markdown > :last-child { margin-bottom: 0; }
+.markdown ul, .markdown ol { list-style: revert; padding-left: 1.4em; margin: 8px 0; }
+.markdown li { display: list-item; padding: 2px 0; border: 0; }
+.markdown code { font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; }
+.markdown pre { background: #0f111a; color: #e6e8f0; padding: 12px 14px; border-radius: 10px; overflow-x: auto; }
+.markdown pre code { background: none; padding: 0; color: inherit; }
+.markdown blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.markdown table { border-collapse: collapse; margin: 8px 0; } .markdown th, .markdown td { border: 1px solid var(--line); padding: 4px 10px; }
+.chat { display: flex; flex-direction: column; gap: 12px; margin: 18px 0; }
+.bubble { padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); max-width: 90%; }
+.bubble.user { align-self: flex-end; background: var(--accent-soft); border-color: transparent; }
+.typing { color: var(--muted); font-size: 14px; }

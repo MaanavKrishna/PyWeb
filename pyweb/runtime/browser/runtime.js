@@ -632,6 +632,10 @@ function markActive() {
   }
 }
 
+/** Adopt the server's element while hydrating, else create one (for add-on modules like markdown.js). */
+export function element(tag) { return H ? claimEl(tag) : document.createElement(tag); }
+export { setProp as prop };
+
 // --------------------------------------------------- client navigation
 // Same-origin links load the next page's server HTML with fetch, swap it in
 // below the layouts both pages share, and mount the new page's module. Any
@@ -888,6 +892,12 @@ export function truth(v) {
   if (v instanceof Set || v instanceof Map) return v.size > 0;
   if (isDict(v) && Object.getPrototypeOf(v) === Object.prototype) return Object.keys(v).length > 0;
   return true;
+}
+
+/** `async for` source: async iterables as-is, ordinary iterables one item at a time. */
+function aiter(v) {
+  if (v && typeof v[Symbol.asyncIterator] === "function") return v;
+  return iter(v);
 }
 
 function iter(v) {
@@ -1399,6 +1409,7 @@ function getp(v, path) {
 
 export const py = {
   go: (url) => navigate(String(url)),
+  aiter,
   kw, truth, iter, str, repr, text, eq, contains, len, at, slice, add, mul, mod, div, floordiv,
   int, float, round, range, sorted, format, m, mut, setp, getp, setitem, delitem, cmp, call, callm,
   bool: (v) => truth(v),
@@ -1553,6 +1564,83 @@ export async function rpc(name, args = {}, opts = {}) {
   }
   throw lastErr;
 }
+
+/**
+ * A call to a server function that `yield`s. Nothing is sent until it's
+ * iterated (`for await`); each yielded value arrives as soon as the server
+ * produces it. `cancel()` (or leaving the loop early) aborts the request,
+ * which closes the generator on the server.
+ */
+export class RpcStream {
+  constructor(name, args) {
+    this.rpc = name;
+    this.args = args;
+    this.cancelled = false;
+    this.done = false;
+    this.ctrl = new AbortController();
+  }
+
+  cancel() {
+    if (this.done) return;
+    this.cancelled = true;
+    this.ctrl.abort();
+  }
+
+  async *[Symbol.asyncIterator]() {
+    const name = this.rpc;
+    if (this.cancelled) return;
+    const headers = { "Content-Type": "application/json", Accept: "application/x-ndjson" };
+    const csrf = getCsrfToken();
+    if (csrf) headers["X-CSRF-Token"] = csrf;
+    let res;
+    try {
+      res = await fetch(`/__pyweb/rpc/${encodeURIComponent(name)}`, {
+        method: "POST", headers, body: JSON.stringify({ args: this.args }),
+        signal: this.ctrl.signal, credentials: "same-origin",
+      });
+    } catch (e) {
+      if (this.cancelled) return;
+      throw e;
+    }
+    const ctype = res.headers.get("Content-Type") || "";
+    if (!res.ok || !ctype.includes("x-ndjson")) {
+      let data = null;
+      try { data = await res.json(); } catch { data = null; }
+      const e = (data && data.error) || {};
+      throw new RPCError(name, e.code || `http_${res.status}`, e.message || `RPC ${name} failed: ${res.status}`,
+                         res.status, e.details || {});
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      for (;;) {
+        let part;
+        try { part = await reader.read(); } catch (e) { if (this.cancelled) return; throw e; }
+        if (part.done) break;
+        buf += decoder.decode(part.value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          if ("chunk" in msg) yield msg.chunk;
+          else if (msg.error) {
+            this.done = true;
+            throw new RPCError(name, msg.error.code || "internal", msg.error.message || "stream failed", 200,
+                               msg.error.details || {});
+          } else if (msg.done) { this.done = true; return; }
+        }
+      }
+      if (!this.cancelled) throw new RPCError(name, "unavailable", "the connection closed before the stream ended", 0, {});
+    } finally {
+      if (!this.done) { this.done = true; this.ctrl.abort(); } // left the loop early: stop the server too
+    }
+  }
+}
+
+rpc.stream = (name, args) => new RpcStream(name, args);
 
 // Live updates. `feed` is a signed token made on the server with
 // channel(name). Messages arrive over Server-Sent Events (the browser

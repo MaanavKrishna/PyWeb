@@ -16,6 +16,9 @@ dist/
   static/
     runtime.<hash>.js    shared browser runtime (~14 KB gzip)
     <Page>.<hash>.js     one module per interactive page
+    <Layout>.<hash>.js   one module per interactive layout
+    markdown.<hash>.js   only when a page uses <Markdown>
+    vendor/              npm packages from pyweb.lock (see npm packages)
     ...                  your static/ folder
   server/
     <Page>.html          static prerender (for hosting pages with no server data on a CDN)

@@ -43,7 +43,7 @@ HTML_ATTRS = ["id", "class", "style", "href", "src", "alt", "title", "type", "na
               "disabled", "checked", "required", "for", "role", "aria-label", "bind", "onclick", "oninput",
               "onchange", "onsubmit", "onkeydown", "onfocus", "onblur", "ref"]
 PYWEB_EXPORTS = ["App", "server", "component", "request", "session", "redirect", "NotFound", "RPCError",
-                 "channel", "publish", "subscribe", "Model", "task", "worker", "edge", "npm", "head"]
+                 "channel", "publish", "subscribe", "Model", "task", "worker", "edge", "npm", "head", "Markdown"]
 
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _NPM = re.compile(r"""^\s*([A-Za-z_]\w*)\s*=\s*npm\(\s*["']([^"']+)["']\s*(?:,\s*["']([^"']+)["']\s*)?\)""", re.M)

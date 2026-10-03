@@ -50,3 +50,10 @@ class SlotNode:
     """Where a layout puts the page (``{children}`` in an ``@app.layout``)."""
     layout: str
     line: int = 0
+
+
+@dataclass
+class MarkdownNode:
+    """``<Markdown text={...} />`` (from ``pyweb``): Markdown rendered to safe HTML."""
+    attrs: dict
+    line: int = 0

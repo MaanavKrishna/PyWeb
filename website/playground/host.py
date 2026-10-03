@@ -60,6 +60,8 @@ def load(source):
     _client = client
     pages = []
     for name, page in client.site.app.compiled["pages"].items():
+        if page.get("route") is None:  # error pages
+            continue
         pages.append({"name": name, "route": page["route"], "js": page["js"],
                       "placement": {k: list(v) for k, v in page["placement"].items() if not k.startswith("__")}})
     return json.dumps({"ok": True, "pages": pages})

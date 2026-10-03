@@ -45,6 +45,7 @@ DOCS = [
     ("06-server-functions.md", "server-functions", "Server functions & RPC", "Server"),
     ("08-pages-routing-assets.md", "routing", "Pages, routing & assets", "Server"),
     ("19-layouts-navigation.md", "layouts", "Layouts & navigation", "Server"),
+    ("20-ai-apps.md", "ai-apps", "Building AI apps", "Server"),
     ("09-data.md", "data", "Data & databases", "Server"),
     ("10-auth.md", "auth", "Authentication", "Server"),
     ("11-testing.md", "testing", "Testing", "Ship"),
@@ -560,6 +561,10 @@ def build_demo(name):
         rt = minify_js(fh.read())
     with open(os.path.join(d, "static", "runtime.js"), "w", encoding="utf-8") as fh:
         fh.write(rt)
+    with open(os.path.join(ROOT, "pyweb", "runtime", "browser", "markdown.js"), encoding="utf-8") as fh:
+        md = minify_js(fh.read())
+    with open(os.path.join(d, "static", "markdown.js"), "w", encoding="utf-8") as fh:
+        fh.write(md)
     static_src = os.path.join(ROOT, "examples", name, "static")
     if os.path.isdir(static_src):
         shutil.copytree(static_src, os.path.join(d, "static"), dirs_exist_ok=True)

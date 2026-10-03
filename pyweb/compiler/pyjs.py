@@ -119,7 +119,9 @@ class ModuleContext:
         self.filename = filename
         self.app_config = {}       # literal App(...) keyword arguments
         self.layouts = {}          # name -> PageInfo for @app.layout functions
+        self.builtin_components = {}  # local name -> built-in ("Markdown")
         self.server_fns = {}       # name -> [param names]
+        self.stream_fns = set()    # server functions that `yield` (streamed to the browser)
         self.helpers = {}          # name -> FunctionDef
         self.modconsts = {}        # name -> python value
         self.components = {}       # name -> component info (local or imported)
@@ -633,9 +635,12 @@ class Translator:
             if k.arg not in params:
                 raise self.error(node, f"{name}() got an unexpected keyword argument {k.arg!r}")
             fields.append(f"{json.dumps(k.arg)}: {self.expr(k.value, scope)}")
-        self.mark_async()
         caller = self.fn_stack[-1].name if self.fn_stack else "<expr>"
         self.ctx.rpc_calls.setdefault(name, set()).add(caller)
+        if name in self.ctx.stream_fns:
+            # Calling a streaming function starts nothing yet: `async for` reads it, `.cancel()` stops it.
+            return f"$rpc.stream({json.dumps(name)}, {{{', '.join(fields)}}})"
+        self.mark_async()
         return f"(await $rpc({json.dumps(name)}, {{{', '.join(fields)}}}))"
 
     def _calls_server(self, node, scope):
@@ -727,9 +732,28 @@ class Translator:
         out.append(f"{ind}}}")
         return out
 
+    def _streams(self, node, scope):
+        return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+            and scope.lookup(node.func.id) == SERVER and node.func.id in self.ctx.stream_fns
+
+    def s_AsyncFor(self, node, scope, ind):
+        if node.orelse:
+            raise self.error(node, "async for/else is not supported in browser code")
+        for n in _target_names(node.target):
+            self.ensure_assignable(n, scope, node)
+        self.mark_async()
+        it = self.expr(node.iter, scope)
+        out = [f"{ind}for await ({self.target_pattern(node.target)} of $py.aiter({it})) {{"]
+        out += self.block(node.body, scope, ind + "  ")
+        out.append(f"{ind}}}")
+        return out
+
     def s_For(self, node, scope, ind):
         if node.orelse:
             raise self.error(node, "for/else is not supported in browser code")
+        if self._streams(node.iter, scope):
+            raise self.error(node, f"{node.iter.func.id}() streams its results: read it with "
+                                   f"`async for ... in {node.iter.func.id}(...)` in an `async def` handler")
         for n in _target_names(node.target):
             self.ensure_assignable(n, scope, node)
         it = self.expr(node.iter, scope)
@@ -1081,7 +1105,7 @@ def mark_async_handlers(handlers, scope):
     for name, fn in handlers.items():
         direct = isinstance(fn, ast.AsyncFunctionDef)
         for sub in ast.walk(fn):
-            if isinstance(sub, ast.Await):
+            if isinstance(sub, (ast.Await, ast.AsyncFor)):
                 direct = True
             elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) \
                     and scope.lookup(sub.func.id) == SERVER:

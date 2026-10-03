@@ -12,6 +12,7 @@ from .rpc import RPCError
 from .decorators import component, edge, server, worker
 from .realtime import channel, publish, subscribe
 from .packages import npm
+from .markdown import Markdown
 
 __all__ = [
     "App",
@@ -29,6 +30,7 @@ __all__ = [
     "publish",
     "subscribe",
     "npm",
+    "Markdown",
     "Email",
     "Model",
     "task",

@@ -34,8 +34,6 @@ Planned, roughly in order. Nothing here is promised for a date.
 
 1. **Live queries**: page data that updates itself when the database
    changes.
-2. **Streaming server functions** for AI apps: `yield` on the server,
-   `async for` in the browser, with cancellation.
 
 Ideas, bug reports and pull requests are welcome; see
 [CONTRIBUTING.md](https://github.com/MaanavKrishna/PyWeb/blob/main/CONTRIBUTING.md).

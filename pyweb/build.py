@@ -182,8 +182,23 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
     with open(f"{out}/static/{rt_name}", "w", encoding="utf-8") as fh:
         fh.write(runtime_js)
 
+    md_name = ""
+    units = [*compiled["pages"].values(), *(compiled.get("layouts") or {}).values()]
+    if any('from "./markdown.js"' in (u.get("js") or "") for u in units):   # only apps that use <Markdown>
+        with open(os.path.join(os.path.dirname(rt_path), "markdown.js"), encoding="utf-8") as fh:
+            md_js = fh.read().replace('from "./runtime.js"', f'from "./{rt_name}"')
+        if production:
+            md_js = minify_js(md_js, minifier=minifier)
+            md_name = f"markdown.{content_hash(md_js)}.js"
+        else:
+            md_name = "markdown.js"
+        with open(f"{out}/static/{md_name}", "w", encoding="utf-8") as fh:
+            fh.write(md_js)
+
     def write_module(name, js, mappings):
         body = js.replace('from "./runtime.js"', f'from "./{rt_name}"')
+        if md_name:
+            body = body.replace('from "./markdown.js"', f'from "./{md_name}"')
         if production:
             body = minify_js(body, minifier=minifier)
             js_name = f"{name}.{content_hash(body)}.js"

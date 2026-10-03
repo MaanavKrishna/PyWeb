@@ -31,7 +31,7 @@ import traceback
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 HERE = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES = ("blank", "counter", "todo", "blog", "auth", "chat")
+TEMPLATES = ("blank", "counter", "todo", "blog", "auth", "chat", "ai-chat")
 
 INSTRUCTIONS = (
     "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). "
@@ -581,7 +581,7 @@ def resources():
 def read_resource(uri):
     if uri == "pyweb://guide":
         return _guide_text(), "text/markdown"
-    m = re.fullmatch(r"pyweb://templates/(\w+)", uri)
+    m = re.fullmatch(r"pyweb://templates/([\w-]+)", uri)
     if m and m.group(1) in TEMPLATES:
         return _template_source(m.group(1)), "text/plain"
     raise KeyError(uri)

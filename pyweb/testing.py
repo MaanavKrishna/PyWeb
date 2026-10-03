@@ -101,8 +101,22 @@ class TestClient:
         return self.request("POST", path, body, {"Content-Type": "application/json", **(headers or {})})
 
     def rpc(self, function, /, **args):
-        """Call a server function like the browser does; raise RPCError on failure."""
+        """Call a server function like the browser does; raise RPCError on failure.
+
+        A function that ``yield``s returns the list of values it streamed.
+        """
         resp = self.post(f"/__pyweb/rpc/{function}", {"args": args})
+        if "x-ndjson" in (resp.header("Content-Type") or ""):
+            chunks = []
+            for line in resp.body.decode().splitlines():
+                msg = json.loads(line) if line.strip() else {}
+                if "chunk" in msg:
+                    chunks.append(msg["chunk"])
+                elif "error" in msg:
+                    err = msg["error"]
+                    raise RPCError(err.get("code", "internal"), err.get("message", ""), status=resp.status,
+                                   details=err.get("details"))
+            return chunks
         payload = resp.json() if resp.body else {}
         if resp.status != 200 or "error" in payload:
             err = payload.get("error") or {}

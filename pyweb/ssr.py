@@ -23,7 +23,7 @@ import json
 import posixpath
 import re
 
-from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, SlotNode, TextNode
+from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode, SlotNode, TextNode
 
 VOID = {"input", "img", "br", "hr", "meta", "link", "source", "wbr",
         "col", "base", "area", "embed", "track", "param"}
@@ -180,6 +180,19 @@ class Renderer:
             return _html.escape(n.text, quote=False)
         if isinstance(n, ExprNode):
             return text_of(self.eval(n.code, env, n.line))
+        if isinstance(n, MarkdownNode):
+            from .markdown import render as markdown
+            kind, code, line = n.attrs["text"]
+            text = code if kind == "lit" else self.eval(code, env, line)
+            attrs = {k: v for k, v in n.attrs.items() if k != "text"}
+            user = attrs.pop("class", None) or attrs.pop("class_", None)
+            if user is None:
+                attrs["class"] = ("lit", "markdown", n.line)
+            elif user is True or user[0] == "lit":
+                attrs["class"] = ("lit", "markdown" + ("" if user is True else " " + user[1]), n.line)
+            else:
+                attrs["class"] = ("expr", f"['markdown', ({user[1]})]", user[2])
+            return f"<div{self.attrs_html(Element('div', attrs, [], n.line), env)}>{markdown(text)}</div>"
         if isinstance(n, SlotNode):
             return f'<div data-pw-slot="{_html.escape(n.layout)}" style="display:contents">{SLOT_MARK}</div>'
         if isinstance(n, ControlFor):

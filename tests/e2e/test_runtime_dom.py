@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-RUNTIME = (Path(__file__).parent.parent.parent / "pyweb" / "runtime" / "browser" / "runtime.js").read_text()
+BROWSER = Path(__file__).parent.parent.parent / "pyweb" / "runtime" / "browser"
+RUNTIME = (BROWSER / "runtime.js").read_text()
 
 
 def open_runtime(page):
@@ -10,6 +11,8 @@ def open_runtime(page):
         url = route.request.url
         if url.endswith("/runtime.js"):
             route.fulfill(body=RUNTIME, content_type="text/javascript")
+        elif url.endswith("/markdown.js"):
+            route.fulfill(body=(BROWSER / "markdown.js").read_text(), content_type="text/javascript")
         else:
             route.fulfill(body="<!doctype html><div id=root></div>", content_type="text/html")
     page.route("http://pw.test/**", handler)

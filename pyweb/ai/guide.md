@@ -187,6 +187,13 @@ def Item(item_id: int):
   `status`, `message`, `request_id`).
 - Run code after load with a handler named `on_mount`; stop timers in
   `on_unmount` (runs when the user navigates away).
+- Streaming (AI replies, progress): a `@server` function that `yield`s;
+  in an `async def` handler `stream = fn(...)` then
+  `async for piece in stream: ...`; `stream.cancel()` stops it (closes the
+  generator on the server). Show model output with `<Markdown text={reply} />`
+  (`from pyweb import Markdown`): safe, renders as it streams. Template:
+  `pyweb new NAME --template ai-chat`. Keep API keys in server code
+  (`os.environ`), never in page variables.
 - Live updates: in a server function `publish("room:1", data)`; in the
   page `feed = channel("room:1")` (runs on the server); in `on_mount`
   `subscribe(feed, handler)`, where `handler(message)` assigns page
@@ -239,7 +246,7 @@ lambdas), never directly in markup. Give libraries an element with
 ## 9. Workflow for agents
 
 1. Start from a template: `pyweb new NAME --template todo` (or the
-   `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, auth, chat.
+   `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, auth, chat, ai-chat.
 2. Edit `app.pyweb`. After every edit run `pyweb check app.pyweb`
    (MCP: `pyweb_check`) and fix errors by line number.
 3. Use `pyweb inspect` (MCP: `pyweb_inspect`) to confirm what runs in the

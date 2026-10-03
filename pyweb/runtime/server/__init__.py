@@ -36,6 +36,119 @@ class Response:
 _POOL = None
 
 
+class RPCStream:
+    """The response body of a server function that ``yield``s: one NDJSON line per value.
+
+    Lines are ``{"chunk": value}``, then ``{"done": true}``, or
+    ``{"error": {...}}`` if the function raises part-way. Each step runs in
+    the request's context (so ``session`` and ``request`` work inside the
+    generator). ``close()`` (the client went away, or cancelled) closes the
+    generator, so ``finally`` blocks and ``with`` statements in it run.
+    Iterate it in a thread (stdlib servers) or ``async for`` over
+    :meth:`aiter` (ASGI).
+    """
+
+    def __init__(self, gen, name, *, logger=None, request_id=""):
+        import contextvars
+        import threading
+        self.gen, self.name, self.logger, self.request_id = gen, name, logger, request_id
+        self.context = contextvars.copy_context()
+        self.is_async = inspect.isasyncgen(gen)
+        self._loop = None
+        self._lock = threading.Lock()
+        self._busy = False
+        self._closing = False
+        self._finished = False
+
+    def _next(self):
+        """The next value, or raise StopIteration."""
+        if self.is_async:
+            import asyncio
+            if self._loop is None:
+                self._loop = asyncio.new_event_loop()
+            try:
+                return self.context.run(self._loop.run_until_complete, self.gen.__anext__())
+            except StopAsyncIteration:
+                raise StopIteration from None
+        return self.context.run(next, self.gen)
+
+    def _line(self):
+        """The next NDJSON line, or None when the stream is over."""
+        from pyweb import rpc as _rpc
+        from pyweb.ssr import to_jsonable
+        if self._finished or self._closing:
+            return None
+        with self._lock:
+            self._busy = True
+        try:
+            value = self._next()
+            return (json.dumps({"chunk": to_jsonable(value)}) + "\n").encode()
+        except StopIteration:
+            self._finished = True
+            return b'{"done": true}\n'
+        except _rpc.RPCError as exc:
+            self._finished = True
+            return (json.dumps({"error": {"code": exc.code, "message": str(exc),
+                                          "details": exc.details or {}}}) + "\n").encode()
+        except Exception as exc:  # noqa: BLE001 - reported in-band; the status line is already sent
+            self._finished = True
+            if self.logger is not None:
+                self.logger.error(f"rpc {self.name} failed while streaming: {exc}",
+                                  request_id=self.request_id, rpc=self.name)
+            return b'{"error": {"code": "internal", "message": "internal server error", "details": {}}}\n'
+        finally:
+            with self._lock:
+                self._busy = False
+            if self._closing:
+                self._shutdown()
+
+    def __iter__(self):
+        try:
+            while True:
+                line = self._line()
+                if line is None:
+                    return
+                yield line
+        finally:
+            self.close()
+
+    async def aiter(self):
+        import asyncio
+        try:
+            while True:
+                line = await asyncio.to_thread(self._line)
+                if line is None:
+                    return
+                yield line
+        finally:
+            self.close()
+
+    def snapshot(self):
+        """Everything, synchronously (tests)."""
+        return b"".join(iter(self))
+
+    def close(self):
+        with self._lock:
+            self._closing = True
+            if self._busy:
+                return  # the step in progress closes it when it returns
+        self._shutdown()
+
+    def _shutdown(self):
+        gen, self.gen = self.gen, None
+        if gen is None:
+            return
+        try:
+            if self.is_async:
+                if self._loop is not None:
+                    self.context.run(self._loop.run_until_complete, gen.aclose())
+                    self._loop.close()
+            else:
+                self.context.run(gen.close)
+        except Exception:  # noqa: BLE001 - closing must not raise
+            pass
+
+
 def _rpc_error():
     from pyweb.rpc import RPCError
     return RPCError
@@ -228,6 +341,12 @@ class Server:
             except (TypeError, ValueError) as exc:
                 return self._err(_rpc.Code.VALIDATION, str(exc),
                                  trace_id=trace_id, traceparent=traceparent)
+            if inspect.isgeneratorfunction(fn) or inspect.isasyncgenfunction(fn):
+                # Streamed: no timeout (it runs as long as it yields), errors arrive in-band.
+                stream = RPCStream(fn(**clean), name, logger=self.logger, request_id=trace_id)
+                return Response(200, stream, {"Content-Type": "application/x-ndjson", "Cache-Control": "no-store",
+                                              "X-Accel-Buffering": "no", "X-Request-Id": trace_id,
+                                              "traceparent": traceparent})
             try:
                 if self.rpc_timeout:
                     result = self._call_with_timeout(fn, clean)

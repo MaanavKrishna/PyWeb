@@ -53,6 +53,22 @@ project uses [semantic versioning](https://semver.org).
   are read from the query string and converted by annotation (`int`,
   `float`, `bool`, `list[...]`); bad or missing values answer 400.
 - New docs page: Layouts & navigation.
+- **Streaming server functions.** A `@server` function that `yield`s
+  sends each value as it's produced (NDJSON over the same RPC endpoint);
+  browser code reads it with `async for`. `stream.cancel()` or leaving the
+  loop aborts the request and closes the generator on the server, so an
+  upstream AI call stops too. Errors raised part-way arrive as
+  `RPCError`. Works with `async def` generators, under `pyweb serve`,
+  `pyweb dev` and ASGI, and `TestClient.rpc` returns the streamed values.
+- **`<Markdown text={...} />`** (from `pyweb`) renders Markdown to safe
+  HTML on the server and updates it in the browser as the text changes,
+  with the same rules in both places. Raw HTML is shown as text and
+  links only accept http(s), mailto and relative URLs.
+- **`ai-chat` template and example**: a streaming chat with Stop and
+  Markdown replies that talks to Anthropic, any OpenAI-compatible server
+  (OpenAI, Ollama, vLLM, ...) or a built-in demo model, chosen by
+  environment variables. `pyweb new NAME --template ai-chat`.
+- New docs page: Building AI apps.
 
 ### Changed
 - `pyweb.npm` (TypeScript declarations to dataclasses) is now
@@ -60,6 +76,7 @@ project uses [semantic versioning](https://semver.org).
   writes an esm.sh import map; packages come from `pyweb.lock`.
 - The default Content Security Policy adds `worker-src 'self' blob:` so
   packages can start Web Workers.
+- The starter stylesheet styles Markdown and chat bubbles.
 - The browser runtime is about 14 KB gzipped (was about 11 KB), for
   client-side navigation and npm support.
 - New website design: a colour system where blue means the browser and

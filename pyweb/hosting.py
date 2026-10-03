@@ -122,8 +122,8 @@ class Site:
     def static(self, rel):
         rel = rel.split("?")[0]
         if self.source_mode:
-            if rel == "runtime.js":
-                with open(RUNTIME_PATH, "rb") as fh:
+            if rel in ("runtime.js", "markdown.js"):
+                with open(os.path.join(os.path.dirname(RUNTIME_PATH), rel), "rb") as fh:
                     return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], fh.read()
             if rel in self.memory_js:
                 return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], \

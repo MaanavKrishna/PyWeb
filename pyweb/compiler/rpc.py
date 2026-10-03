@@ -29,7 +29,8 @@ def rpc_specs(tree):
                     loc = "worker"
                 elif "edge" in name:
                     loc = "edge"
+            from .lower import is_generator
             specs.append({"name": node.name, "args": args, "returns": ret,
                           "location": loc, "line": node.lineno,
-                          "async": isinstance(node, ast.AsyncFunctionDef)})
+                          "async": isinstance(node, ast.AsyncFunctionDef), "stream": is_generator(node)})
     return specs

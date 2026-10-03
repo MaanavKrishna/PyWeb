@@ -83,7 +83,7 @@ def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_
             status, hdrs, body = await asyncio.to_thread(
                 site.respond, scope.get("method", "GET"), path, headers, b"".join(chunks))
         raw_headers = [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in hdrs]
-        if hasattr(body, "aiter"):  # Server-Sent Events
+        if hasattr(body, "aiter"):  # Server-Sent Events, streamed RPC results
             await send({"type": "http.response.start", "status": status, "headers": raw_headers})
             await _stream(body, receive, send)
             return

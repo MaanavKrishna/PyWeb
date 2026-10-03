@@ -112,9 +112,69 @@ X-CSRF-Token: <token>          (when CSRF protection is configured)
 4xx/5xx {"error": {"code": "conflict", "message": "...", "details": {}}}
 ```
 
+A function that streams (below) answers `200` with
+`Content-Type: application/x-ndjson`: one `{"chunk": value}` line per
+`yield`, then `{"done": true}`, or `{"error": {...}}` if it raises part-way.
+
 Every response carries `X-Request-Id` and a W3C `traceparent` header.
 Because it is plain JSON over HTTP, server functions can also be called
 from scripts, tests (`TestClient.rpc`) or other services.
+
+## Streaming results
+
+A server function that `yield`s sends each value to the browser as soon
+as it is produced. Browser code reads it with `async for`:
+
+```pyweb
+import time
+
+from pyweb import App, server
+
+app = App()
+
+
+@server
+def progress(steps: int):
+    for i in range(steps):
+        time.sleep(0.5)           # slow work: a model, a big query, a file conversion
+        yield {"done": i + 1, "of": steps}
+
+
+@app.page("/")
+def Job():
+    status = "idle"
+    job = None
+
+    async def start():
+        job = progress(10)
+        async for update in job:
+            status = f"{update['done']} of {update['of']}"
+        status = "finished"
+
+    def cancel():
+        if job:
+            job.cancel()
+
+    <button onclick={start}>Start</button>
+    <button onclick={cancel}>Cancel</button>
+    <p>{status}</p>
+```
+
+- Calling a streaming function returns a stream; nothing is sent until
+  `async for` reads it. Handlers that use `async for` are `async def`.
+- `job.cancel()` stops it, and so does leaving the loop early with
+  `break`. Either way the request is aborted and the generator on the
+  server is closed: code after the current `yield` doesn't run, and
+  `finally:` blocks and `with` statements clean up, which closes an
+  upstream HTTP connection (an AI provider stops generating).
+- If the function raises `RPCError` part-way, the `async for` raises it
+  after the values sent so far. Other exceptions arrive as
+  `RPCError("internal")` and are logged.
+- `async def` generators work too. `session` and `request` work inside
+  the generator. The per-call `rpc_timeout` doesn't apply to streams.
+- `TestClient.rpc(...)` returns the list of values a stream sent.
+- Stop streams a page started when the user navigates away, in
+  `on_unmount`.
 
 ## Live updates
 

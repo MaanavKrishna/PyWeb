@@ -14,7 +14,7 @@ dist/
   manifest.json          routes, asset names, RPC table, byte sizes
   Dockerfile             a ready-to-use image definition
   static/
-    runtime.<hash>.js    shared browser runtime (~10 KB gzip)
+    runtime.<hash>.js    shared browser runtime (~14 KB gzip)
     <Page>.<hash>.js     one module per interactive page
     ...                  your static/ folder
   server/

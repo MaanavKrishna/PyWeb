@@ -43,7 +43,7 @@ HTML_ATTRS = ["id", "class", "style", "href", "src", "alt", "title", "type", "na
               "disabled", "checked", "required", "for", "role", "aria-label", "bind", "onclick", "oninput",
               "onchange", "onsubmit", "onkeydown", "onfocus", "onblur", "ref"]
 PYWEB_EXPORTS = ["App", "server", "component", "request", "session", "redirect", "NotFound", "RPCError",
-                 "channel", "publish", "subscribe", "Model", "task", "worker", "edge", "npm"]
+                 "channel", "publish", "subscribe", "Model", "task", "worker", "edge", "npm", "head"]
 
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _NPM = re.compile(r"""^\s*([A-Za-z_]\w*)\s*=\s*npm\(\s*["']([^"']+)["']\s*(?:,\s*["']([^"']+)["']\s*)?\)""", re.M)
@@ -165,7 +165,8 @@ def _local_definitions(text, path):
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             decos = " ".join(ast.unparse(d) for d in node.decorator_list)
-            kind = ("page" if ".page" in decos else "server function" if "server" in decos
+            kind = ("page" if ".page" in decos else "layout" if ".layout" in decos
+                    else "error page" if ".error(" in decos else "server function" if "server" in decos
                     else "component" if node.name[:1].isupper() else "function")
             out[node.name] = (path, node.lineno, kind, _fn_signature(node))
     return out
@@ -313,7 +314,7 @@ def symbols(text):
 
 # -------------------------------------------------------------- protocol
 
-SYMBOL_KINDS = {"page": 12, "component": 5, "server function": 12, "function": 12, "model": 5, "class": 5}
+SYMBOL_KINDS = {"page": 12, "layout": 12, "error page": 12, "component": 5, "server function": 12, "function": 12, "model": 5, "class": 5}
 
 
 def _path(uri):

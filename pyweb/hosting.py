@@ -93,7 +93,7 @@ class Site:
             manifest, static_dir, _ = load_dist(target)
             self.static_dirs = [static_dir]
             self.memory_js = {}
-            asset_urls = {name: f"/static/{p['js']}" for name, p in manifest.get("pages", {}).items()
+            asset_urls = {name: f"/static/{p['js']}" for name, p in {**manifest.get("pages", {}), **manifest.get("layouts", {})}.items()
                           if p.get("js")}
             self.app = LoadedApp(os.path.join(target, manifest.get("app") or "app.pyweb"),
                                  asset_urls=asset_urls)
@@ -107,7 +107,8 @@ class Site:
         self.server = Server(app=self.app, debug=debug, max_body=max_body, **server_kwargs)
 
     def _index_memory_js(self):
-        self.memory_js = {f"{n}.js": p["js"] for n, p in self.app.compiled["pages"].items() if p["js"]}
+        units = {**self.app.compiled.get("layouts", {}), **self.app.compiled["pages"]}
+        self.memory_js = {f"{n}.js": p["js"] for n, p in units.items() if p["js"]}
 
     def reload(self):
         """Re-load the app from source (dev hot reload)."""

@@ -67,6 +67,10 @@ ERROR_HINTS = [
                                        "check again."),
     ("which only exists in the browser", "Call the npm package in a handler or on_mount and keep the result in a "
                                          "page variable that the markup shows."),
+    ("has no {children}", "Put {children} exactly once in the layout's markup where the page should go."),
+    ("uses {children}", "Put {children} exactly once in the layout's markup where the page should go."),
+    ("can only take `children`", "Layouts take only children; read request/session data in the layout body."),
+    ("asks for layout", "Use the name of a function decorated with @app.layout, or layout=None for no layout."),
     ("npm() takes literal strings", "Bind at module level: Name = npm(\"package\") or npm(\"package\", \"Export\")."),
 ]
 
@@ -286,7 +290,9 @@ def tool_check(args):
         pages.append({"name": name, "route": p["route"], "signals": p["signals"],
                       "computeds": list(p["computeds"]), "interactive": bool(p["js"]),
                       "sent_to_browser": p.get("state_keys", []),
-                      "page_js_gzip_bytes": _gzip_size(p["js"])})
+                      "page_js_gzip_bytes": _gzip_size(p["js"]),
+                      **({"error_status": p["error_status"]} if p.get("error_status") else {}),
+                      **({"layouts": p["layouts"]} if p.get("layouts") else {})})
     blocking = [f for f in findings if f["kind"] in ("secret-leak",)]
     return {"ok": not blocking, "errors": [], "findings": findings, "pages": pages,
             "server_functions": [{"name": s["name"], "args": s["args"], "returns": s["returns"]}
@@ -302,7 +308,12 @@ def tool_inspect(args):
             "placement": {sym: {"runs": loc, "why": why} for sym, (loc, why) in p["placement"].items()},
             "sent_to_browser": p.get("state_keys", []),
         }
-    return {"pages": pages, "rpc_endpoints": [f"POST /__pyweb/rpc/{s['name']}" for s in out["rpc"]]}
+    layouts = {name: {"prefix": lay["prefix"],
+                      "placement": {sym: {"runs": loc, "why": why} for sym, (loc, why) in lay["info"].reasons.items()},
+                      "sent_to_browser": list(lay["info"].sent)}
+               for name, lay in out.get("layouts", {}).items()}
+    return {"pages": pages, **({"layouts": layouts} if layouts else {}),
+            "rpc_endpoints": [f"POST /__pyweb/rpc/{s['name']}" for s in out["rpc"]]}
 
 
 def tool_compiled(args):

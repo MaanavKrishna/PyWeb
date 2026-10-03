@@ -71,7 +71,7 @@ and makes Python the source language for all of it:
 - **Servers stay stateless.** Pages render per request and RPC calls are
   plain JSON over HTTP, so any number of processes can sit behind an
   ordinary load balancer. No sticky sessions or WebSocket fan-out.
-- **What ships is small.** The shared runtime is about 10 KB gzipped and
+- **What ships is small.** The shared runtime is about 14 KB gzipped and
   cached; a typical page adds well under 1 KB. Pages without
   interactivity ship no JavaScript at all.
 - **Boundaries are explicit and checked.** Code that can't run in a

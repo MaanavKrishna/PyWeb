@@ -73,7 +73,7 @@ pyweb dev app.pyweb        # http://localhost:8000
   horizontally behind any load balancer. Deploy with `pyweb serve`,
   uvicorn/gunicorn (ASGI) or the generated Dockerfile.
 
-A typical interactive page ships under 1 KB of page code plus a ~10 KB
+A typical interactive page ships under 1 KB of page code plus a ~14 KB
 (gzip) runtime that's cached across pages. Pages without interactivity
 ship no JavaScript.
 

@@ -535,49 +535,328 @@ export function onMount(fn) {
   queueMicrotask(run);
 }
 
-/** Render a page into its server-rendered host element. */
+// Pages and layouts. Each is a reactive root mounted into its server-rendered
+// host element ([data-pw-root]). Shared through `window` so a page module that
+// loaded a different copy of this runtime still mounts with its own copy.
+const G = typeof window !== "undefined"
+  ? (window.__pyweb || (window.__pyweb = { mounts: new Map(), disposers: new Map(), nav: false }))
+  : { mounts: new Map(), disposers: new Map(), nav: false };
+
+/** Where a layout puts its page: adopts the server's element (and the page inside it). */
+export function slot(name) {
+  if (H) return claimEl("div");
+  const existing = document.querySelector(`[data-pw-slot="${name}"]`);
+  if (existing) return existing; // re-rendering the layout keeps the page
+  const el = document.createElement("div");
+  el.setAttribute("data-pw-slot", name);
+  el.style.display = "contents";
+  return el;
+}
+
+/** Render a page (or layout) into its server-rendered host element. */
 export function mount(name, page) {
-  const run = () => {
-    const host = document.querySelector(`[data-pw-root="${name}"]`) || document.body;
-    const el = document.getElementById("pw-state");
-    let state = {};
-    if (el) { try { state = JSON.parse(el.textContent || "{}"); } catch (e) { reportError(e); } }
-    let mode = "rendered";
-    if (host.firstChild && host !== document.body && !host.hasAttribute("data-pw-no-hydrate")) {
-      let dispose = null;
-      batchDepth++; // effects queued while adopting run once it is complete
-      try {
-        root((d) => {
-          dispose = d;
-          try { claimChildren(host, () => page(state)); } finally { H = null; }
-        });
-        mode = "hydrated";
-      } catch (e) {
-        H = null;
-        afterHydrate = [];
-        if (dispose) dispose();
-        // A real error in page code surfaces again from the client render below.
-        if (e instanceof Mismatch && typeof console !== "undefined") console.warn(e.message);
-      } finally {
-        if (--batchDepth === 0) flush();
-      }
-    }
-    if (mode === "hydrated") {
-      const typed = afterHydrate;
-      afterHydrate = [];
-      for (const f of typed) f();
-    } else {
-      root(() => {
-        const nodes = toNodes(page(state), []);
-        host.replaceChildren(...nodes);
-      });
-    }
-    host.setAttribute("data-pw-mode", mode);
-    host.setAttribute("data-pw-ready", "");
-  };
-  if (typeof document === "undefined") return;
+  const run = () => start(name, page);
+  G.mounts.set(name, run);
+  if (G.nav || typeof document === "undefined") return; // navigation mounts it after swapping HTML in
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
   else run();
+}
+
+function start(name, page) {
+  const host = document.querySelector(`[data-pw-root="${name}"]`) || document.body;
+  const el = document.getElementById(host.hasAttribute("data-pw-layout") ? "pw-state-" + name : "pw-state");
+  let state = {};
+  if (el) { try { state = JSON.parse(el.textContent || "{}"); } catch (e) { reportError(e); } }
+  const old = G.disposers.get(name);
+  if (old) { G.disposers.delete(name); old(); }
+  let mode = "rendered";
+  let dispose = null;
+  if (host.firstChild && host !== document.body && !host.hasAttribute("data-pw-no-hydrate")) {
+    batchDepth++; // effects queued while adopting run once it is complete
+    try {
+      root((d) => {
+        dispose = d;
+        try { claimChildren(host, () => page(state)); } finally { H = null; }
+      });
+      mode = "hydrated";
+    } catch (e) {
+      H = null;
+      afterHydrate = [];
+      if (dispose) dispose();
+      // A real error in page code surfaces again from the client render below.
+      if (e instanceof Mismatch && typeof console !== "undefined") console.warn(e.message);
+    } finally {
+      if (--batchDepth === 0) flush();
+    }
+  }
+  if (mode === "hydrated") {
+    const typed = afterHydrate;
+    afterHydrate = [];
+    for (const f of typed) f();
+  } else {
+    root((d) => {
+      dispose = d;
+      const nodes = toNodes(page(state), []);
+      host.replaceChildren(...nodes);
+    });
+  }
+  G.disposers.set(name, dispose);
+  host.setAttribute("data-pw-mode", mode);
+  host.setAttribute("data-pw-ready", "");
+  markActive();
+  startRouter();
+}
+
+// ------------------------------------------------------- current links
+
+/** `aria-current` for a link: "page" (this page), "true" (a parent section) or null. */
+export function linkCurrent(href, path) {
+  if (!href || /^(#|mailto:|tel:|javascript:)/i.test(href)) return null;
+  let url;
+  try { url = new URL(href, location.href); } catch (e) { return null; }
+  if (url.origin !== location.origin) return null;
+  const target = url.pathname;
+  if (target === path) return "page";
+  if (target !== "/" && path.startsWith(target.replace(/\/$/, "") + "/")) return "true";
+  return null;
+}
+
+function markActive() {
+  if (typeof document === "undefined") return;
+  const here = location.pathname;
+  for (const a of document.querySelectorAll("a[href]")) {
+    const cur = a.getAttribute("aria-current");
+    if (cur && cur !== "page" && cur !== "true") continue; // set by the app: leave it
+    const v = linkCurrent(a.getAttribute("href"), here);
+    if (v) { if (cur !== v) a.setAttribute("aria-current", v); } else if (cur) a.removeAttribute("aria-current");
+  }
+}
+
+// --------------------------------------------------- client navigation
+// Same-origin links load the next page's server HTML with fetch, swap it in
+// below the layouts both pages share, and mount the new page's module. Any
+// surprise (not HTML, another app, new npm packages, an error) falls back to
+// a normal page load.
+
+const prefetched = new Map(); // url -> {at, promise}
+let navSeq = 0;
+
+function startRouter() {
+  if (G.router || typeof window === "undefined" || !window.history || !history.pushState) return;
+  const meta = document.querySelector('meta[name="pw-nav"]');
+  if (meta && meta.content === "off") return;
+  G.router = true;
+  G.at = location.pathname + location.search;
+  try { history.scrollRestoration = "manual"; } catch (e) { /* older browsers */ }
+  const saved = history.state && history.state.pwScroll;
+  if (saved) requestAnimationFrame(() => scrollTo(saved[0], saved[1]));
+  document.addEventListener("click", onClick);
+  for (const ev of ["mouseover", "focusin", "touchstart"]) document.addEventListener(ev, onIntent, { passive: true });
+  window.addEventListener("popstate", onPop);
+  window.addEventListener("pagehide", saveScroll);
+}
+
+function navTarget(a) {
+  if (!a || !a.hasAttribute("href")) return null;
+  const target = a.getAttribute("target");
+  if ((target && target !== "_self") || a.hasAttribute("download") || a.hasAttribute("data-pw-reload")) return null;
+  if (/\bexternal\b/.test(a.getAttribute("rel") || "")) return null;
+  let url;
+  try { url = new URL(a.getAttribute("href"), location.href); } catch (e) { return null; }
+  if (url.origin !== location.origin || !/^https?:$/.test(url.protocol)) return null;
+  if (url.pathname.startsWith("/static/") || url.pathname.startsWith("/__pyweb/")) return null;
+  if (url.pathname === location.pathname && url.search === location.search && url.hash) return null; // same-page anchor
+  return url;
+}
+
+function onClick(ev) {
+  if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+  const a = ev.target && ev.target.closest ? ev.target.closest("a") : null;
+  const url = navTarget(a);
+  if (!url) return;
+  ev.preventDefault();
+  navigate(url.href, { push: true });
+}
+
+function onIntent(ev) {
+  const a = ev.target && ev.target.closest ? ev.target.closest("a") : null;
+  if (!a || a.getAttribute("data-pw-prefetch") === "false") return;
+  if (navigator.connection && navigator.connection.saveData) return;
+  const url = navTarget(a);
+  if (url) prefetch(url.href);
+}
+
+function onPop(ev) {
+  const at = location.pathname + location.search;
+  if (at === G.at) return; // only the hash changed
+  const s = ev.state && ev.state.pwScroll;
+  navigate(location.href, { push: false, scroll: s || [0, 0] });
+}
+
+function saveScroll() {
+  try { history.replaceState({ ...(history.state || {}), pwScroll: [scrollX, scrollY] }, ""); } catch (e) { /* ignore */ }
+}
+
+function fetchPage(url) {
+  return fetch(url, { headers: { Accept: "text/html", "X-PyWeb-Navigate": "1" }, credentials: "same-origin" })
+    .then(async (res) => {
+      const type = res.headers.get("Content-Type") || "";
+      if (!type.includes("text/html")) throw new Error("not a page");
+      return { url: res.url || url, html: await res.text() };
+    });
+}
+
+/** Start loading `url` (a page link the user is about to click). */
+export function prefetch(url) {
+  const hit = prefetched.get(url);
+  if (hit && Date.now() - hit.at < 15000) return hit.promise;
+  const promise = fetchPage(url);
+  promise.catch(() => prefetched.delete(url));
+  prefetched.set(url, { at: Date.now(), promise });
+  if (prefetched.size > 30) prefetched.delete(prefetched.keys().next().value);
+  return promise;
+}
+
+function load(url) {
+  const hit = prefetched.get(url);
+  prefetched.delete(url);
+  return hit && Date.now() - hit.at < 15000 ? hit.promise : fetchPage(url);
+}
+
+function importMap(doc) {
+  const el = doc.querySelector('script[type="importmap"]');
+  try { return el ? JSON.parse(el.textContent).imports || {} : {}; } catch (e) { return {}; }
+}
+
+function fullLoad(url, push) {
+  if (push) location.assign(url); else location.reload();
+}
+
+/** Go to `url` without a full page load (falls back to one when it can't). */
+export async function navigate(url, opts = {}) {
+  const push = opts.push !== false;
+  if (!G.router) return fullLoad(url, push); // client navigation is off (or no page here is interactive)
+  const seq = ++navSeq;
+  if (push) saveScroll();
+  let res, doc;
+  try {
+    res = await load(url);
+    if (seq !== navSeq) return;
+    doc = new DOMParser().parseFromString(res.html, "text/html");
+    const ok = doc.querySelector("body > [data-pw-root]") && document.querySelector("body > [data-pw-root]");
+    const have = importMap(document);
+    const need = importMap(doc);
+    if (!ok || Object.keys(need).some((k) => have[k] !== need[k])) return fullLoad(url, push);
+  } catch (e) {
+    if (seq === navSeq) fullLoad(url, push);
+    return;
+  }
+  const hash = new URL(url, location.href).hash;
+  const final = new URL(res.url, location.href);
+  if (!final.hash && hash) final.hash = hash;
+  if (push) {
+    if (final.href === location.href) history.replaceState({ pwScroll: null }, "", final.href);
+    else history.pushState({ pwScroll: null }, "", final.href);
+  }
+  G.at = location.pathname + location.search;
+  try {
+    await swap(doc);
+  } catch (e) {
+    reportError(e);
+    location.reload();
+    return;
+  }
+  if (seq !== navSeq) return;
+  markActive();
+  const target = final.hash && document.getElementById(decodeURIComponent(final.hash.slice(1)));
+  if (opts.scroll) scrollTo(opts.scroll[0], opts.scroll[1]);
+  else if (target) target.scrollIntoView();
+  else scrollTo(0, 0);
+  announce(document.title);
+  if (document.activeElement && !document.activeElement.isConnected) document.body.focus();
+  window.dispatchEvent(new CustomEvent("pyweb:navigate", { detail: { url: location.href } }));
+}
+
+function layoutChain(doc) {
+  return Array.from(doc.querySelectorAll("[data-pw-layout]"), (el) => el.getAttribute("data-pw-layout"));
+}
+
+async function swap(doc) {
+  // Keep the layouts both pages share (same code, data and markup); replace what's below them.
+  const before = layoutChain(document);
+  const after = layoutChain(doc);
+  let keep = 0;
+  while (keep < before.length && keep < after.length && before[keep] === after[keep]) keep++;
+  let oldRegion, newRegion;
+  if (keep) {
+    const name = after[keep - 1].split(":")[0];
+    oldRegion = document.querySelector(`[data-pw-slot="${name}"]`);
+    newRegion = doc.querySelector(`[data-pw-slot="${name}"]`);
+  }
+  const oldTop = document.querySelector("body > [data-pw-root]");
+  const newTop = doc.querySelector("body > [data-pw-root]");
+  const gone = keep ? oldRegion.querySelectorAll("[data-pw-root]") : [oldTop, ...oldTop.querySelectorAll("[data-pw-root]")];
+  for (const el of gone) {
+    const name = el.getAttribute("data-pw-root");
+    const d = G.disposers.get(name);
+    if (d) { G.disposers.delete(name); try { d(); } catch (e) { reportError(e); } }
+  }
+  const fresh = keep ? Array.from(newRegion.querySelectorAll("[data-pw-root]")) : [newTop, ...newTop.querySelectorAll("[data-pw-root]")];
+  // Head: title, description/social tags, and any new stylesheets.
+  document.title = doc.title;
+  for (const el of document.head.querySelectorAll("[data-pw-head]")) el.remove();
+  for (const el of doc.head.querySelectorAll("[data-pw-head]")) document.head.appendChild(document.importNode(el, true));
+  const sheets = new Set(Array.from(document.querySelectorAll('link[rel="stylesheet"]'), (l) => l.href));
+  const loading = [];
+  for (const l of doc.head.querySelectorAll('link[rel="stylesheet"]')) {
+    if (sheets.has(new URL(l.getAttribute("href"), location.href).href)) continue;
+    const copy = document.importNode(l, true);
+    loading.push(new Promise((ok) => { copy.onload = copy.onerror = ok; }));
+    document.head.appendChild(copy);
+  }
+  // Modules (and their state) for the new roots, in document order.
+  const modules = [];
+  for (const el of fresh) {
+    const name = el.getAttribute("data-pw-root");
+    const stateId = el.hasAttribute("data-pw-layout") ? "pw-state-" + name : "pw-state";
+    const state = doc.getElementById(stateId);
+    const script = state && state.nextElementSibling;
+    if (!script || script.localName !== "script" || !script.getAttribute("src")) continue;
+    modules.push({ name, stateId, json: state.textContent, src: new URL(script.getAttribute("src"), location.href).href });
+  }
+  G.nav = true;
+  try {
+    await Promise.all([...modules.map((m) => import(m.src)), ...loading]);
+  } finally {
+    G.nav = false;
+  }
+  if (keep) oldRegion.replaceChildren(...Array.from(newRegion.childNodes, (n) => document.importNode(n, true)));
+  else oldTop.replaceWith(document.importNode(newTop, true));
+  for (const m of modules) {
+    let el = document.getElementById(m.stateId);
+    if (!el) {
+      el = document.createElement("script");
+      el.type = "application/json";
+      el.id = m.stateId;
+      document.body.appendChild(el);
+    }
+    el.textContent = m.json;
+    const run = G.mounts.get(m.name);
+    if (run) run();
+  }
+}
+
+function announce(text) {
+  let el = document.getElementById("pw-announcer");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pw-announcer";
+    el.setAttribute("aria-live", "assertive");
+    el.setAttribute("role", "status");
+    el.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap";
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
 }
 
 // ----------------------------------------------------- Python semantics
@@ -1119,6 +1398,7 @@ function getp(v, path) {
 }
 
 export const py = {
+  go: (url) => navigate(String(url)),
   kw, truth, iter, str, repr, text, eq, contains, len, at, slice, add, mul, mod, div, floordiv,
   int, float, round, range, sorted, format, m, mut, setp, getp, setitem, delitem, cmp, call, callm,
   bool: (v) => truth(v),

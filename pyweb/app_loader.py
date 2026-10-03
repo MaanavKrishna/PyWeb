@@ -13,11 +13,12 @@ import inspect
 import os
 import sys
 import types
+import typing
 
 from .compiler import compile_source
 from .compiler import parser as P
 from .compiler.lower import is_ui_stmt
-from .context import NotFound, Redirect
+from .context import BadRequest, NotFound, Redirect, _page_head
 from .ssr import NS_KEY, Renderer, page_html
 
 STATE_PREFIX = "__pyweb_state_"
@@ -66,6 +67,7 @@ class LoadedApp:
         self.files += [lib.path for lib in self.libraries]
         infos = [p["info"] for p in self.compiled["pages"].values()]
         infos += list(self.compiled["components"].values())
+        infos += [lay["info"] for lay in self.compiled.get("layouts", {}).values()]
         self.module = self._exec(source, self.filename, infos)
         self.rpc = {}
         for spec in self.compiled["rpc"]:
@@ -123,41 +125,81 @@ class LoadedApp:
         env[NS_KEY] = ctx
         return info.ui, env
 
-    def renderer(self):
-        return Renderer(self.module.__dict__, component_state=self._component_state, strict=True)
+    def renderer(self, path=None):
+        return Renderer(self.module.__dict__, component_state=self._component_state, strict=True, path=path)
 
-    def coerce_params(self, page_name, raw):
+    def coerce_params(self, page_name, raw, query=None):
+        """Arguments for page ``page_name``: route segments from ``raw`` (bad values are a 404) and,
+        when ``query`` (``{name: [values]}``) is given, the other parameters from the query string
+        (missing or bad values are a 400)."""
         fn = self.module.__dict__[STATE_PREFIX + page_name]
         out = {}
         for pname, param in inspect.signature(fn).parameters.items():
-            if pname not in raw:
-                continue
             ann = param.annotation
-            value = raw[pname]
-            try:
-                if ann in (int, "int"):
-                    value = int(value)
-                elif ann in (float, "float"):
-                    value = float(value)
-            except ValueError:
-                raise NotFound(f"{pname}={value!r}") from None
-            out[pname] = value
+            if pname in raw:
+                try:
+                    out[pname] = _convert(raw[pname], ann)
+                except ValueError:
+                    raise NotFound(f"{pname}={raw[pname]!r}") from None
+            elif query is not None and pname in query:
+                values = query[pname]
+                try:
+                    out[pname] = [_convert(v, _item_type(ann)) for v in values] if _is_list(ann) \
+                        else _convert(values[-1], ann)
+                except ValueError:
+                    raise BadRequest(f"?{pname}={values[-1]!r} isn't a valid {_type_name(ann)}") from None
+            elif query is not None and param.default is inspect.Parameter.empty:
+                raise BadRequest(f"missing ?{pname}=")
         return out
 
-    def render(self, page_name, params=None):
-        """Return ``html`` (str) or a :class:`~pyweb.context.Redirect`."""
+    def _layout(self, name, renderer):
+        """Run layout ``name``; returns its page_html entry or a Redirect."""
+        lay = self.compiled["layouts"][name]
+        fn = self.module.__dict__[STATE_PREFIX + name]
+        result = fn(**({"children": None} if "children" in inspect.signature(fn).parameters else {}))
+        if isinstance(result, Redirect):
+            return result
+        env = dict(result)
+        js_url = (self.asset_urls.get(name) or lay["js_url"]) if lay["js"] else None
+        return {"name": name, "body": renderer.render(lay["info"].ui, env), "js_url": js_url,
+                "state": {k: env.get(k) for k in lay["info"].sent}, "version": lay["version"]}
+
+    def render(self, page_name, params=None, *, query=None, path=None, extra=None):
+        """Return ``html`` (str) or a :class:`~pyweb.context.Redirect`.
+
+        ``params`` are route segments, ``query`` the parsed query string
+        (``{name: [values]}``), ``path`` the request path (for canonical URLs
+        and marking current links), ``extra`` values offered to parameters of
+        the same name without conversion (error pages get ``status``, ``path``,
+        ``message``).
+        """
         page = self.compiled["pages"][page_name]
         info = page["info"]
         fn = self.module.__dict__[STATE_PREFIX + page_name]
-        args = self.coerce_params(page_name, params or {})
-        result = fn(**args)
-        if isinstance(result, Redirect):
-            return result
-        if not isinstance(result, dict):
-            raise TypeError(f"page {page_name}() returned {type(result).__name__}; pages may only "
-                            "return redirect(...)")
-        env = dict(result)
-        body = self.renderer().render(info.ui, env)
+        token = _page_head.set({})
+        try:
+            args = self.coerce_params(page_name, params or {}, query)
+            if extra:
+                wanted = inspect.signature(fn).parameters
+                args.update({k: v for k, v in extra.items() if k in wanted and k not in args})
+            renderer = self.renderer(path)
+            layouts = []
+            for name in page.get("layouts") or ():
+                entry = self._layout(name, renderer)
+                if isinstance(entry, Redirect):
+                    return entry
+                layouts.append(entry)
+            result = fn(**args)
+            if isinstance(result, Redirect):
+                return result
+            if not isinstance(result, dict):
+                raise TypeError(f"page {page_name}() returned {type(result).__name__}; pages may only "
+                                "return redirect(...)")
+            env = dict(result)
+            body = renderer.render(info.ui, env)
+            dynamic = _page_head.get()
+        finally:
+            _page_head.reset(token)
         state = {k: env.get(k) for k in info.sent}
         js_url = self.asset_urls.get(page_name)
         if js_url is None and page["js"]:
@@ -165,6 +207,60 @@ class LoadedApp:
         title = info.title or self.title
         if callable(getattr(self.app, "title_for", None)):
             title = self.app.title_for(page_name) or title
+        title = dynamic.pop("title", None) or title
+        importmap = dict(page.get("importmap") or {})
         return page_html(name=page_name, title=title, body=body, state=state,
                          js_url=js_url if page["js"] else None, css_urls=self.stylesheets,
-                         lang=self.lang, importmap=page.get("importmap"))
+                         lang=self.lang, importmap=importmap, layouts=layouts,
+                         head=self.head_for(page, dynamic, path),
+                         nav=getattr(self.app, "client_nav", True) is not False)
+
+    def head_for(self, page, dynamic, path):
+        """Description, image and canonical URL: the page's own, then ``head()`` values, then the app's."""
+        app = self.app
+        base = getattr(app, "base_url", None)
+        out = {"description": getattr(app, "description", None), "image": getattr(app, "image", None)}
+        out.update(page.get("head") or {})
+        out.update(dynamic)
+        canonical = out.get("canonical")
+        if canonical is None and base and path and not page.get("error_status"):
+            canonical = path
+        if canonical is False:
+            canonical = None
+        for key, value in (("canonical", canonical), ("image", out.get("image"))):
+            if isinstance(value, str) and value.startswith("/") and base:
+                value = base + value
+            out[key] = value
+        return {k: v for k, v in out.items() if v not in (None, False, "")}
+
+
+def _is_list(ann):
+    return ann is list or typing.get_origin(ann) is list or (isinstance(ann, str) and ann.startswith("list"))
+
+
+def _item_type(ann):
+    if isinstance(ann, str):
+        inner = ann[5:-1] if ann.startswith("list[") else "str"
+        return inner
+    args = typing.get_args(ann)
+    return args[0] if args else str
+
+
+def _type_name(ann):
+    return ann if isinstance(ann, str) else getattr(ann, "__name__", str(ann))
+
+
+def _convert(value, ann):
+    """A route or query-string value as the parameter's annotated type (ValueError if it isn't one)."""
+    if ann in (int, "int"):
+        return int(value)
+    if ann in (float, "float"):
+        return float(value)
+    if ann in (bool, "bool"):
+        low = str(value).strip().lower()
+        if low in ("1", "true", "yes", "on", ""):
+            return True
+        if low in ("0", "false", "no", "off"):
+            return False
+        raise ValueError(value)
+    return value

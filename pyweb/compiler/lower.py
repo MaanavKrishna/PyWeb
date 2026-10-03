@@ -29,19 +29,22 @@ import os
 import re
 
 from . import pyjs
-from .ast import ControlFor, ControlIf, Element, ExprNode
+from .ast import ControlFor, ControlIf, Element, ExprNode, SlotNode
 from .errors import CompileError
 from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
                    ModuleContext, Translator, jsname)
 
 RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when as $when, signal as $signal, "
                   "computed as $computed, mount as $mount, onMount as $onMount, py as $py, rpc as $rpc, "
-                  "subscribe as $subscribe } "
+                  "subscribe as $subscribe, slot as $slot, onCleanup as $onCleanup } "
                   "from \"./runtime.js\";")
 
 SECRET_NAME = re.compile(r"(?i)(secret|password|passwd|api_?key|token|private_?key|credential)")
 
 PAGE_DECORATOR_ATTRS = ("page",)
+LAYOUT_DECORATOR = "layout"
+ERROR_DECORATOR = "error"
+PAGE_OPTIONS = ("title", "description", "image", "canonical", "noindex", "layout")
 SERVER_DECORATORS = ("server", "worker", "edge", "task")
 
 
@@ -71,9 +74,23 @@ def _literal_kwargs(call):
 
 def _page_kwargs(fn):
     for d in fn.decorator_list:
-        if isinstance(d, ast.Call) and _deco_name(d) in PAGE_DECORATOR_ATTRS:
+        if isinstance(d, ast.Call) and _deco_name(d) in (*PAGE_DECORATOR_ATTRS, ERROR_DECORATOR):
             return _literal_kwargs(d)
     return {}
+
+
+def _decorator_arg(fn, name):
+    """The first positional argument of ``@app.<name>(...)``: (found, literal value or None)."""
+    for d in fn.decorator_list:
+        if _deco_name(d) != name:
+            continue
+        if isinstance(d, ast.Call) and d.args:
+            try:
+                return True, ast.literal_eval(d.args[0])
+            except ValueError:
+                return True, None
+        return True, None
+    return False, None
 
 
 def _route_of(fn):
@@ -103,9 +120,14 @@ class PageInfo:
     def __init__(self, node, kind, route=None):
         self.node = node
         self.name = node.name
-        self.kind = kind            # "page" | "component"
-        self.route = route
-        self.title = _page_kwargs(node).get("title") if kind == "page" else None
+        self.kind = kind            # "page" | "component" | "layout"
+        self.route = route          # pages: the route; layouts: the path prefix they wrap
+        options = _page_kwargs(node) if kind == "page" else {}
+        self.title = options.get("title")
+        self.head = {k: options[k] for k in ("description", "image", "canonical", "noindex") if k in options}
+        self.layout_choice = options.get("layout", ...)   # ...: by route; None: no layout; "Name"
+        self.error_status = None    # @app.error(404) pages
+        self.layouts = []           # layouts wrapping this page, outermost first
         self.ui = []
         self.params = [a.arg for a in node.args.args]
         self.defaults = {}
@@ -199,7 +221,7 @@ def scan_module(tree, ui_all, filename, resolve=None):
     import importlib
     browser_api = importlib.import_module("pyweb.browser")
     ctx = ModuleContext(filename)
-    pages, components = [], []
+    pages, components, layouts = [], [], []
     browser_bindings = browser_api.bindings()
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -224,7 +246,20 @@ def scan_module(tree, ui_all, filename, resolve=None):
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             decos = [_deco_name(d) for d in node.decorator_list]
             route = _route_of(node)
-            if route is not None or any(d in PAGE_DECORATOR_ATTRS for d in decos):
+            if LAYOUT_DECORATOR in decos and route is None:
+                _found, prefix = _decorator_arg(node, LAYOUT_DECORATOR)
+                if prefix is not None and (not isinstance(prefix, str) or not prefix.startswith("/")):
+                    raise CompileError("@app.layout takes a path prefix such as \"/admin\"", node.lineno, filename)
+                layouts.append(_layout_info(node, prefix or "/", ui_all, filename))
+            elif ERROR_DECORATOR in decos and route is None:
+                _found, status = _decorator_arg(node, ERROR_DECORATOR)
+                if not isinstance(status, int) or not 400 <= status <= 599:
+                    raise CompileError("@app.error takes an HTTP status from 400 to 599, e.g. @app.error(404)",
+                                       node.lineno, filename)
+                info = PageInfo(node, "page", None)
+                info.error_status = status
+                pages.append(info)
+            elif route is not None or any(d in PAGE_DECORATOR_ATTRS for d in decos):
                 pages.append(PageInfo(node, "page", route or "/"))
             elif any(d in SERVER_DECORATORS for d in decos):
                 a = node.args
@@ -263,17 +298,86 @@ def scan_module(tree, ui_all, filename, resolve=None):
                     except (ValueError, SyntaxError, TypeError):
                         ctx.server_only[name] = "a module-level object created on the server"
                         ctx.modconsts.pop(name, None)
-    if not pages:
+    taken = {i.name for i in pages + layouts} | set(ctx.components)
+    if not any(p.error_status is None for p in pages):
         # Single-page fallback: the first function with markup is "/".
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and has_ui(node) \
-                    and node.name not in ctx.components:
+                    and node.name not in taken:
                 pages.append(PageInfo(node, "page", "/"))
                 break
     for info in pages + components:
-        span = (info.node.lineno, getattr(info.node, "end_lineno", info.node.lineno))
-        info.ui = [n for n in ui_all if span[0] <= getattr(n, "line", 0) <= span[1]]
+        info.ui = _ui_of(info.node, ui_all)
+    for info in pages:
+        info.layouts = _layouts_for(info, layouts, filename)
+    ctx.layouts = {info.name: info for info in layouts}
     return ctx, pages, components
+
+
+def _ui_of(node, ui_all):
+    span = (node.lineno, getattr(node, "end_lineno", node.lineno))
+    return [n for n in ui_all if span[0] <= getattr(n, "line", 0) <= span[1]]
+
+
+def _layout_info(node, prefix, ui_all, filename):
+    info = PageInfo(node, "layout", prefix)
+    extra = [p for p in info.params if p != "children"]
+    if extra:
+        raise CompileError(f"layout {node.name!r} can only take `children` (got {', '.join(extra)}); "
+                           "read the request with pyweb.request in its body instead", node.lineno, filename)
+    info.params = []
+    found = []
+
+    def swap(nodes):
+        out = []
+        for n in nodes:
+            if isinstance(n, ExprNode) and n.code.strip() == "children":
+                found.append(n.line)
+                out.append(SlotNode(node.name, n.line))
+                continue
+            if isinstance(n, Element):
+                n.children = swap(n.children)
+            elif isinstance(n, (ControlFor, ControlIf)):
+                n.body = swap(n.body)
+                if isinstance(n, ControlIf):
+                    n.orelse = swap(n.orelse)
+            out.append(n)
+        return out
+
+    info.ui = swap(_ui_of(node, ui_all))
+    if len(found) != 1:
+        where = "has no {children}" if not found else f"uses {{children}} {len(found)} times"
+        raise CompileError(f"layout {node.name!r} {where}; put {{children}} exactly once where pages go",
+                           found[1] if len(found) > 1 else node.lineno, filename)
+    return info
+
+
+def _under(route, prefix):
+    if prefix == "/":
+        return True
+    prefix = prefix.rstrip("/")
+    return route == prefix or route.startswith(prefix + "/")
+
+
+def _layouts_for(page, layouts, filename):
+    """The layouts that wrap ``page``, outermost (shortest prefix) first."""
+    choice = page.layout_choice
+    if choice is None:
+        return []
+    route = page.route if page.route is not None else "/"
+    if choice is ...:
+        if page.error_status is not None:   # error pages can be for any path: root layouts only
+            return [lay for lay in layouts if lay.route == "/"]
+        chain = [lay for lay in layouts if _under(route, lay.route)]
+    else:
+        target = next((lay for lay in layouts if lay.name == choice), None)
+        if target is None:
+            raise CompileError(f"page {page.name!r} asks for layout {choice!r}, which isn't defined "
+                               f"(layouts: {', '.join(lay.name for lay in layouts) or 'none'})",
+                               page.node.lineno, filename)
+        chain = [lay for lay in layouts if lay is target or (lay.route != target.route and
+                                                              _under(target.route, lay.route))]
+    return sorted(chain, key=lambda lay: len(lay.route.rstrip("/")))
 
 
 def _names(t):
@@ -515,7 +619,7 @@ def classify(info, ctx):
         or _has_events(info.ui)
 
     sent = []
-    if info.kind == "page" and info.needs_js:
+    if info.kind in ("page", "layout") and info.needs_js:
         for p in info.params:
             if p in refs:
                 sent.append(p)
@@ -665,7 +769,7 @@ class Emitter:
             else:
                 fallback = init
             if kind == SIGNAL:
-                if info.kind == "page":
+                if info.kind in ("page", "layout"):
                     lines.append(f"  const {js} = $signal({key} in $s ? $s[{key}] : {fallback});")
                 else:
                     lines.append(f"  const {js} = $signal({fallback});")
@@ -680,6 +784,11 @@ class Emitter:
             if mh.args.args:
                 raise CompileError("on_mount() takes no parameters", mh.lineno, self.ctx.filename)
             lines.append("  $onMount(on_mount);")
+        if "on_unmount" in info.handlers:
+            uh = info.handlers["on_unmount"]
+            if uh.args.args:
+                raise CompileError("on_unmount() takes no parameters", uh.lineno, self.ctx.filename)
+            lines.append("  $onCleanup(on_unmount);")
         lines.append(f"  return {self.ui_js(info.ui, scope, '  ')};")
         lines.append("}")
         return "\n".join(lines)
@@ -726,6 +835,8 @@ class Emitter:
         # claimed from the server HTML) in document order.
         if t == "TextNode":
             return f"$t({json.dumps(n.text)})"
+        if t == "SlotNode":
+            return f"$slot({json.dumps(n.layout)})"
         if t == "ExprNode":
             node, js = self._expr(n.code, n.line, scope)
             if self.tr.is_reactive(node, scope):

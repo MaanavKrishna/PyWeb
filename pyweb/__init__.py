@@ -7,7 +7,7 @@ from . import sync, deploy, uploads, lsp, live
 from . import browser as browser_api
 from . import build, css, plugins, platform
 from .jobs import task
-from .context import NotFound, redirect, request, session
+from .context import NotFound, head, redirect, request, session
 from .rpc import RPCError
 from .decorators import component, edge, server, worker
 from .realtime import channel, publish, subscribe
@@ -18,6 +18,7 @@ __all__ = [
     "request",
     "session",
     "redirect",
+    "head",
     "NotFound",
     "RPCError",
     "component",

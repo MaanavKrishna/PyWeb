@@ -43,3 +43,10 @@ class ControlIf:
     body: list
     orelse: list = field(default_factory=list)
     line: int = 0
+
+
+@dataclass
+class SlotNode:
+    """Where a layout puts the page (``{children}`` in an ``@app.layout``)."""
+    layout: str
+    line: int = 0

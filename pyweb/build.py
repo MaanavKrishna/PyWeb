@@ -182,26 +182,45 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
     with open(f"{out}/static/{rt_name}", "w", encoding="utf-8") as fh:
         fh.write(runtime_js)
 
+    def write_module(name, js, mappings):
+        body = js.replace('from "./runtime.js"', f'from "./{rt_name}"')
+        if production:
+            body = minify_js(body, minifier=minifier)
+            js_name = f"{name}.{content_hash(body)}.js"
+            url = f"/static/{js_name}"
+        else:
+            js_name = f"{name}.js"
+            url = f"/static/{js_name}?v={content_hash(body)[:10]}"
+        with open(f"{out}/static/{js_name}", "w", encoding="utf-8") as fh:
+            fh.write(body)
+        with open(f"{out}/static/{js_name}.map", "w", encoding="utf-8") as fh:
+            json.dump({"page": name, "mappings": mappings}, fh)
+        return js_name, url, body
+
+    def point_at(html, name, url):
+        return re.sub(r'src="/static/' + re.escape(name) + r'\.js\?v=[0-9a-f]+"', f'src="{url}"', html)
+
+    manifest_layouts, layout_urls = {}, {}
+    for name, lay in (compiled.get("layouts") or {}).items():
+        if lay.get("js"):
+            js_name, layout_urls[name], body = write_module(name, lay["js"], [])
+            manifest_layouts[name] = {"prefix": lay.get("prefix"), "js": js_name, "bytes": len(body.encode()),
+                                      "gzip_bytes": _gzip_size(body)}
+        else:
+            manifest_layouts[name] = {"prefix": lay.get("prefix"), "js": "", "bytes": 0, "gzip_bytes": 0}
+
     manifest_pages = {}
     for name, page in compiled["pages"].items():
         js = page.get("js", "")
         html = page.get("html", "")
+        for lname in page.get("layouts") or ():
+            if lname in layout_urls:
+                html = point_at(html, lname, layout_urls[lname])
         js_name = ""
         body = ""
         if js:
-            body = js.replace('from "./runtime.js"', f'from "./{rt_name}"')
-            if production:
-                body = minify_js(body, minifier=minifier)
-                js_name = f"{name}.{content_hash(body)}.js"
-                url = f"/static/{js_name}"
-            else:
-                js_name = f"{name}.js"
-                url = f"/static/{js_name}?v={content_hash(body)[:10]}"
-            with open(f"{out}/static/{js_name}", "w", encoding="utf-8") as fh:
-                fh.write(body)
-            with open(f"{out}/static/{js_name}.map", "w", encoding="utf-8") as fh:
-                json.dump({"page": name, "mappings": page.get("sourcemap", [])}, fh)
-            html = re.sub(r'src="/static/' + re.escape(name) + r'\.js\?v=[0-9a-f]+"', f'src="{url}"', html)
+            js_name, url, body = write_module(name, js, page.get("sourcemap", []))
+            html = point_at(html, name, url)
         css_text = ""
         if extract_css:
             html, css_text = extract_styles(html)
@@ -214,7 +233,8 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
         with open(f"{out}/server/{name}.html", "w", encoding="utf-8") as fh:
             fh.write(html)
         manifest_pages[name] = {
-            "route": page.get("route"), "js": js_name, "css": css_name,
+            "route": page.get("route"), "error_status": page.get("error_status"),
+            "layouts": list(page.get("layouts") or ()), "js": js_name, "css": css_name,
             "runtime": rt_name if js else "", "bytes": len(body.encode()),
             "gzip_bytes": _gzip_size(body) if body else 0,
             "dynamic": bool(page.get("dynamic")),
@@ -237,7 +257,7 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
         from pyweb import __version__ as pyweb_version
     except ImportError:  # pragma: no cover
         pyweb_version = "unknown"
-    manifest = {"pyweb": pyweb_version, "pages": manifest_pages,
+    manifest = {"pyweb": pyweb_version, "pages": manifest_pages, "layouts": manifest_layouts,
                 "rpc": compiled.get("rpc", []), "ir": compiled.get("ir_text", ""),
                 "runtime": rt_name, "runtime_bytes": len(runtime_js.encode()),
                 "runtime_gzip_bytes": _gzip_size(runtime_js),

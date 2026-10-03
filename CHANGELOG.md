@@ -28,6 +28,31 @@ project uses [semantic versioning](https://semver.org).
   TypeScript signature; completion offers installed packages in
   `npm("` and a module's exports after `name.`.
 - New docs page: npm packages.
+- **Layouts.** `@app.layout` wraps every page (or, with
+  `@app.layout("/admin")`, pages under a prefix) in shared markup;
+  `{children}` marks where the page goes. Layouts nest, have their own
+  server code, state and handlers, and pages can opt out with
+  `layout=None` or pick one with `layout="Name"`.
+- **Client-side navigation.** Links between pages fetch the next page's
+  HTML and swap it in below the layouts both pages share, so layout
+  state (an open menu, a player) survives. Links are prefetched on
+  hover or focus, back/forward restore the scroll position, and anything
+  unusual falls back to a full page load. `navigate("/path")` from
+  `pyweb.browser` does the same from browser code; `on_unmount` runs
+  when a page is left; `App(client_nav=False)` turns it off.
+- **Current links.** Links to the current page get
+  `aria-current="page"` and links to its parent sections
+  `aria-current="true"`, on the server and after each navigation.
+- **Head tags.** `@app.page(description=..., image=..., noindex=...)` and
+  `head(title=..., description=...)` in page code add description, Open
+  Graph and Twitter tags; `App(base_url=...)` adds canonical URLs and
+  absolute image links.
+- **Error pages in `.pyweb`.** `@app.error(404)` / `@app.error(500)` pages
+  take `path`, `status`, `message` or `request_id` and use root layouts.
+- **Typed query parameters.** Page parameters that aren't in the route
+  are read from the query string and converted by annotation (`int`,
+  `float`, `bool`, `list[...]`); bad or missing values answer 400.
+- New docs page: Layouts & navigation.
 
 ### Changed
 - `pyweb.npm` (TypeScript declarations to dataclasses) is now
@@ -35,6 +60,8 @@ project uses [semantic versioning](https://semver.org).
   writes an esm.sh import map; packages come from `pyweb.lock`.
 - The default Content Security Policy adds `worker-src 'self' blob:` so
   packages can start Web Workers.
+- The browser runtime is about 14 KB gzipped (was about 11 KB), for
+  client-side navigation and npm support.
 - New website design: a colour system where blue means the browser and
   amber the server, self-hosted Inter / Bricolage Grotesque / JetBrains
   Mono, dark code windows, and a landing page that shows each line of an

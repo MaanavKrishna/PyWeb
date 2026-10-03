@@ -170,14 +170,32 @@ def _compile(source, filename, route, title, libs, stack):
         classify(comp, ctx)
     lock = _read_lock(filename) if ctx.npm_bindings or ctx.npm_aliases else None
     importmap = {}
+    for lay in ctx.layouts.values():
+        classify(lay, ctx)
     for info in pages:
         classify(info, ctx)
     emitter = Emitter(ctx)
+    app_cfg = ctx.app_config
+    layouts = {}
+    for lay in ctx.layouts.values():
+        js = emitter.page_js(lay)
+        lay_map = _page_importmap(lay, ctx, lock, filename)
+        importmap.update(lay_map)
+        env = static_state(lay, ctx)
+        version = hashlib.sha256(js.encode()).hexdigest()[:10]
+        layouts[lay.name] = {
+            "name": lay.name, "prefix": lay.route, "info": lay, "js": js, "importmap": lay_map,
+            "js_url": f"/static/{lay.name}.js?v={version}" if js else None, "version": version if js else "0",
+            "body": _renderer(ctx).render(lay.ui, env), "state": {k: env.get(k) for k in lay.sent},
+            "lineno": lay.node.lineno, "dynamic": any(lay.origin[n] == "server" for n in lay.order),
+        }
     artifacts = {}
     page_infos, all_signals, all_computeds, all_place, all_edges = [], {}, {}, {}, []
     for info in pages:
         js = emitter.page_js(info)
-        page_map = _page_importmap(info, ctx, lock, filename)
+        page_map = dict(_page_importmap(info, ctx, lock, filename))
+        for lay in info.layouts:
+            page_map.update(layouts[lay.name]["importmap"])
         importmap.update(page_map)
         args = {p: None for p in info.params}
         env = static_state(info, ctx, args)
@@ -185,10 +203,11 @@ def _compile(source, filename, route, title, libs, stack):
         state = {k: env.get(k) for k in info.sent}
         version = hashlib.sha256(js.encode()).hexdigest()[:10]
         js_url = f"/static/{info.name}.js?v={version}" if js else None
-        app_cfg = ctx.app_config
         page_title = info.title or app_cfg.get("title") or title
         html = page_html(name=info.name, title=page_title, body=body, state=state, js_url=js_url, importmap=page_map,
-                         css_urls=app_cfg.get("stylesheets") or (), lang=app_cfg.get("lang") or "en")
+                         css_urls=app_cfg.get("stylesheets") or (), lang=app_cfg.get("lang") or "en",
+                         layouts=[layouts[lay.name] for lay in info.layouts], head=_static_head(info, app_cfg),
+                         nav=app_cfg.get("client_nav", True) is not False)
         signals = [n for n in info.order if info.kinds[n] == "signal"]
         computeds = {n: {"code": ast.unparse(info.inits[n]),
                          "deps": sorted(d for d in info.deps.get(n, ()) if d in info.kinds),
@@ -210,10 +229,13 @@ def _compile(source, filename, route, title, libs, stack):
             "ui": info.ui, "signals": signals, "computeds": computeds,
             "placement": placement, "edges": edges, "initial": initial,
             "js": js, "html": html, "html_body": body, "lineno": info.node.lineno,
-            "params": info.params, "route": info.route or route, "sourcemap": sourcemap,
+            "params": info.params, "sourcemap": sourcemap,
+            "route": None if info.error_status else (info.route or route), "error_status": info.error_status,
+            "layouts": [lay.name for lay in info.layouts], "head": dict(info.head),
             "handlers": {h: {"line": n.lineno} for h, n in info.handlers.items()},
             "source": ast.get_source_segment(source, info.node) or "",
-            "dynamic": bool(info.params) or any(info.origin[n] == "server" for n in info.order),
+            "dynamic": bool(info.params) or any(info.origin[n] == "server" for n in info.order)
+            or any(layouts[lay.name]["dynamic"] for lay in info.layouts),
             "state_keys": list(info.sent), "title": page_title, "info": info, "js_url": js_url,
             "importmap": page_map,
         }
@@ -221,7 +243,8 @@ def _compile(source, filename, route, title, libs, stack):
         all_computeds.update(computeds)
         all_place.update(placement)
         all_edges.extend(edges)
-        page_infos.append({"name": info.name, "route": info.route or route, "signals": signals})
+        if not info.error_status:
+            page_infos.append({"name": info.name, "route": info.route or route, "signals": signals})
     for name, callers in ctx.rpc_calls.items():
         callers = sorted(c for c in callers if not c.startswith("<"))
         if callers:
@@ -230,9 +253,16 @@ def _compile(source, filename, route, title, libs, stack):
     for spec in rpc:
         all_place.setdefault(spec["name"], ("server", "@server function (not called from browser code)"))
     graph = build_graph(page_infos, rpc, all_signals, all_computeds, all_place, all_edges)
-    return {"graph": graph, "ir_text": to_text(graph), "rpc": rpc, "pages": artifacts,
+    return {"graph": graph, "ir_text": to_text(graph), "rpc": rpc, "pages": artifacts, "layouts": layouts,
             "components": {c.name: c for c in components}, "context": ctx,
             "libraries": libraries, "emitter": emitter, "importmap": importmap}
+
+
+def _static_head(info, app_cfg):
+    """Head tags known at compile time (the server adds canonical URLs and ``head()`` values)."""
+    head = {"description": app_cfg.get("description"), "image": app_cfg.get("image")}
+    head.update(info.head)
+    return {k: v for k, v in head.items() if v not in (None, False, "")}
 
 
 def _read_lock(filename):

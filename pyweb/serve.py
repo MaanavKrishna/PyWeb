@@ -293,7 +293,7 @@ def serve(dist, *, host="0.0.0.0", port=8000, app_factory=None, logger=None,
     app_source = os.path.join(dist, manifest.get("app") or "app.pyweb")
     if not app_factory and os.path.isfile(app_source):
         from pyweb.app_loader import LoadedApp
-        asset_urls = {name: f"/static/{p['js']}" for name, p in manifest.get("pages", {}).items()
+        asset_urls = {name: f"/static/{p['js']}" for name, p in {**manifest.get("pages", {}), **manifest.get("layouts", {})}.items()
                       if p.get("js")}
         app = LoadedApp(app_source, asset_urls=asset_urls)
         secure = os.environ.get("PYWEB_COOKIE_SECURE", "").lower() in ("1", "true")

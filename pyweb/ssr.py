@@ -17,11 +17,13 @@ from __future__ import annotations
 import ast
 import builtins
 import functools
+import hashlib
 import html as _html
 import json
+import posixpath
 import re
 
-from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, TextNode
+from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, SlotNode, TextNode
 
 VOID = {"input", "img", "br", "hr", "meta", "link", "source", "wbr",
         "col", "base", "area", "embed", "track", "param"}
@@ -119,6 +121,29 @@ def _loop_target(target):
 #: Key in a component's render env naming the .pyweb file it came from, so
 #: components it uses are looked up in that file (``None``: the app itself).
 NS_KEY = "__pyweb_ns__"
+#: Stands in for the page inside a rendered layout until :func:`page_html` nests them.
+SLOT_MARK = "\x00pyweb-slot\x00"
+
+
+def link_current(href, path):
+    """``aria-current`` for a link to ``href`` on the page at ``path``: "page", "true" (a parent
+    section) or None."""
+    if not path or not isinstance(href, str) or not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+        return None
+    from urllib.parse import urlsplit
+    parts = urlsplit(href)
+    if parts.scheme or parts.netloc:
+        return None
+    target = parts.path
+    if not target:
+        return None
+    if not target.startswith("/"):
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
+    if target == path:
+        return "page"
+    if target != "/" and path.startswith(target.rstrip("/") + "/"):
+        return "true"
+    return None
 
 
 class Renderer:
@@ -130,7 +155,8 @@ class Renderer:
     component (see :data:`NS_KEY`).
     """
 
-    def __init__(self, globals_=None, component_state=None, strict=True):
+    def __init__(self, globals_=None, component_state=None, strict=True, path=None):
+        self.path = path   # the request path, for marking links to the current page
         self.globals = dict(globals_ or {})
         self.globals.setdefault("__builtins__", builtins)
         self.component_state = component_state
@@ -154,6 +180,8 @@ class Renderer:
             return _html.escape(n.text, quote=False)
         if isinstance(n, ExprNode):
             return text_of(self.eval(n.code, env, n.line))
+        if isinstance(n, SlotNode):
+            return f'<div data-pw-slot="{_html.escape(n.layout)}" style="display:contents">{SLOT_MARK}</div>'
         if isinstance(n, ControlFor):
             items = self.eval(n.iterable, env, n.line)
             if items is None:
@@ -215,6 +243,10 @@ class Renderer:
                 continue
             if name in URL_ATTRS:
                 v = safe_url(v)
+            if name == "href" and n.tag == "a" and "aria-current" not in n.attrs:
+                current = link_current(v, self.path)
+                if current:
+                    parts.append(f' aria-current="{current}"')
             parts.append(f' {name}="{_html.escape(str(v))}"')
         return "".join(parts)
 
@@ -265,17 +297,68 @@ def _bind(target, value, scope):
     raise RenderError("unsupported loop target")
 
 
-def page_html(*, name, title, body, state, js_url=None, css_urls=(), head_extra="", lang="en", importmap=None):
-    """The full HTML document for one page. ``importmap`` maps npm specifiers to vendored files."""
-    css = "".join(f'<link rel="stylesheet" href="{_html.escape(u)}">' for u in css_urls)
-    if importmap and js_url:
+def head_tags(title, head):
+    """``<meta>``/``<link>`` tags for a page's description, social cards and canonical URL."""
+    head = head or {}
+    esc = _html.escape
+    out = []
+    description, image, canonical = head.get("description"), head.get("image"), head.get("canonical")
+    if description:
+        out.append(f'<meta name="description" content="{esc(str(description))}">')
+    if canonical:
+        out.append(f'<link rel="canonical" href="{esc(safe_url(str(canonical)))}">')
+    if head.get("noindex"):
+        out.append('<meta name="robots" content="noindex">')
+    if description or image or canonical:
+        out.append(f'<meta property="og:title" content="{esc(str(title))}">')
+        out.append('<meta property="og:type" content="website">')
+        if description:
+            out.append(f'<meta property="og:description" content="{esc(str(description))}">')
+        if canonical:
+            out.append(f'<meta property="og:url" content="{esc(safe_url(str(canonical)))}">')
+        if image:
+            out.append(f'<meta property="og:image" content="{esc(safe_url(str(image)))}">')
+        out.append(f'<meta name="twitter:card" content="{"summary_large_image" if image else "summary"}">')
+    return "".join(t.replace("<meta ", "<meta data-pw-head ", 1).replace("<link ", "<link data-pw-head ", 1)
+                   for t in out)
+
+
+def page_html(*, name, title, body, state, js_url=None, css_urls=(), head_extra="", lang="en", importmap=None,
+              layouts=(), head=None, nav=True):
+    """The full HTML document for one page.
+
+    ``importmap`` maps npm specifiers to vendored files. ``layouts`` wrap
+    the page, outermost first: dicts with ``name``, ``body`` (containing
+    :data:`SLOT_MARK`), ``state``, ``js_url`` and ``version``. ``head`` adds
+    description/social/canonical tags. ``nav=False`` turns off client-side
+    navigation.
+    """
+    esc = _html.escape
+    css = "".join(f'<link rel="stylesheet" href="{esc(u)}">' for u in css_urls)
+    inner = f'<div data-pw-root="{esc(name)}">{body}</div>'
+    for lay in reversed(list(layouts)):
+        lname = esc(lay["name"])
+        # Client-side navigation keeps a layout only while its code, server data and markup
+        # (current-link marks aside) are unchanged.
+        seen = re.sub(r' aria-current="[^"]*"', "", lay["body"])
+        print_ = hashlib.sha256(f'{lay.get("version")}|{seen}|{state_json(lay.get("state") or {})}'.encode())
+        inner = (f'<div data-pw-root="{lname}" data-pw-layout="{lname}:{print_.hexdigest()[:12]}">'
+                 + lay["body"].replace(SLOT_MARK, inner, 1) + "</div>")
+    script = ""
+    for lay in layouts:
+        if lay.get("js_url"):
+            script += (f'<script id="pw-state-{esc(lay["name"])}" type="application/json">'
+                       f'{state_json(lay.get("state") or {})}</script>'
+                       f'<script type="module" src="{esc(lay["js_url"])}"></script>')
+    if js_url:
+        script += (f'<script id="pw-state" type="application/json">{state_json(state)}</script>'
+                   f'<script type="module" src="{esc(js_url)}"></script>')
+    if importmap and script:
         from .packages import importmap_json
         head_extra = f'<script type="importmap">{importmap_json(importmap)}</script>' + head_extra
-    script = ""
-    if js_url:
-        script = (f'<script id="pw-state" type="application/json">{state_json(state)}</script>'
-                  f'<script type="module" src="{_html.escape(js_url)}"></script>')
-    return (f"<!doctype html>\n<html lang=\"{_html.escape(lang)}\"><head><meta charset=\"utf-8\">"
+    if not nav:
+        head_extra = '<meta name="pw-nav" content="off">' + head_extra
+    return (f"<!doctype html>\n<html lang=\"{esc(lang)}\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-            f"<title>{_html.escape(title)}</title>{css}{head_extra}</head>"
-            f"<body><div data-pw-root=\"{_html.escape(name)}\">{body}</div>{script}</body></html>\n")
+            f"<title>{esc(title)}</title>{head_tags(title, head)}{css}{head_extra}</head>"
+            f"<body>{inner}{script}</body></html>\n")

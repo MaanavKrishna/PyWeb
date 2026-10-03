@@ -171,8 +171,22 @@ def Item(item_id: int):
 - Database: `from pyweb.db import connect; db = connect("sqlite:///app.db")`;
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
   parameters; `with db.transaction(): ...`.
-- In handlers, navigate with `window.location.href = "/path"`.
-- Run code after load with a handler named `on_mount`.
+- Query parameters: page params not in the route come from the query
+  string, typed by annotation: `def Search(q: str = "", page: int = 1)`.
+  Missing required / bad values -> 400.
+- Layouts: `@app.layout` (or `@app.layout("/admin")`) on a function with
+  markup containing `{children}` once wraps every page under the prefix;
+  `@app.page(..., layout=None)` opts out. Links between pages load without
+  a full reload and keep the layout's state; mark nothing yourself: links
+  to the current page get `aria-current="page"` automatically.
+- In handlers, navigate with `navigate("/path")` (`from pyweb.browser import navigate`).
+- Head tags: `@app.page("/", title=..., description=..., image=...)`, or
+  `head(title=..., description=...)` in the page body (server). `App(base_url=...)`
+  adds canonical URLs.
+- Error pages: `@app.error(404)` on a page function taking `path` (and/or
+  `status`, `message`, `request_id`).
+- Run code after load with a handler named `on_mount`; stop timers in
+  `on_unmount` (runs when the user navigates away).
 - Live updates: in a server function `publish("room:1", data)`; in the
   page `feed = channel("room:1")` (runs on the server); in `on_mount`
   `subscribe(feed, handler)`, where `handler(message)` assigns page
@@ -218,6 +232,8 @@ lambdas), never directly in markup. Give libraries an element with
 | `... is not supported in browser code` | Rewrite with supported constructs or move it to `@server`. |
 | `npm package 'x' isn't installed` | Run `pyweb add x` in the app folder (the folder with `pyweb.lock`). |
 | `uses X from npm(...), which only exists in the browser` | Use the package in a handler or `on_mount` and store the result in a page variable that markup shows. |
+| `layout ... has no {children}` | Put `{children}` exactly once in the layout's markup where pages go. |
+| `isn't a valid int` / `missing ?name=` (400) | Give the query parameter a default, or link with a valid value. |
 | `pyweb add`: `is CommonJS` / `imports the Node.js module` | Pick an ES-module browser package (e.g. `lodash-es`), or do the work in an `@server` function. |
 
 ## 9. Workflow for agents

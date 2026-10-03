@@ -19,8 +19,15 @@ def cmd_inspect(args):
     out = compile_source(src, filename=args.file)
     print(out["ir_text"])
     print("---")
+    for name, lay in out.get("layouts", {}).items():
+        info = lay["info"]
+        print(f"layout {name} prefix={lay['prefix']} state={[n for n in info.order if n in info.sent]}")
+        for symbol, (loc, reason) in info.reasons.items():
+            print(f"  {loc:14s} {symbol}  # {reason}")
     for name, page in out["pages"].items():
-        print(f"page {name} route={page['route']} signals={page['signals']} computeds={list(page['computeds'])}")
+        where = f"error={page['error_status']}" if page.get("error_status") else f"route={page['route']}"
+        print(f"page {name} {where} signals={page['signals']} computeds={list(page['computeds'])}"
+              + (f" layouts={page['layouts']}" if page.get("layouts") else ""))
         placement = page.get("placement") or {}
         for symbol, decision in placement.items():
             loc, reason = decision if isinstance(decision, tuple) else (decision, "")

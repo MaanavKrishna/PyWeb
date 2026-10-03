@@ -72,7 +72,7 @@ def test_bench_reports_shapes():
         assert row["html_bytes"] > 0 and row["ssr_ms"] > 0
         assert row["source_lines"] >= 4 and row["compile_ms"] >= 0
     assert results["blog"]["js_bytes"] == 0          # static page ships no JS at all
-    assert results["todo"]["runtime_js_gzip"] < 12288
+    assert results["todo"]["runtime_js_gzip"] < 15360
     assert results["todo"]["js_bytes"] == results["todo"]["page_js_bytes"] + results["todo"]["runtime_js_bytes"]
     counter = results["counter"]
     assert counter["signals"] >= 1  # count detected as reactive

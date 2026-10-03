@@ -219,6 +219,17 @@ class _FileSystem(Api):
 filesystem = _FileSystem()
 
 
+class _Navigate(Api):
+    """``navigate("/path")``: go to another page of the app from browser code (no full reload)."""
+    _js = "$py.go"
+
+    def __call__(self, url):
+        self._call("navigate", url)
+
+
+navigate = _Navigate()
+
+
 def bindings() -> dict:
     """Name -> JS binding for every browser API (used by codegen)."""
     import sys as _sys

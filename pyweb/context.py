@@ -63,6 +63,31 @@ class NotFound(Exception):
     """Raise from a page (or route param conversion) to answer 404."""
 
 
+class BadRequest(Exception):
+    """A query parameter is missing or has the wrong type: answered with 400."""
+
+
+_page_head = contextvars.ContextVar("pyweb_page_head", default=None)
+
+HEAD_FIELDS = ("title", "description", "image", "canonical", "noindex")
+
+
+def head(*, title=None, description=None, image=None, canonical=None, noindex=None):
+    """Set the page's ``<title>`` and meta tags from page (or layout) code.
+
+    Values left as ``None`` keep what ``@app.page(...)`` or the app set. Call it
+    while the page renders on the server, e.g. once a record is loaded::
+
+        head(title=post.title, description=post.summary, image=post.cover)
+    """
+    target = _page_head.get()
+    if target is None:
+        raise RuntimeError("head() only works while a page renders (in a page or layout body)")
+    for key, value in zip(HEAD_FIELDS, (title, description, image, canonical, noindex)):
+        if value is not None:
+            target[key] = value
+
+
 class RequestContext:
     def __init__(self, request, *, auth_secret=None, secure_cookies=False):
         self.request = request

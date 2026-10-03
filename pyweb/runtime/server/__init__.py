@@ -82,7 +82,11 @@ class Server:
         self.compiled = compiled
         self.rpc_impls: dict[str, object] = {}
         self.routes: list[tuple[re.Pattern, str]] = []
+        self.error_pages: dict[int, str] = {}
         for name, page in compiled["pages"].items():
+            if page.get("error_status"):
+                self.error_pages[page["error_status"]] = name
+                continue
             pat = "^" + re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", page["route"]) + "$"
             self.routes.append((re.compile(pat), name))
         # Production RPC controls (all optional; secure defaults when set).
@@ -333,12 +337,16 @@ class Server:
         return self.error_page(404, req)
 
     def _render_page(self, req, name, params):
-        from pyweb.context import NotFound, Redirect
-        from urllib.parse import unquote
+        from pyweb.context import BadRequest, NotFound, Redirect
+        from urllib.parse import parse_qs, unquote
+        path, _, qs = req.path.partition("?")
         try:
-            result = self.app.render(name, {k: unquote(v) for k, v in params.items()})
+            result = self.app.render(name, {k: unquote(v) for k, v in params.items()},
+                                     query=parse_qs(qs, keep_blank_values=True), path=path)
         except NotFound:
             return self.error_page(404, req)
+        except BadRequest as exc:
+            return self.error_page(400, req, message=str(exc))
         except _rpc_error() as exc:
             status = {"not_found": 404, "forbidden": 403, "unauthenticated": 401}.get(exc.code)
             if status is None:
@@ -368,6 +376,11 @@ class Server:
         template = overrides.get(status)
         request_id = getattr(req, "id", "") if req is not None else ""
         path = getattr(req, "path", "") if req is not None else ""
+        page = self.error_pages.get(status) or (self.error_pages.get(500) if status >= 500 else None)
+        if page and template is None and self.app is not None and not (self.debug and status >= 500 and message):
+            rendered = self._render_error(page, status, req, message)
+            if rendered is not None:
+                return rendered
         if template is not None:
             body = template.replace("{{path}}", _html.escape(path)).replace(
                 "{{request_id}}", _html.escape(request_id))
@@ -395,6 +408,22 @@ class Server:
             + "</body></html>")
         return Response(status, body, {"Content-Type": "text/html",
                                        "X-Request-Id": request_id})
+
+    def _render_error(self, name, status, req, message):
+        """An ``@app.error`` page, or None if it fails too (the built-in page is used instead)."""
+        from pyweb.context import Redirect
+        path = (getattr(req, "path", "") or "").split("?")[0]
+        try:
+            html = self.app.render(name, path=path, extra={"status": status, "path": path, "message": message or "",
+                                                           "request_id": getattr(req, "id", "")})
+        except Exception as exc:  # noqa: BLE001 - never fail while reporting a failure
+            if self.logger is not None:
+                self.logger.error(f"error page {name} failed: {exc}", page=name)
+            return None
+        if isinstance(html, Redirect):
+            return Response(html.status, "", {"Location": html.url})
+        return Response(status, html, {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+                                       "X-Request-Id": getattr(req, "id", "")})
 
     def register_error(self, status, html_template):
         """Register a custom error shell, e.g. ``register_error(404, ...)``."""

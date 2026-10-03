@@ -118,6 +118,7 @@ class ModuleContext:
     def __init__(self, filename="<pyweb>"):
         self.filename = filename
         self.app_config = {}       # literal App(...) keyword arguments
+        self.layouts = {}          # name -> PageInfo for @app.layout functions
         self.server_fns = {}       # name -> [param names]
         self.helpers = {}          # name -> FunctionDef
         self.modconsts = {}        # name -> python value

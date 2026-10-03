@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
-      - run: ruff check pyweb tests website benchmarks
+      - run: ruff check pyweb tests website
 
   test:
     name: unit (Python ${{ matrix.python }})
@@ -50,7 +50,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e .
       # Loose limits: catches order-of-magnitude regressions, not noise.
-      - run: python benchmarks/bench.py --max-request-us 2000 --max-compile-ms 50
+      - run: python -m pyweb.bench --max-ssr-ms 2 --max-compile-ms 50
 
   browser:
     name: browser (Playwright + Chromium)

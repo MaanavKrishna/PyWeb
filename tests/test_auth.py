@@ -57,3 +57,14 @@ def test_required_and_permissions():
 
 def test_password_hash_differs_per_salt():
     assert hash_password("x") != hash_password("x")
+
+
+def test_pure_python_pbkdf2_matches_hashlib(monkeypatch):
+    import hashlib
+
+    from pyweb import auth
+    expected = hashlib.pbkdf2_hmac("sha256", b"pw", b"salt", 1000)
+    monkeypatch.delattr(hashlib, "pbkdf2_hmac")  # as on Pyodide, which has no OpenSSL
+    assert auth._pbkdf2_sha256(b"pw", b"salt", 1000) == expected
+    stored = auth.hash_password("correct horse", iterations=2000)
+    assert auth.verify_password("correct horse", stored) and not auth.verify_password("wrong", stored)

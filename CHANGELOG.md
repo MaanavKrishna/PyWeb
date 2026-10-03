@@ -34,6 +34,11 @@ project uses [semantic versioning](https://semver.org).
   VS Code extension (`editors/vscode`) adds highlighting and snippets and
   starts it; releases attach a `.vsix`. Setup for Neovim and Helix is in
   the command-line docs.
+- **Playground** on the website: edit an app and run it in the browser,
+  with the real compiler, server rendering, `@server` functions,
+  sessions and live updates running on Pyodide. Shows the compiled
+  JavaScript and what runs where, reports errors with a fix, and shares
+  code as links.
 - `python -m pyweb.bench --max-ssr-ms N --max-compile-ms N` fails when
   a benchmark exceeds its budget; CI runs it.
 
@@ -43,6 +48,10 @@ project uses [semantic versioning](https://semver.org).
   `boundary_lens`); they described an earlier API and no editor used them.
 
 ### Changed
+- `import pyweb` no longer needs the `sqlite3` module (it's imported when
+  a SQLite database is opened), and password hashing falls back to a
+  pure-Python PBKDF2 on Pythons without OpenSSL. Both make PyWeb run on
+  Pyodide.
 - `/__pyweb/events` and `/__pyweb/poll` require a signed `?feed=`; the
   unauthenticated `?channel=` form is gone, so channels are no longer
   readable by anyone who guesses a name.

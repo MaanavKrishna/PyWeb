@@ -6,7 +6,6 @@ from __future__ import annotations
 import os
 import queue
 import re
-import sqlite3
 import threading
 from contextlib import contextmanager
 
@@ -464,6 +463,7 @@ class SQLiteDB(_PooledDB):
         super().__init__(pool_size=pool_size, timeout=timeout)
 
     def _connect(self):
+        import sqlite3  # imported on use: some Pythons (e.g. Pyodide) ship it separately
         return sqlite3.connect(self.path, check_same_thread=False,
                                timeout=self._timeout)
 

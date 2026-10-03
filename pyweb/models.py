@@ -3,13 +3,12 @@ bound to a database driver (SQLite/Postgres)."""
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 from typing import ClassVar
 
 _lock = threading.RLock()
 _db_path = ":memory:"
-_conns: dict[str, sqlite3.Connection] = {}
+_conns: dict = {}  # path -> sqlite3.Connection
 
 
 class Email(str):
@@ -205,6 +204,7 @@ class Model(metaclass=ModelMeta):
         key = _db_path
         with _lock:
             if key not in _conns:
+                import sqlite3  # imported on use: some Pythons (e.g. Pyodide) ship it separately
                 _conns[key] = sqlite3.connect(key, check_same_thread=False)
                 _conns[key].row_factory = sqlite3.Row
             return _conns[key]

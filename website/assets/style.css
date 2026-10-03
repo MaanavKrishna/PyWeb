@@ -209,3 +209,56 @@ details.compiled[open] { padding-bottom: 6px; }
   .logo small { display: none; }
 }
 a.eyebrow:hover { text-decoration: none; filter: brightness(1.05); box-shadow: 0 0 0 1px var(--accent); }
+
+/* Playground */
+.playground { max-width: 1440px; margin: 0 auto; padding: 18px 20px 8px; }
+.pg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
+.pg-bar h1 { font-size: 22px; margin: 0 8px 0 0; letter-spacing: -0.01em; }
+.pg-bar .btn { padding: 7px 14px; font-size: 14px; cursor: pointer; font-family: inherit; }
+.pg-pick { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.pg-pick select, .pg-urlbar select, .pg-urlbar input { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.pg-status { margin-left: auto; font-size: 13px; color: var(--muted); }
+.pg-status.busy::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: -1px;
+  border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: pg-spin .8s linear infinite; }
+@keyframes pg-spin { to { transform: rotate(360deg); } }
+.pg-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; height: calc(100vh - 60px - 150px); min-height: 480px; }
+.pg-editor, .pg-output { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: var(--radius, 12px);
+  overflow: hidden; background: var(--bg); }
+.pg-file { font: 13px var(--mono); color: var(--muted); padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--bg-soft); }
+.pg-code { flex: 1; display: flex; min-height: 0; background: var(--bg-code); }
+.pg-code pre, .pg-code textarea { margin: 0; font: 13.5px/1.6 var(--mono); padding: 12px 0; tab-size: 4; }
+#pg-gutter { width: 48px; flex: none; overflow: hidden; text-align: right; padding-right: 10px; color: var(--muted); user-select: none;
+  border-right: 1px solid var(--line); }
+#pg-gutter b { color: #fff; background: #dc2626; border-radius: 4px; padding: 0 4px; font-weight: 600; }
+#pg-source { flex: 1; min-width: 0; resize: none; border: 0; outline: none; padding-left: 14px; padding-right: 14px; background: transparent;
+  color: var(--ink); white-space: pre; overflow: auto; }
+.pg-error { display: grid; gap: 4px; padding: 10px 14px; font-size: 14px; border-top: 1px solid #dc2626;
+  background: color-mix(in srgb, #dc2626 10%, var(--bg)); color: var(--ink); }
+.pg-error[hidden] { display: none; }
+.pg-error strong { color: #dc2626; }
+.pg-error em { color: var(--ink-2); font-style: normal; }
+.pg-error em::before { content: "Fix: "; font-weight: 600; }
+.pg-tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--line); background: var(--bg-soft); }
+.pg-tabs button { font: inherit; font-size: 14px; color: var(--muted); background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 6px 12px 8px; cursor: pointer; }
+.pg-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.pg-urlbar { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
+.pg-urlbar input { flex: 1; min-width: 0; font-family: var(--mono); }
+#pg-frame { flex: 1; width: 100%; border: 0; background: #fff; min-height: 0; }
+#pg-frame[hidden], .pg-panel[hidden] { display: none; }
+.pg-panel { flex: 1; margin: 0; overflow: auto; min-height: 0; }
+#pg-js { font: 13px/1.55 var(--mono); padding: 14px; background: var(--bg-code); white-space: pre; }
+#pg-place table { width: 100%; border-collapse: collapse; font-size: 14px; }
+#pg-place th, #pg-place td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+#pg-place td.name { font-family: var(--mono); white-space: nowrap; }
+#pg-place td.where { white-space: nowrap; font-weight: 600; }
+#pg-place td.browser { color: var(--accent-ink); }
+#pg-place td.server { color: #7c3aed; }
+.pg-note { max-width: 900px; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+@media (max-width: 960px) {
+  .pg-split { grid-template-columns: 1fr; height: auto; }
+  .pg-editor { height: 60vh; }
+  .pg-output { height: 70vh; }
+  .pg-status { margin-left: 0; width: 100%; }
+}

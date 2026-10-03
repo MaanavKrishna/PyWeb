@@ -10,6 +10,9 @@ functions, without a JavaScript toolchain.
 ![PyPI](https://img.shields.io/pypi/v/pyweb-stack)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
+**[Try it in your browser](https://maanavkrishna.github.io/PyWeb/playground.html)**: the playground runs
+the real PyWeb, server functions included, on Python compiled to WebAssembly.
+
 ```pyweb
 from pyweb import App, server
 

@@ -32,7 +32,10 @@ pyweb.lock: 2 package(s); files in static/vendor/
 4. It records versions, checksums and file lists in `pyweb.lock`.
 
 Commit `pyweb.lock` and `static/vendor/`. Your app then builds and runs
-without network access. Other commands:
+without network access. Many packages keep their files in a `dist/`
+folder, so if your `.gitignore` has a bare `dist/` line, change it to
+`/dist/` (only the build output at the top) or the vendored files won't
+be committed. Projects made with `pyweb new` already do this. Other commands:
 
 ```text
 pyweb add                    reinstall exactly what pyweb.lock lists

@@ -219,7 +219,7 @@ def scaffold(directory, template="blank", title=None, overwrite=False):
              "test_app.py": STARTER_TEST,
              "AGENTS.md": agent_instructions(),
              "CLAUDE.md": "@AGENTS.md\n",
-             ".gitignore": "dist/\n__pycache__/\n*.db\n"}
+             ".gitignore": "/dist/\n__pycache__/\n*.db\n"}
     if "/static/app.css" in source:
         with open(os.path.join(HERE, "templates", "app.css"), encoding="utf-8") as fh:
             files["static/app.css"] = fh.read()

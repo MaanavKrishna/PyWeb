@@ -3,7 +3,7 @@
 from .app import App
 from .models import Email, Model
 from . import auth, cache, jobs, realtime, security, observability, forms, testing
-from . import sync, deploy, uploads, lsp, live
+from . import sync, deploy, uploads, lsp, livetable
 from . import browser as browser_api
 from . import build, css, plugins, platform
 from .jobs import task
@@ -13,6 +13,7 @@ from .decorators import component, edge, server, worker
 from .realtime import channel, publish, subscribe
 from .packages import npm
 from .markdown import Markdown
+from .livedata import live
 
 __all__ = [
     "App",
@@ -31,6 +32,7 @@ __all__ = [
     "subscribe",
     "npm",
     "Markdown",
+    "live",
     "Email",
     "Model",
     "task",
@@ -43,7 +45,7 @@ __all__ = [
     "forms",
     "testing",
     "sync",
-    "live",
+    "livetable",
     "deploy",
     "uploads",
     "lsp",

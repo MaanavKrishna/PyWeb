@@ -120,6 +120,7 @@ class ModuleContext:
         self.app_config = {}       # literal App(...) keyword arguments
         self.layouts = {}          # name -> PageInfo for @app.layout functions
         self.builtin_components = {}  # local name -> built-in ("Markdown")
+        self.live_names = set()    # local names of pyweb.live
         self.server_fns = {}       # name -> [param names]
         self.stream_fns = set()    # server functions that `yield` (streamed to the browser)
         self.helpers = {}          # name -> FunctionDef

@@ -82,6 +82,9 @@ class LoadedApp:
         app_obj = next((v for v in self.module.__dict__.values()
                         if type(v).__name__ == "App" and type(v).__module__.startswith("pyweb")), None)
         self.app = app_obj
+        if self.ctx.live_names or any(lib.ctx.live_names for lib in self.libraries):
+            from . import livedata
+            livedata.enable()            # announce table writes from this process, even before a live() call
         self.title = getattr(app_obj, "title", None) or "PyWeb"
         self.stylesheets = list(getattr(app_obj, "stylesheets", []) or []) + self.extra_stylesheets
         self.lang = getattr(app_obj, "lang", "en") or "en"
@@ -162,7 +165,7 @@ class LoadedApp:
         env = dict(result)
         js_url = (self.asset_urls.get(name) or lay["js_url"]) if lay["js"] else None
         return {"name": name, "body": renderer.render(lay["info"].ui, env), "js_url": js_url,
-                "state": {k: env.get(k) for k in lay["info"].sent}, "version": lay["version"]}
+                "state": _state(lay["info"], env), "version": lay["version"]}
 
     def render(self, page_name, params=None, *, query=None, path=None, extra=None):
         """Return ``html`` (str) or a :class:`~pyweb.context.Redirect`.
@@ -200,7 +203,7 @@ class LoadedApp:
             dynamic = _page_head.get()
         finally:
             _page_head.reset(token)
-        state = {k: env.get(k) for k in info.sent}
+        state = _state(info, env)
         js_url = self.asset_urls.get(page_name)
         if js_url is None and page["js"]:
             js_url = page["js_url"]
@@ -232,6 +235,16 @@ class LoadedApp:
                 value = base + value
             out[key] = value
         return {k: v for k, v in out.items() if v not in (None, False, "")}
+
+
+def _state(info, env):
+    """What the browser gets for a page or layout: its sent variables, plus how to follow live queries."""
+    state = {k: env.get(k) for k in info.sent}
+    for k in info.sent:
+        meta = getattr(env.get(k), "live", None)
+        if isinstance(meta, dict):
+            state["$live:" + k] = meta
+    return state
 
 
 def _is_list(ann):

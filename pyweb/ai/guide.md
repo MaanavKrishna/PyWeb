@@ -187,6 +187,11 @@ def Item(item_id: int):
   `status`, `message`, `request_id`).
 - Run code after load with a handler named `on_mount`; stop timers in
   `on_unmount` (runs when the user navigates away).
+- Live data: `rows = live(db, "select ... where x = ?", (x,))` in a page
+  (`from pyweb import live`) renders the rows and keeps them current in
+  every open page when the tables are written through `pyweb.db`. No
+  publish/subscribe needed. Use `db.notify("table")` after writes made
+  outside `pyweb.db`. Keep live queries small (`LIMIT`).
 - Streaming (AI replies, progress): a `@server` function that `yield`s;
   in an `async def` handler `stream = fn(...)` then
   `async for piece in stream: ...`; `stream.cancel()` stops it (closes the

@@ -51,6 +51,12 @@ for page in db.stream("select * from events where day = ?", ("2026-01-01",), chu
 (deadlocks, serialization failures, dropped connections) and raises
 `TransientDBError` if they persist.
 
+## Live queries
+
+`live(db, sql, params)` in a page keeps a page variable in step with the
+database: pages showing it update when its tables are written. See
+[Live data](21-live-data.md).
+
 ## Migrations
 
 ```bash

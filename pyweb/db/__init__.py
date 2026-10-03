@@ -287,6 +287,34 @@ class _PooledDB:
     def _current(self):
         return getattr(self._local, "conn", None)
 
+    # live data ---------------------------------------------------------
+    def live_identity(self):
+        """What identifies this database across processes (no password)."""
+        dsn = getattr(self, "_dsn", None)
+        if not dsn:
+            return f"{type(self).__name__}:{id(self)}"
+        return re.sub(r"//([^:/@]+):[^@]*@", r"//\1@", str(dsn))
+
+    def notify(self, *tables):
+        """Tell live queries that ``tables`` changed (for writes PyWeb didn't make itself)."""
+        from pyweb import livedata
+        livedata.table_changed(self, *tables)
+
+    def _wrote(self, sql):
+        from pyweb import livedata
+        if not livedata.enabled():
+            return
+        table = livedata.written_table(sql)
+        if table is None:
+            return
+        if self._current() is not None:          # inside a transaction: announce after COMMIT
+            pending = getattr(self._local, "pending", None)
+            if pending is None:
+                pending = self._local.pending = set()
+            pending.add(table)
+        else:
+            livedata.table_changed(self, table)
+
     def _acquire(self):
         try:
             return self._pool.get_nowait()
@@ -354,6 +382,7 @@ class _PooledDB:
                         pass
                     if owned:
                         conn.commit()
+                    self._wrote(sql)
                     return res
                 except Exception as exc:  # noqa: BLE001
                     last = exc
@@ -414,7 +443,12 @@ class _PooledDB:
                     pass
             yield self
             conn.commit()
+            pending, self._local.pending = getattr(self._local, "pending", None), None
+            if pending:
+                from pyweb import livedata
+                livedata.table_changed(self, *pending)
         except Exception:
+            self._local.pending = None
             try:
                 conn.rollback()
             except Exception:
@@ -458,6 +492,7 @@ class SQLiteDB(_PooledDB):
         if path == ":memory:":
             pool_size = 1
         self.path = path
+        self._dsn = None if path == ":memory:" else "sqlite:" + os.path.abspath(path)
         self._timeout = timeout
         self._kw = kw
         super().__init__(pool_size=pool_size, timeout=timeout)
@@ -522,6 +557,7 @@ class PostgresDB(_PooledDB):
 
     def __init__(self, dsn=None, *, pool_size=5, timeout=10.0,
                  connect=None, **kwargs):
+        self._dsn = dsn
         if connect is not None:
             self._factory = connect
             self._psycopg = None
@@ -570,6 +606,7 @@ class MySQLDB(_PooledDB):
 
     def __init__(self, dsn=None, *, pool_size=5, timeout=10.0,
                  connect=None, **kwargs):
+        self._dsn = dsn
         if connect is not None:
             self._factory = connect
         else:

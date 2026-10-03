@@ -1,6 +1,6 @@
 """Sync engine + live queries: offline queue, conflicts, minimal fanout."""
 
-from pyweb.live import LiveQuery, LiveTable
+from pyweb.livetable import LiveQuery, LiveTable
 from pyweb.realtime import Bus
 from pyweb.sync import Op, SyncClient, SyncServer
 

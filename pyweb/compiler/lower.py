@@ -36,7 +36,7 @@ from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
 
 RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when as $when, signal as $signal, "
                   "computed as $computed, mount as $mount, onMount as $onMount, py as $py, rpc as $rpc, "
-                  "subscribe as $subscribe, slot as $slot, onCleanup as $onCleanup } "
+                  "subscribe as $subscribe, slot as $slot, onCleanup as $onCleanup, live as $live } "
                   "from \"./runtime.js\";")
 
 MARKDOWN_IMPORT = 'import { markdown as $markdown } from "./markdown.js";'
@@ -262,6 +262,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                 else:
                     where = f"from {mod} import" if isinstance(node, ast.ImportFrom) else "import"
                     ctx.server_only[local] = f"imported with `{where} {alias.name}`"
+                    if mod == "pyweb" and alias.name == "live":
+                        ctx.live_names.add(local)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             decos = [_deco_name(d) for d in node.decorator_list]
             route = _route_of(node)
@@ -588,6 +590,14 @@ def classify(info, ctx):
     for h in info.handlers.values():
         for name, why in _mutations(h, state_names).items():
             info.mutated.setdefault(name, why)
+    info.live = []
+    for name, value in info.inits.items():
+        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in ctx.live_names:
+            if info.kind not in ("page", "layout"):
+                raise CompileError("live() runs while a page renders: call it in a page or layout, and pass "
+                                   "the rows to components as a prop", value.lineno, ctx.filename)
+            info.live.append(name)
+            info.mutated.setdefault(name, "a live query: the server sends new rows when its tables change")
 
     params = set(info.params)
     tr = Translator(ctx)
@@ -832,6 +842,9 @@ class Emitter:
                 lines.append(f"  const {js} = {fallback};")
         for hname, hnode in info.handlers.items():
             lines.append(self.tr.function(hnode, scope, "  "))
+        for name in getattr(info, "live", ()):
+            if name in info.refs:
+                lines.append(f"  $live({jsname(name)}, $s[{json.dumps('$live:' + name)}]);")
         if "on_mount" in info.handlers:
             mh = info.handlers["on_mount"]
             if mh.args.args:

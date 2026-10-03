@@ -45,6 +45,7 @@ DOCS = [
     ("06-server-functions.md", "server-functions", "Server functions & RPC", "Server"),
     ("08-pages-routing-assets.md", "routing", "Pages, routing & assets", "Server"),
     ("19-layouts-navigation.md", "layouts", "Layouts & navigation", "Server"),
+    ("21-live-data.md", "live-data", "Live data", "Server"),
     ("20-ai-apps.md", "ai-apps", "Building AI apps", "Server"),
     ("09-data.md", "data", "Data & databases", "Server"),
     ("10-auth.md", "auth", "Authentication", "Server"),

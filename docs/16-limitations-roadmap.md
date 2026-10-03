@@ -32,8 +32,10 @@ See the [changelog](https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.m
 
 Planned, roughly in order. Nothing here is promised for a date.
 
-1. **Live queries**: page data that updates itself when the database
-   changes.
+1. **Partial live updates**: send only the rows that changed instead of
+   a live query's whole result.
+2. **Form helpers**: validation shared between the server and the
+   browser.
 
 Ideas, bug reports and pull requests are welcome; see
 [CONTRIBUTING.md](https://github.com/MaanavKrishna/PyWeb/blob/main/CONTRIBUTING.md).

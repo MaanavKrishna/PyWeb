@@ -69,8 +69,19 @@ project uses [semantic versioning](https://semver.org).
   (OpenAI, Ollama, vLLM, ...) or a built-in demo model, chosen by
   environment variables. `pyweb new NAME --template ai-chat`.
 - New docs page: Building AI apps.
+- **Live data.** `rows = live(db, "select ...", params)` in a page or
+  layout renders the rows and keeps them current: writes through
+  `pyweb.db` (and `pyweb.models`) announce their table after commit, each
+  distinct query re-runs once per change (bursts coalesced) and sends
+  rows to every page showing it only when they changed. Pages follow a
+  signed feed; `db.notify("table")` covers writes made elsewhere. With
+  `RedisBus` it works across processes, and any process can take over a
+  query from the page's signed description.
+- New docs page: Live data.
 
 ### Changed
+- The experimental `pyweb.live` module (in-memory live tables) is now
+  `pyweb.livetable`; `pyweb.live` is the new live-query function.
 - `pyweb.npm` (TypeScript declarations to dataclasses) is now
   `pyweb.dts`, and its command is `pyweb dts`. `pyweb build` no longer
   writes an esm.sh import map; packages come from `pyweb.lock`.

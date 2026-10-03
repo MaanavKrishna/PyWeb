@@ -151,3 +151,88 @@ def test_redis_queue_runs_jobs_in_another_worker():
     assert worker.drain() is None              # empty queue returns immediately
     assert producer.status(job.id) == {"fn": "add", "done": True, "failed": False,
                                        "result": 5, "error": None}
+
+
+LIVE_APP = '''import os
+
+from pyweb import App, live, server
+from pyweb.db import connect
+from pyweb.realtime import RedisBus, use_bus
+
+use_bus(RedisBus(os.environ["PYWEB_TEST_REDIS"], prefix=os.environ["LIVE_PREFIX"]))
+app = App()
+db = connect("sqlite:///" + os.environ["LIVE_DB"])
+db.execute("create table if not exists items (id integer primary key, name text)")
+
+
+@server
+def add(name: str) -> None:
+    db.execute("insert into items (name) values (?)", (name,))
+
+
+@app.page("/")
+def Items():
+    items = live(db, "select name from items order by id")
+
+    <ul>
+        for item in items:
+            <li>{item["name"]}</li>
+    </ul>
+'''
+
+
+@needs_redis
+def test_live_queries_work_across_processes(tmp_path):
+    """Page rendered by A, browser connected to B, write made by C: B still delivers the new rows."""
+    import json
+    import re
+    import socket
+    import subprocess
+    import sys
+    import time
+    import urllib.parse
+    import urllib.request
+
+    (tmp_path / "app.pyweb").write_text(LIVE_APP)
+    env = {**os.environ, "LIVE_DB": str(tmp_path / "live.db"), "LIVE_PREFIX": f"pyweb-test-{uuid.uuid4().hex[:6]}:",
+           "PYWEB_AUTH_SECRET": "s" * 32}
+
+    def free_port():
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    ports = [free_port() for _ in range(3)]
+    procs = [subprocess.Popen([sys.executable, "-m", "pyweb.cli", "dev", "app.pyweb", "--no-reload", "--port", str(p)],
+                              cwd=tmp_path, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+             for p in ports]
+    try:
+        for p in ports:
+            for _ in range(100):
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{p}/healthz", timeout=1)
+                    break
+                except OSError:
+                    time.sleep(0.1)
+        a, b, c = (f"http://127.0.0.1:{p}" for p in ports)
+        html = urllib.request.urlopen(a + "/").read().decode()
+        state = json.loads(re.search(r'<script id="pw-state" type="application/json">(.*?)</script>', html).group(1))
+        meta = state["$live:items"]
+        query = urllib.parse.urlencode({"feed": meta["feed"], "live": meta["spec"]})
+        stream = urllib.request.urlopen(f"{b}/__pyweb/events?{query}", timeout=10)
+        stream.readline()                                    # "retry:" — B is now following the query
+        time.sleep(0.3)
+        req = urllib.request.Request(c + "/__pyweb/rpc/add", data=json.dumps({"args": {"name": "x"}}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+        deadline = time.time() + 8
+        rows = None
+        while time.time() < deadline and rows is None:
+            line = stream.readline().decode()
+            if line.startswith("data:"):
+                rows = json.loads(line[5:])["rows"]
+        assert rows == [{"name": "x"}]
+    finally:
+        for proc in procs:
+            proc.terminate()
+            proc.wait(5)

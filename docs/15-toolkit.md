@@ -80,7 +80,7 @@ warning in an earlier release. They are the intended 1.0 API.
 | `dist/` layout | `app.pyweb`, `manifest.json` keys documented in [Deployment](12-deployment.md) |
 
 **Experimental** (importable, tested, but may change in any release):
-`pyweb.models` (ORM-style models), `pyweb.live` (live queries),
+`pyweb.models` (ORM-style models), `pyweb.livetable` (in-memory live tables; it was `pyweb.live` before 0.4),
 `pyweb.sync` (offline sync), `pyweb.css` helpers, `pyweb.plugins`,
 `pyweb.platform`, `pyweb.lsp` (its Python functions; the `pyweb lsp`
 command itself is supported), `pyweb.dts` (TypeScript declarations to Python dataclasses;

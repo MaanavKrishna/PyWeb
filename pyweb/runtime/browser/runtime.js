@@ -1652,7 +1652,7 @@ export function subscribe(feed, onMsg, opts = {}) {
   let stopped = false;
   let lastId = opts.lastId || 0;
   let src = null;
-  const q = `feed=${encodeURIComponent(feed)}`;
+  const q = `feed=${encodeURIComponent(feed)}` + (opts.live ? `&live=${encodeURIComponent(opts.live)}` : "");
   const deliver = (raw) => {
     let v = raw;
     if (typeof raw === "string") { try { v = JSON.parse(raw); } catch { /* plain text */ } }
@@ -1684,6 +1684,15 @@ export function subscribe(feed, onMsg, opts = {}) {
     poll();
   }
   return stop;
+}
+
+/** Keep page variable `sig` in step with a live query (`meta` comes from the server's live()). */
+export function live(sig, meta) {
+  if (!meta || !meta.feed) return;
+  let version = meta.version;
+  subscribe(meta.feed, (msg) => {
+    if (msg && msg.version !== version) { version = msg.version; sig(msg.rows); }
+  }, { live: meta.spec });
 }
 
 // Optimistic mutation: apply local patch, run server call, reconcile/rollback.

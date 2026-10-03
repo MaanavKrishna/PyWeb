@@ -562,6 +562,10 @@ class Server:
         if feed is None:
             return self._err(403, "invalid or expired feed; reload the page")
         name, start = feed
+        spec = (qs.get("live") or [""])[0]
+        if spec and name.startswith("pyweb.live:"):
+            from pyweb import livedata
+            livedata.adopt_spec(spec, _ctx._secret(_ctx.current()))   # keep re-running it here too
         return getattr(self, "bus", None) or _rt.current_bus(), name, start, qs
 
     def handle_events(self, req: Request):
@@ -577,7 +581,11 @@ class Server:
         except ValueError:
             last_id = 0
         last_id = max(last_id, start)
-        return Response(200, _rt.EventStream(bus, name, last_id), {
+        body = _rt.EventStream(bus, name, last_id)
+        if name.startswith("pyweb.live:"):
+            from pyweb import livedata
+            body = livedata.WatchedStream(body, name[len("pyweb.live:"):])
+        return Response(200, body, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
             "X-Accel-Buffering": "no",

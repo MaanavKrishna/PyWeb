@@ -148,12 +148,62 @@ def _bash(body):
     return "".join(out)
 
 
-def code_block(code, lang, title=None):
+def code_block(code, lang, title=None, *, window=False, body=None, extra=""):
     label = {"pyweb": "app.pyweb", "python": "Python", "bash": "Terminal", "js": "JavaScript",
              "text": "Output", "html": "HTML"}.get(lang, lang or "")
-    head = f'<div class="code-head"><span>{esc(title or label)}</span>' \
+    dots = '<span class="dots"><i></i><i></i><i></i></span>' if window else ""
+    head = f'<div class="code-head">{dots}<span>{esc(title or label)}</span>' \
            f'<button class="copy" type="button" aria-label="Copy code">Copy</button></div>'
-    return f'<div class="code">{head}<pre><code class="lang-{esc(lang)}">{highlight(code, lang)}</code></pre></div>'
+    if body is None:
+        body = f'<pre><code class="lang-{esc(lang)}">{highlight(code, lang)}</code></pre>'
+    return f'<div class="code">{head}{body}{extra}</div>'
+
+
+def line_roles(source):
+    """1-based line -> "browser" | "server" | "both", from what the compiler decided."""
+    import ast
+    from pyweb.compiler import parser as P
+    out = compile_source(source, filename="app.pyweb")
+    tree = ast.parse(P.split_sources(source)[0])
+    fns = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    roles = {}
+
+    def mark(a, b, role):
+        for ln in range(a, b + 1):
+            roles.setdefault(ln, role)
+
+    for spec in out["rpc"]:
+        node = fns[spec["name"]]
+        start = node.decorator_list[0].lineno if node.decorator_list else node.lineno
+        mark(start, node.end_lineno, "server")
+    lines = source.split("\n")
+    for page in out["pages"].values():
+        info = page["info"]
+        for node in info.handlers.values():
+            mark(node.lineno, node.end_lineno, "browser")
+        for name, init in info.inits.items():
+            where = page["placement"].get(name, ("", ""))[0]
+            if where in ("browser", "server"):
+                roles.setdefault(init.lineno, where)
+        first_ui = min((n.line for n in info.ui), default=None)
+        if first_ui:
+            for ln in range(first_ui, info.node.end_lineno + 1):
+                if lines[ln - 1].strip():
+                    roles.setdefault(ln, "both")
+    return roles
+
+
+def annotated_block(source, title):
+    """A code window whose lines carry a rail colour for where they run."""
+    roles = line_roles(source)
+    html_lines = highlight(source.rstrip("\n"), "pyweb").split("\n")
+    body = "".join(f'<span class="ln {roles.get(i, "")}">{text or " "}</span>'
+                   for i, text in enumerate(html_lines, 1))
+    legend = ('<div class="legend"><span class="browser">Runs in the browser</span>'
+              '<span class="server">Runs on the server</span>'
+              '<span class="both">Rendered on the server, updated in the browser</span></div>')
+    return code_block(source, "pyweb", title, window=True,
+                      body=f'<pre class="annotated"><code class="lang-pyweb">{body}</code></pre>', extra=legend)
 
 
 # ----------------------------------------------------- compiled-output panels
@@ -168,9 +218,7 @@ def compiled_panel(source):
     pages = out["pages"]
     js_parts = [f"// {name}.js\n{p['js']}" for name, p in pages.items() if p["js"]]
     if js_parts:
-        js = "\n".join(js_parts).replace(
-            'import { h as $h, list as $list, when as $when, signal as $signal, computed as $computed, '
-            'mount as $mount, onMount as $onMount, py as $py, rpc as $rpc } from "./runtime.js";\n', "")
+        js = re.sub(r'^import \{[^}]*\} from "\./runtime\.js";\n', "", "\n".join(js_parts), flags=re.M)
         size = sum(len(gzip.compress(minify_js(p["js"]).encode(), 9)) for p in pages.values() if p["js"])
         tabs.append(("Browser JS", f"{size} B gzip", code_block(js.strip(), "js")))
     else:
@@ -353,7 +401,33 @@ def markdown(text, *, compile_pyweb=True):
 
 # ------------------------------------------------------------------ layout
 
-CSS_VERSION = "2"
+CSS_VERSION = "3"
+
+LOGO = ('<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="pwg" x1="0" y1="0" x2="1" y2="1">'
+        '<stop offset="0" stop-color="#3d5afe"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#f2a10c"/>'
+        '</linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#pwg)"/>'
+        '<path d="M10.5 10.5 5.5 16l5 5.5M21.5 10.5l5 5.5-5 5.5" stroke="#fff" stroke-width="2.6" fill="none" '
+        'stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="16" r="3.3" fill="#fff"/></svg>')
+
+_ICON_PATHS = {
+    "browser": '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/>',
+    "server": '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+    "bolt": '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+    "link": '<path d="M9 12h6M10 7H8a5 5 0 0 0 0 10h2M14 7h2a5 5 0 0 1 0 10h-2"/>',
+    "shield": '<path d="M12 3 4.5 6v6c0 4.6 3.2 7.8 7.5 9 4.3-1.2 7.5-4.4 7.5-9V6z"/><path d="m9 12 2 2 4-4"/>',
+    "pulse": '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+    "box": '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+    "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    "moon": '<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
+    "github": '<path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12 12 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/>',
+    "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "edit": '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+}
+
+
+def icon(name):
+    return ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+            f'stroke-linejoin="round" aria-hidden="true">{_ICON_PATHS[name]}</svg>')
 
 #: Pyodide (CPython for WebAssembly) for the playground. PYWEB_PYODIDE_DIR
 #: points at an unpacked `pyodide` npm package to serve it from the site
@@ -368,13 +442,13 @@ def nav(active):
     items = [("introduction.html", "Docs", "docs"), ("examples.html", "Examples", "examples"),
              ("playground.html", "Playground", "playground"), ("benchmarks.html", "Benchmarks", "benchmarks")]
     links = "".join(f'<a href="{h}"{" aria-current=page" if a == active else ""}>{t}</a>' for h, t, a in items)
-    return f"""<header class="top">
-  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">py</span>web<small>{__version__}</small></a>
+    return f"""<header class="top" id="top">
+  <a class="logo" href="index.html" aria-label="PyWeb home"><span class="mark">{LOGO}</span>pyweb<small>v{__version__}</small></a>
   <nav class="main-nav">{links}</nav>
-  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><div id="results" class="results" hidden></div></div>
-  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode">◐</button>
-  <a class="icon gh" href="{REPO}" aria-label="GitHub repository">GitHub</a>
-  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">☰</button>
+  <div class="search"><input id="search" type="search" placeholder="Search docs" aria-label="Search documentation" autocomplete="off"><kbd>/</kbd><div id="results" class="results" hidden></div></div>
+  <button id="theme" class="icon" type="button" aria-label="Toggle dark mode"><span class="i-sun">{icon("sun")}</span><span class="i-moon">{icon("moon")}</span></button>
+  <a class="icon gh" href="{REPO}" aria-label="GitHub repository">{icon("github")}<span>GitHub</span></a>
+  <button id="menu" class="icon menu" type="button" aria-label="Open navigation">{icon("menu")}</button>
 </header>"""
 
 
@@ -394,8 +468,17 @@ def sidebar(active):
 
 def footer():
     return f"""<footer class="foot">
-  <div><span class="logo small"><span class="mark">py</span>web</span> {__version__} · MIT licensed</div>
-  <div><a href="{REPO}">GitHub</a> · <a href="changelog.html">Changelog</a> · <a href="security.html">Security</a> · <a href="roadmap.html">Roadmap</a></div>
+  <div class="foot-inner">
+    <div><a class="logo small" href="index.html"><span class="mark">{LOGO}</span>pyweb</a>
+      <p>Full-stack web apps in one Python file: server-rendered pages, reactive UI compiled from Python, typed server calls.</p></div>
+    <nav aria-label="Learn"><h4>Learn</h4><a href="quickstart.html">Quickstart</a><a href="tutorial.html">Tutorial</a>
+      <a href="examples.html">Examples</a><a href="playground.html">Playground</a></nav>
+    <nav aria-label="Reference"><h4>Reference</h4><a href="language.html">The .pyweb language</a><a href="cli.html">Command line</a>
+      <a href="ai-assistants.html">AI assistants &amp; MCP</a><a href="benchmarks.html">Benchmarks</a></nav>
+    <nav aria-label="Project"><h4>Project</h4><a href="{REPO}">GitHub</a><a href="changelog.html">Changelog</a>
+      <a href="roadmap.html">Roadmap</a><a href="security.html">Security</a></nav>
+  </div>
+  <div class="foot-base"><span>pyweb {__version__} · MIT licensed</span><span>Made with Python, compiled for the web.</span></div>
 </footer>"""
 
 
@@ -411,8 +494,12 @@ def shell(name, title, desc, body, *, active="", layout="doc"):
 <meta property="og:description" content="{esc(desc)}">
 <link rel="canonical" href="{SITE}/{name}">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0b0c12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fafaf7" media="(prefers-color-scheme: light)">
+<link rel="preload" href="assets/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css?v={CSS_VERSION}">
-<script>try{{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
+<script>document.documentElement.classList.add("js");try{{const t=localStorage.getItem("pyweb-theme");if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
 </head>
 <body class="{layout}">
 {nav(active)}
@@ -432,7 +519,7 @@ def doc_page(slug, title, toc, content, prev, nxt, source_file):
     if nxt:
         pager += f'<a class="next" href="{nxt[0]}.html"><small>Next</small>{esc(nxt[1])}</a>'
     pager += "</nav>"
-    edit = f'<a class="edit" href="{REPO}/edit/main/docs/{source_file}">Edit this page</a>'
+    edit = f'<a class="edit" href="{REPO}/edit/main/docs/{source_file}">{icon("edit")} Edit this page on GitHub</a>'
     body = f"""<div class="layout">
 {sidebar(slug)}
 <main class="content" id="content"><article class="prose"><h1>{esc(title)}</h1>
@@ -452,6 +539,11 @@ def build_demo(name):
         source = fh.read()
     # An autofocused input inside the embedded demo would scroll the landing page.
     source = re.sub(r"\s+autofocus(?=[\s/>])", "", source)
+    if name == "todo":  # start the demo with a few items rather than an empty list
+        source = source.replace("todos = []", 'todos = [{"id": 1, "title": "Write one Python file", "done": True}, '
+                                '{"id": 2, "title": "Run pyweb dev", "done": False}, '
+                                '{"id": 3, "title": "Ship it", "done": False}]', 1)
+        source = source.replace("next_id = 1", "next_id = 4", 1)
     out = compile_source(source, filename="app.pyweb")
     page = next(iter(out["pages"].values()))
     d = os.path.join(OUT, "demos", name)
@@ -490,8 +582,9 @@ def example_page(name, title, blurb, live):
         place.append(f"rpc POST /__pyweb/rpc/{spec['name']}  ({args}) -> {spec['returns']}")
     demo = ""
     if live:
-        demo = (f'<div class="demo"><div class="demo-bar"><span>Live: this is the example compiled by PyWeb '
-                f'({js_gz} B gzip of page code)</span><a href="demos/{name}/index.html" target="_blank" rel="noopener">Open ↗</a></div>'
+        demo = (f'<div class="demo"><div class="demo-bar"><span class="dots"><i></i><i></i><i></i></span>'
+                f'<span class="url">localhost:8000 · live, {js_gz} B of page code</span>'
+                f'<a href="demos/{name}/index.html" target="_blank" rel="noopener">Open ↗</a></div>'
                 f'<iframe src="demos/{name}/index.html" title="{esc(title)} demo" loading="lazy"></iframe></div>')
     else:
         demo = (f'<div class="callout">This example needs its server (database, sessions or server functions). '
@@ -519,32 +612,58 @@ def landing(bench, demo_gz):
     with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
         readme = fh.read()
     sample = re.search(r"```pyweb\n(.*?)```", readme, re.S).group(1)
-    mcp_setup = code_block("pip install pyweb-stack\nclaude mcp add pyweb -- pyweb mcp", "bash", "Claude Code") + \
-        code_block('{\n  "mcpServers": {\n    "pyweb": { "command": "pyweb", "args": ["mcp"] }\n  }\n}', "text", "Cursor, Claude Desktop, VS Code")
-    install = code_block("pip install pyweb-stack\npyweb new myapp && cd myapp\npyweb dev app.pyweb", "bash")
+    compiled = compile_source(sample, filename="app.pyweb")
+    page = next(iter(compiled["pages"].values()))
+    # The browser half: the handler exactly as the compiler wrote it.
+    handler = re.search(r"\n(  (?:async )?function submit\(\)[\s\S]*?\n  \})", page["js"]).group(1)
+    handler = "\n".join(line[2:] for line in handler.split("\n"))
+    page_gz = len(gzip.compress(minify_js(page["js"]).encode(), 9))
+    # The server half: a real request and RPC call against the sample app.
+    from pyweb.testing import TestClient
+    client = TestClient(source=sample)
+    html_kb = len(client.get("/").body) / 1024
+    reply = json.dumps({"result": client.rpc("sign", name="Ada")})
+    server_demo = (f"GET /\n  → runs Home(), renders {html_kb:.1f} KB of HTML\n\n"
+                   f'POST /__pyweb/rpc/sign\n  {{"args": {{"name": "Ada"}}}}\n  → {reply}')
+
+    mcp_setup = code_block("pip install pyweb-stack\nclaude mcp add pyweb -- pyweb mcp", "bash", "Claude Code", window=True) + \
+        code_block('{\n  "mcpServers": {\n    "pyweb": { "command": "pyweb", "args": ["mcp"] }\n  }\n}', "text",
+                   "Cursor · Claude Desktop · VS Code", window=True)
     rt_gz = bench["counter"]["runtime_js_gzip"]
     counter_gz = bench["counter"]["page_js_gzip"]
     render_ms = bench["todo"]["ssr_ms"]
     feats = [
-        ("Interactions run in the browser",
+        ("browser", "browser", "Interactions run in the browser",
          "Handlers and expressions compile to small JavaScript modules. The network is only used when you call a "
          "<code>@server</code> function: no WebSocket per user, no Python runtime download."),
-        ("Every page is server-rendered",
-         "Complete HTML on first paint with real data from your database. Good for search engines, slow devices "
-         "and links that just work."),
-        ("No API layer to write",
+        ("server", "server", "Every page is server-rendered",
+         "Complete HTML on first paint with real data from your database, then hydrated in place. Good for search "
+         "engines, slow devices and links that just work."),
+        ("link", "both", "No API layer to write",
          "<code>@server</code> functions get endpoints, argument validation, typed errors and generated browser calls."),
-        ("Variables are state",
+        ("pulse", "browser", "Variables are state",
          "The compiler sees which variables your handlers change and makes exactly those reactive. Updates touch "
          "only the DOM nodes that read them."),
-        ("Checked boundaries",
+        ("shield", "server", "Checked boundaries",
          "Database handles, imports and secrets can't reach browser code: it's a compile error with a line number. "
          "<code>pyweb inspect</code> explains every decision."),
-        ("Boring to operate",
+        ("box", "both", "Boring to operate",
          "Stateless servers, signed-cookie sessions, plain JSON over HTTP. Run <code>pyweb serve</code>, uvicorn or "
          "the generated Dockerfile behind any load balancer."),
     ]
-    feat_html = "".join(f"<div class=feat><h3>{t}</h3><p>{d}</p></div>" for t, d in feats)
+    feat_html = "".join(f'<div class="feat reveal"><span class="chip {cls}">{icon(ic)}</span><h3>{t}</h3><p>{d}</p></div>'
+                        for ic, cls, t, d in feats)
+    tools = [
+        ("playground.html", "Playground", "Write an app and run it in your browser, server functions included.", "Open it"),
+        ("cli.html#editor-support", "VS Code &amp; LSP", "Errors as you type, and hover that shows where each line runs.",
+         "Set up your editor"),
+        ("ai-assistants.html", "AI assistants", "An MCP server to scaffold, check, render, screenshot and test.",
+         "Connect an assistant"),
+        ("server-functions.html#live-updates", "Live updates", "<code>publish()</code> on the server, "
+         "<code>subscribe()</code> in the page, over Server-Sent Events.", "Read the guide"),
+    ]
+    tool_html = "".join(f'<a class="tool reveal" href="{h}"><b>{t}</b><span>{d}</span><em>{c} →</em></a>'
+                        for h, t, d, c in tools)
     compare = """<div class="table"><table><thead><tr><th>Approach</th><th>You write</th><th>Trade-off</th></tr></thead><tbody>
 <tr><td>Django / Flask / FastAPI + React</td><td>A Python API and a JavaScript app</td><td>Two languages, two builds, a hand-written API in between</td></tr>
 <tr><td>Templates + htmx</td><td>Views, templates, an endpoint per interaction</td><td>Every interaction is a round trip; client state is awkward</td></tr>
@@ -553,67 +672,88 @@ def landing(bench, demo_gz):
 <tr class="us"><td><b>PyWeb</b></td><td><b>One Python file</b></td><td><b>Browser code is a compiled subset of Python</b></td></tr>
 </tbody></table></div>"""
     return f"""<main class="landing">
+<div class="hero-wrap">
 <section class="hero">
   <div class="hero-text">
-    <a class="eyebrow" href="ai-assistants.html">PyWeb {__version__} · New: build with AI assistants (MCP) →</a>
-    <h1>Full-stack web apps<br>in one Python file.</h1>
-    <p class="sub">Server-rendered pages, reactive UI compiled from Python, and typed calls to server
-    functions. No JavaScript toolchain, no WebSocket per user, no runtime download.</p>
-    <div class="cta"><a class="btn primary" href="quickstart.html">Get started</a>
+    <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: hydration, live updates, playground →</a>
+    <h1>Full-stack web apps in <span class="grad">one Python file.</span></h1>
+    <p class="sub">Server-rendered pages, reactive UI compiled from Python, and typed calls to server functions.
+    No JavaScript toolchain, no WebSocket per user, no runtime download.</p>
+    <div class="cta"><a class="btn primary" href="quickstart.html">Get started <span class="arrow">→</span></a>
     <a class="btn" href="playground.html">Try it in your browser</a></div>
-    {install}
+    <div class="install code"><span class="prompt">$</span><code>pip install pyweb-stack</code>
+    <button class="copy" type="button" aria-label="Copy install command">Copy</button></div>
   </div>
-  <div class="hero-code">{code_block(sample, "pyweb", "app.pyweb")}</div>
+  <div class="hero-code">{annotated_block(sample, "app.pyweb")}</div>
 </section>
-<section class="stats">
+</div>
+<section class="stats reveal">
   <div><b>{rt_gz / 1024:.1f} KB</b><span>shared runtime, gzip, cached</span></div>
-  <div><b>{counter_gz} B</b><span>page code for a counter, gzip</span></div>
-  <div><b>0 B</b><span>JavaScript on pages that don't change</span></div>
-  <div><b>{render_ms:.2f} ms</b><span>server render of the todo page</span></div>
+  <div><b>{counter_gz} B</b><span>page code for a counter</span></div>
+  <div><b>0 B</b><span>JavaScript on static pages</span></div>
+  <div><b>{render_ms * 1000:.0f} µs</b><span>to server-render the todo page</span></div>
+</section>
+<section class="places">
+  <div class="section-head center reveal"><div class="kicker">How it works</div>
+    <h2>One file. The compiler puts each line where it belongs.</h2>
+    <p>Write pages as Python functions with markup. PyWeb splits them: handlers become a tiny browser module,
+    everything else stays on your server. This is the output for the app above.</p></div>
+  <div class="split">
+    <div class="place browser reveal"><h3><span class="chip">{icon("browser")}</span>In the browser</h3>
+      <p>A {page_gz} B module (gzip) plus the shared runtime.</p>
+      <ul><li>Variables your handlers change become signals</li><li>Handlers compile to JavaScript with Python semantics</li>
+      <li>Hydrates the server's HTML in place: nothing is rebuilt</li></ul>
+      {code_block(handler, "js", "Home.js · compiled from submit()")}</div>
+    <div class="place server reveal"><h3><span class="chip">{icon("server")}</span>On the server</h3>
+      <p>Plain Python, per request: your database, files and secrets stay here.</p>
+      <ul><li>Renders complete HTML with real data</li><li><code>@server</code> functions become validated JSON endpoints</li>
+      <li>Sends only the values browser code reads</li></ul>
+      {code_block(server_demo, "text", "HTTP · a real request to the app above")}</div>
+  </div>
 </section>
 <section class="band">
-  <div class="band-text">
-    <h2>Try it: this is a real PyWeb app</h2>
-    <p>The todo example, compiled by PyWeb and running right here. Its page code is {demo_gz} bytes gzipped.
-    Add a few items, tick some off, switch filters: everything happens in your browser.</p>
-    <p><a href="example-todo.html">See its source, placement report and generated JavaScript →</a></p>
+  <div class="band-text reveal"><div class="kicker">Live demo</div>
+    <h2>This is a real PyWeb app</h2>
+    <p>The todo example (started with three items), compiled by PyWeb and running right here: {demo_gz} bytes of page code.</p>
+    <ul class="checks"><li>Add items, tick them off, switch filters</li><li>Everything updates locally, with no network round trips</li>
+    <li>The same file renders the first paint on the server</li></ul>
+    <a class="more" href="example-todo.html">See its source and generated JavaScript →</a>
   </div>
-  <div class="demo"><iframe src="demos/todo/index.html" title="Todo demo" loading="lazy"></iframe></div>
+  <div class="demo reveal"><div class="demo-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">localhost:8000</span></div>
+    <iframe src="demos/todo/index.html" title="Todo demo" loading="lazy"></iframe></div>
 </section>
-<section class="how">
-  <h2>How it works</h2>
-  <ol class="steps">
-    <li><b>Write one file.</b> Pages are Python functions with markup. Mark server-only work with <code>@server</code>.</li>
-    <li><b>The compiler places your code.</b> Variables your handlers change become signals; handlers become JavaScript;
-    server calls become typed RPC; everything else stays on the server.</li>
-    <li><b>The server renders HTML.</b> Each request runs the page function, renders real data, and sends only the values
-    browser code reads.</li>
-    <li><b>The browser hydrates it.</b> A small module attaches to the server's HTML and binds every dynamic piece of
-    the page to the state it reads; nothing is rebuilt, and typing done before it loads is kept.</li>
-  </ol>
+<section>
+  <div class="section-head reveal"><div class="kicker">Why PyWeb</div><h2>The good parts of modern web stacks, in Python</h2></div>
+  <div class="feats">{feat_html}</div>
 </section>
-<section class="feats">{feat_html}</section>
+<section>
+  <div class="section-head reveal"><div class="kicker">Tooling</div><h2>Everything around the compiler</h2></div>
+  <div class="tools">{tool_html}</div>
+</section>
 <section class="band ai">
-  <div class="band-text">
-    <h2>Built for AI assistants</h2>
+  <div class="band-text reveal"><div class="kicker">AI assistants</div>
+    <h2>Built for building with AI</h2>
     <p>One file, plain Python, and a compiler that answers mistakes with a line number and a fix. The built-in MCP
     server lets Claude Code, Cursor and other assistants scaffold apps, check them, see what runs where, render
-    pages, call server functions, look at the result in a real browser and run the tests. New projects include
-    <code>AGENTS.md</code>, <code>CLAUDE.md</code> and a starter test.</p>
-    <p><a href="ai-assistants.html">Set it up →</a></p>
+    pages, call server functions, look at the result in a real browser and run the tests.</p>
+    <ul class="checks"><li>New projects include <code>AGENTS.md</code>, <code>CLAUDE.md</code> and a starter test</li>
+    <li>The docs ship as <a href="llms-full.txt">llms-full.txt</a></li></ul>
+    <a class="more" href="ai-assistants.html">Set it up →</a>
   </div>
-  <div>{mcp_setup}</div>
+  <div class="reveal">{mcp_setup}</div>
 </section>
 <section class="compare">
-  <h2>Where it fits</h2>
-  <p>PyWeb is for Python developers building internal tools, dashboards, CRUD apps and small products who want a real web
-  UI without adopting a JavaScript stack. For large client-heavy single-page apps, use a JavaScript framework; for
-  scientific Python in the browser, use Pyodide. <a href="introduction.html">Read the full comparison →</a></p>
-  {compare}
+  <div class="section-head reveal"><div class="kicker">Where it fits</div><h2>Made for Python developers who ship web UIs</h2>
+  <p>Internal tools, dashboards, CRUD apps and small products, without adopting a JavaScript stack. For large
+  client-heavy single-page apps, use a JavaScript framework; for scientific Python in the browser, use Pyodide.
+  <a href="introduction.html">Read the full comparison →</a></p></div>
+  <div class="reveal">{compare}</div>
 </section>
 <section class="final">
-  <h2>Build something in the next five minutes</h2>
-  <div class="cta"><a class="btn primary" href="tutorial.html">Follow the tutorial</a><a class="btn" href="examples.html">Browse examples</a></div>
+  <div class="panel reveal"><h2>Build something in the next five minutes</h2>
+    <p>Install it, scaffold an app, and open it in your browser. Or skip the install and use the playground.</p>
+    <div class="cta"><a class="btn primary" href="tutorial.html">Follow the tutorial <span class="arrow">→</span></a>
+    <a class="btn" href="playground.html">Open the playground</a></div></div>
 </section>
 </main>"""
 
@@ -740,6 +880,7 @@ def build(out=None):
     os.makedirs(os.path.join(OUT, "assets"))
     for asset in ("style.css", "site.js", "icon.svg", "playground.js"):
         shutil.copy(os.path.join(HERE, "assets", asset), os.path.join(OUT, "assets", asset))
+    shutil.copytree(os.path.join(HERE, "assets", "fonts"), os.path.join(OUT, "assets", "fonts"))
     write(".nojekyll", "")
     search = []
     pages = []

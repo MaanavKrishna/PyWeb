@@ -42,7 +42,8 @@ def test_internal_links_and_anchors_resolve(site):
             target, _, frag = href.partition("#")
             target = target or page.name
             if target not in ids:
-                broken.append((page.name, href))
+                if not (out / target).is_file():  # non-HTML files such as llms-full.txt just need to exist
+                    broken.append((page.name, href))
             elif frag and frag not in ids[target]:
                 broken.append((page.name, href))
     assert not broken, broken

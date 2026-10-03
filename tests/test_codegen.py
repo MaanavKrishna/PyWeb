@@ -75,3 +75,30 @@ def test_component_renders_with_props_and_children():
            "@app.page('/')\ndef H():\n    <Card title=\"Hi\"><p>body</p></Card>\n")
     out = compile_source(src)
     assert "<section><h2>Hi</h2><p>body</p></section>" in out["pages"]["H"]["html_body"]
+
+
+def test_ssr_compiles_each_expression_once():
+    from pyweb.ssr import Renderer, RenderError, _compiled
+    r = Renderer({"n": 2})
+    _compiled.cache_clear()
+    for _ in range(5):
+        assert r.eval("n * 21", {}) == 42
+    assert _compiled.cache_info().misses == 1 and _compiled.cache_info().hits == 4
+    try:
+        r.eval("n +", {}, 3)
+    except RenderError as exc:
+        assert exc.lineno == 3
+    else:
+        raise AssertionError("syntax error not reported")
+
+
+def test_benchmark_script_runs():
+    import subprocess
+    import sys
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+    out = subprocess.run([sys.executable, str(root / "benchmarks" / "bench.py"), "--json"],
+                         capture_output=True, text=True, timeout=300, check=True).stdout
+    import json
+    data = json.loads(out)
+    assert set(data) == {"compile_ms", "request_us"} and data["request_us"]["blog /posts/1"] > 0

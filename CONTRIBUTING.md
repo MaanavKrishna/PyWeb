@@ -17,7 +17,7 @@ Node.js (18+) is needed for the runtime and translator tests.
 ## Run the checks
 
 ```bash
-ruff check pyweb tests website
+ruff check pyweb tests website benchmarks
 python -m pytest tests --ignore=tests/integration      # unit + browser tests
 ```
 

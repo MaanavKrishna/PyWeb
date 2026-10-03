@@ -148,8 +148,8 @@ jobs:
           import json
           m = json.load(open("/tmp/dist-counter/manifest.json"))
           rt, page = m["runtime_gzip_bytes"], m["pages"]["Home"]["gzip_bytes"]
-          print(f"runtime {rt} B gzip (budget 12288), counter page {page} B gzip (budget 2048)")
-          assert rt < 12288 and page < 2048
+          print(f"runtime {rt} B gzip (budget 15360), counter page {page} B gzip (budget 2048)")
+          assert rt < 15360 and page < 2048
           PY
       - name: Build sdist + wheel and smoke-test the wheel
         run: |

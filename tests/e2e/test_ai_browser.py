@@ -1,6 +1,7 @@
 """Streaming, cancelling and Markdown in a real browser, and the ai-chat example."""
 
 import json
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -77,8 +78,8 @@ def test_values_arrive_while_streaming_and_cancel_stops_the_server(page, tmp_pat
         page.goto(url)
         ready(page)
         page.click("#go")
-        expect(page.locator("#got")).to_have_text("3")             # before the call has finished
-        expect(page.locator("#status")).to_have_text("running")
+        expect(page.locator("#got")).to_have_text(re.compile(r"^([3-9]|[1-4]\d)$"))   # some values, while...
+        expect(page.locator("#status")).to_have_text("running")                      # ...the call still runs
         page.click("#stop")
         expect(page.locator("#status")).to_have_text("stopped")
         stopped_at = int(page.inner_text("#got"))

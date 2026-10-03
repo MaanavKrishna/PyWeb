@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyweb-stack"
-version = "0.2.0"
+version = "0.3.0"
 description = "Full-stack web apps in one Python file: server-rendered pages, reactive browser UI, typed RPC."
 readme = "README.md"
 license = { text = "MIT" }

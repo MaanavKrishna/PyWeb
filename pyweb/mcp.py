@@ -20,6 +20,7 @@ Implemented with the standard library only (JSON-RPC 2.0 over stdin/stdout).
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import gzip
 import json
@@ -36,7 +37,8 @@ INSTRUCTIONS = (
     "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). "
     "Before writing PyWeb code, call pyweb_guide. After every edit, call pyweb_check and fix "
     "errors by line number using the hints. Use pyweb_inspect to see what runs in the browser "
-    "vs the server, and pyweb_render / pyweb_call to verify behaviour."
+    "vs the server, pyweb_render / pyweb_call to verify behaviour, pyweb_screenshot to see the "
+    "page and try interactions in a real browser, and pyweb_test to run the app's tests."
 )
 
 ERROR_HINTS = [
@@ -154,9 +156,43 @@ def agent_instructions():
         "- Run `pyweb check app.pyweb` after every change and fix errors by line number.\n"
         "- `pyweb inspect app.pyweb` shows what runs in the browser vs the server.\n"
         "- `pyweb dev app.pyweb` serves at http://localhost:8000 with live reload.\n"
+        "- `pytest` runs `test_app.py`; add a test for each server function and page you change.\n"
         "- If the `pyweb` MCP server is available, use its tools (pyweb_guide, pyweb_check, ...).\n\n"
         + _guide_text().split("\n", 2)[2]
     )
+
+
+STARTER_TEST = '''"""Tests for this app. Run them with `pytest` (or the pyweb_test MCP tool)."""
+
+from pathlib import Path
+
+import pytest
+
+from pyweb import RPCError  # noqa: F401  (for testing server-function errors)
+from pyweb.testing import TestClient
+
+APP = str(Path(__file__).parent / "app.pyweb")
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # keep files the app writes (e.g. SQLite) out of the project
+    return TestClient(APP)
+
+
+def test_home_page_renders(client):
+    page = client.get("/")
+    assert page.status in (200, 303), page.text[:500]
+
+
+# Server functions are called exactly like the browser calls them:
+#
+# def test_save(client):
+#     assert client.rpc("save", title="Hello") == ...
+#     with pytest.raises(RPCError) as err:
+#         client.rpc("save", title="")
+#     assert err.value.code == "validation_error"
+'''
 
 
 def scaffold(directory, template="blank", title=None, overwrite=False):
@@ -171,6 +207,7 @@ def scaffold(directory, template="blank", title=None, overwrite=False):
     os.makedirs(os.path.join(directory, "static"), exist_ok=True)
     source = _template_source(template, title)
     files = {"app.pyweb": source,
+             "test_app.py": STARTER_TEST,
              "AGENTS.md": agent_instructions(),
              "CLAUDE.md": "@AGENTS.md\n",
              ".gitignore": "dist/\n__pycache__/\n*.db\n"}
@@ -316,6 +353,105 @@ def tool_call(args):
         return {"ok": False, "error": {"code": exc.code, "message": str(exc), "status": exc.status}}
 
 
+def tool_screenshot(args):
+    """Open a page in headless Chromium, run steps, return a PNG and what the page shows."""
+    try:
+        import playwright.sync_api  # noqa: F401
+    except ImportError:
+        raise RuntimeError("pyweb_screenshot needs Playwright: pip install playwright && "
+                           "python -m playwright install chromium") from None
+    # Playwright's sync API can't run inside an event loop or another sync
+    # session on the same thread, so the browser gets a thread of its own.
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(_screenshot, args).result()
+
+
+def _screenshot(args):
+    from playwright.sync_api import sync_playwright
+
+    from .testing import serve
+    path = args.get("path") or "app.pyweb"
+    url = args.get("url") or "/"
+    width, height = int(args.get("width") or 1280), int(args.get("height") or 800)
+    result = {"steps": []}
+    with serve(path) as base, sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": width, "height": height})
+            console = []
+            page.on("console", lambda m: console.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") else None)
+            page.on("pageerror", lambda e: console.append(f"error: {e}"))
+            resp = page.goto(base + url)
+            result["status"] = resp.status if resp else None
+            if page.query_selector("#pw-state"):
+                page.wait_for_selector("[data-pw-ready]", state="attached", timeout=10000)
+            for i, step in enumerate(args.get("steps") or []):
+                action, sel, value = step.get("action"), step.get("selector"), step.get("value")
+                try:
+                    if action == "click":
+                        page.click(sel, timeout=5000)
+                    elif action == "fill":
+                        page.fill(sel, value or "", timeout=5000)
+                    elif action == "press":
+                        page.press(sel or "body", value or "Enter", timeout=5000)
+                    elif action == "select":
+                        page.select_option(sel, value, timeout=5000)
+                    elif action == "goto":
+                        page.goto(base + (value or "/"))
+                    elif action == "wait":
+                        if sel:
+                            page.wait_for_selector(sel, timeout=int(value or 5000))
+                        else:
+                            page.wait_for_timeout(int(value or 500))
+                    else:
+                        raise ValueError(f"unknown action {action!r}")
+                    page.wait_for_load_state("networkidle")
+                    result["steps"].append({"step": i, "ok": True})
+                except Exception as exc:  # noqa: BLE001 - report the failing step, still screenshot
+                    what = f"{action} {sel}" if sel else str(action)
+                    result["steps"].append({"step": i, "ok": False,
+                                            "error": f"{what}: {str(exc).splitlines()[0]}"})
+                    break
+            root = page.query_selector("[data-pw-root]")
+            result.update({
+                "url": page.url[len(base):] or "/",
+                "title": page.title(),
+                "hydration": root.get_attribute("data-pw-mode") if root else None,
+                "console": console,
+                "text": page.inner_text("body")[: int(args.get("max_chars") or 4000)],
+                "__image__": page.screenshot(full_page=bool(args.get("full_page"))),
+            })
+        finally:
+            browser.close()
+    return result
+
+
+def tool_test(args):
+    """Run the app's pytest tests and summarise the result."""
+    import importlib.util
+    import subprocess
+    if importlib.util.find_spec("pytest") is None:
+        raise RuntimeError("pytest is not installed: pip install pytest")
+    target = os.path.abspath(args.get("path") or ".")
+    cwd = target if os.path.isdir(target) else os.path.dirname(target)
+    cmd = [sys.executable, "-m", "pytest", target, "-q", "-rfE", "--no-header", "--color=no", "-p", "no:cacheprovider"]
+    if args.get("filter"):
+        cmd += ["-k", args["filter"]]
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=int(args.get("timeout") or 300))
+    out = (proc.stdout + proc.stderr).strip()
+    counts = {k: int(n) for n, k in re.findall(r"(\d+) (passed|failed|errors?|skipped)", out.splitlines()[-1] if out else "")}
+    res = {"ok": proc.returncode == 0, "passed": counts.get("passed", 0), "failed": counts.get("failed", 0),
+           "errors": counts.get("error", 0) + counts.get("errors", 0), "skipped": counts.get("skipped", 0),
+           "summary": out.splitlines()[-1] if out else ""}
+    if proc.returncode == 5:
+        res["hint"] = ("No tests found. Add test_app.py next to app.pyweb using pyweb.testing.TestClient "
+                       "(new apps from pyweb_new_app include one).")
+    limit = int(args.get("max_chars") or 8000)
+    res["output"] = out[-limit:]
+    return res
+
+
 PATH_PROP = {"type": "string", "description": "Path to the .pyweb file (default: app.pyweb)."}
 SOURCE_PROP = {"type": "string", "description": "Source text to check instead of reading `path`."}
 
@@ -329,7 +465,8 @@ TOOLS = [
     {"name": "pyweb_new_app", "fn": tool_new_app, "readOnly": False,
      "description": "Create a new PyWeb app directory from a template, including AGENTS.md/CLAUDE.md instructions "
                     "for AI agents. Templates: blank, counter, todo (components, lists), blog (SQL database, "
-                    "server functions, route params), auth (sessions, passwords), chat (polling).",
+                    "server functions, route params), auth (sessions, passwords), chat (live updates). New apps "
+                    "include test_app.py.",
      "inputSchema": {"type": "object", "properties": {
          "directory": {"type": "string", "description": "Directory to create (default: current directory)."},
          "template": {"type": "string", "enum": list(TEMPLATES)},
@@ -365,6 +502,28 @@ TOOLS = [
      "inputSchema": {"type": "object", "required": ["function"], "properties": {
          "path": PATH_PROP, "function": {"type": "string"},
          "args": {"type": "object", "description": "Keyword arguments by parameter name."}}}},
+    {"name": "pyweb_screenshot", "fn": tool_screenshot, "readOnly": False,
+     "description": "See the app in a real browser (headless Chromium): open a URL, optionally run steps (click, "
+                    "fill, press, select, goto, wait), and get a PNG screenshot plus the page text, console errors "
+                    "and whether the page hydrated. Use it to check layout and interactions after edits. Needs "
+                    "Playwright (pip install playwright && python -m playwright install chromium).",
+     "inputSchema": {"type": "object", "properties": {
+         "path": PATH_PROP, "url": {"type": "string", "description": "URL path to open (default /)."},
+         "steps": {"type": "array", "description": "Actions to perform before the screenshot, in order.",
+                   "items": {"type": "object", "required": ["action"], "properties": {
+                       "action": {"type": "string", "enum": ["click", "fill", "press", "select", "goto", "wait"]},
+                       "selector": {"type": "string", "description": "CSS selector or text=..."},
+                       "value": {"type": "string", "description": "Text to fill, key to press, option, URL, "
+                                                                  "or wait time in ms."}}}},
+         "width": {"type": "integer"}, "height": {"type": "integer"},
+         "full_page": {"type": "boolean"}, "max_chars": {"type": "integer"}}}},
+    {"name": "pyweb_test", "fn": tool_test, "readOnly": False,
+     "description": "Run the app's tests with pytest (test_*.py files using pyweb.testing.TestClient) and return "
+                    "pass/fail counts, the summary line and the failure output.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string", "description": "Test file or directory (default: current directory)."},
+         "filter": {"type": "string", "description": "Only run tests matching this pytest -k expression."},
+         "max_chars": {"type": "integer"}, "timeout": {"type": "integer"}}}},
 ]
 
 PROMPTS = [
@@ -387,8 +546,10 @@ def _prompt_text(args):
         "3. Edit app.pyweb. Keep database/secret/import work in @server functions; keep handlers to "
         "browser-safe Python.\n"
         "4. Call pyweb_check after every edit until ok is true with no errors; apply the hints.\n"
-        "5. Verify with pyweb_render (each page) and pyweb_call (each server function).\n"
-        "6. Tell the user to run `pyweb dev app.pyweb` to try it."
+        "5. Verify with pyweb_render (each page) and pyweb_call (each server function), and look at "
+        "the result with pyweb_screenshot (use steps to click and type).\n"
+        "6. Add tests to test_app.py and run them with pyweb_test.\n"
+        "7. Tell the user to run `pyweb dev app.pyweb` to try it."
     )
 
 
@@ -484,8 +645,12 @@ class Server:
             return {"content": [{"type": "text", "text": detail}], "isError": True}
         if isinstance(value, str):
             return {"content": [{"type": "text", "text": value}], "isError": False}
-        return {"content": [{"type": "text", "text": json.dumps(value, indent=2, default=str)}],
-                "structuredContent": value, "isError": False}
+        image = value.pop("__image__", None) if isinstance(value, dict) else None
+        content = [{"type": "text", "text": json.dumps(value, indent=2, default=str)}]
+        if image is not None:
+            content.append({"type": "image", "mimeType": "image/png",
+                            "data": base64.b64encode(image).decode("ascii")})
+        return {"content": content, "structuredContent": value, "isError": False}
 
 
 class _RPCFault(Exception):

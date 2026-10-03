@@ -92,8 +92,8 @@ and [current limitations](docs/16-limitations-roadmap.md).
 ## Build it with AI
 
 PyWeb ships an MCP server so AI assistants can scaffold, check, inspect,
-render and test your app, with errors that come back as line numbers and
-fix hints:
+render, screenshot and test your app, with errors that come back as line
+numbers and fix hints:
 
 ```bash
 claude mcp add pyweb -- pyweb mcp          # Claude Code
@@ -164,6 +164,7 @@ and changes to them are announced in the [changelog](CHANGELOG.md) (see
 
 | Version | Highlights |
 |---|---|
+| 0.3 | Hydration, live updates (SSE), multi-file apps, language server + VS Code extension, browser playground, faster rendering, screenshot/test MCP tools |
 | 0.2 | MCP server for AI assistants, AI guide, project templates, `AGENTS.md`/`CLAUDE.md`, `llms.txt` |
 | 0.1 | First public release: compiler, reactive runtime, server rendering, typed RPC, sessions, databases, CLI | The test suite covers the
 parser, the Python→JavaScript translation (differentially, against

@@ -40,7 +40,7 @@ def test_initialize_and_listing(server):
     assert call(server, "initialize", {"protocolVersion": "1999-01-01"})["protocolVersion"] == mcp.PROTOCOL_VERSIONS[0]
     names = [t["name"] for t in call(server, "tools/list")["tools"]]
     assert names == ["pyweb_guide", "pyweb_new_app", "pyweb_check", "pyweb_inspect",
-                     "pyweb_compiled", "pyweb_render", "pyweb_call"]
+                     "pyweb_compiled", "pyweb_render", "pyweb_call", "pyweb_screenshot", "pyweb_test"]
     uris = [r["uri"] for r in call(server, "resources/list")["resources"]]
     assert "pyweb://guide" in uris and "pyweb://templates/todo" in uris
     assert call(server, "prompts/list")["prompts"][0]["name"] == "build_pyweb_app"
@@ -51,7 +51,7 @@ def test_initialize_and_listing(server):
 
 def test_build_check_render_call_loop(server, tmp_path):
     created = tool(server, "pyweb_new_app", directory="shop", template="blog", title="Shop")["created"]
-    assert {os.path.basename(f) for f in created} >= {"app.pyweb", "AGENTS.md", "CLAUDE.md", "app.css"}
+    assert {os.path.basename(f) for f in created} >= {"app.pyweb", "test_app.py", "AGENTS.md", "CLAUDE.md", "app.css"}
     assert 'App(title="Shop"' in (tmp_path / "shop" / "app.pyweb").read_text()
     assert (tmp_path / "shop" / "CLAUDE.md").read_text() == "@AGENTS.md\n"
 
@@ -160,3 +160,25 @@ def test_official_sdk_client(tmp_path):
 
     names, text = asyncio.run(run())
     assert "pyweb_check" in names and json.loads(text)["ok"] is True
+
+
+@pytest.mark.parametrize("template", ["counter", "blog", "auth"])
+def test_new_apps_come_with_a_passing_test(server, tmp_path, template):
+    tool(server, "pyweb_new_app", directory="app", template=template)
+    res = tool(server, "pyweb_test", path="app")
+    assert res["ok"] and res["passed"] == 1 and res["failed"] == 0, res["output"]
+    assert not (tmp_path / "app" / "blog.db").exists()  # the starter test keeps app files out of the project
+
+
+def test_pyweb_test_reports_failures_and_missing_tests(server, tmp_path):
+    tool(server, "pyweb_new_app", directory="app", template="counter")
+    (tmp_path / "app" / "test_more.py").write_text(
+        "from pyweb.testing import TestClient\n\n"
+        "def test_title():\n    assert 'Nope' in TestClient('app.pyweb').get('/').text\n")
+    res = tool(server, "pyweb_test", path="app")
+    assert res["ok"] is False and res["passed"] == 1 and res["failed"] == 1
+    assert "test_title" in res["output"] and "1 failed, 1 passed" in res["summary"]
+    assert tool(server, "pyweb_test", path="app", filter="home")["passed"] == 1
+    (tmp_path / "empty").mkdir()
+    none = tool(server, "pyweb_test", path="empty")
+    assert none["ok"] is False and "No tests found" in none["hint"]

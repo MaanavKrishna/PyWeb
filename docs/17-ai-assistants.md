@@ -14,7 +14,8 @@ get it right:
 ## The MCP server
 
 The MCP server, templates and agent files need `pyweb-stack` 0.2.0 or
-later (`pip install -U pyweb-stack`). Install PyWeb, then register the
+later, and `pyweb_screenshot` and `pyweb_test` need 0.3.0
+(`pip install -U pyweb-stack`). Install PyWeb, then register the
 server with your assistant. It talks
 over stdio and has no dependencies beyond PyWeb itself.
 
@@ -55,6 +56,8 @@ in, which is normally your project.
 | `pyweb_compiled` | The JavaScript generated for a page, and its server-rendered HTML. |
 | `pyweb_render` | Requests a URL from the app: status, redirect target, HTML, and the Python traceback for 500s. |
 | `pyweb_call` | Calls an `@server` function exactly like the browser does, returning the result or the typed error. Cookies persist, so an assistant can log in and then render a protected page. |
+| `pyweb_screenshot` | Opens a page in headless Chromium, optionally runs steps (click, fill, press, select, goto, wait), and returns a screenshot plus the page text, console errors and whether the page hydrated. Needs Playwright (`pip install playwright && python -m playwright install chromium`). |
+| `pyweb_test` | Runs the app's pytest tests and returns pass/fail counts, the summary and the failure output. |
 
 The server also exposes the guide and every template as resources
 (`pyweb://guide`, `pyweb://templates/<name>`) and a `build_pyweb_app`
@@ -69,11 +72,14 @@ prompt that walks an assistant through scaffold → edit → check → verify.
    `{"line": 8, "message": "'sqlite3' only exists on the server ...",
    "hint": "Move that logic into an @server function and call it from the handler."}`.
 4. It confirms the result with `pyweb_render` (each page) and `pyweb_call`
-   (each server function).
-5. You run `pyweb dev app.pyweb` and try it.
+   (each server function), and looks at the page with `pyweb_screenshot`,
+   clicking and typing through the flow it built.
+5. It adds tests to `test_app.py` and runs them with `pyweb_test`.
+6. You run `pyweb dev app.pyweb` and try it.
 
-`pyweb_render` and `pyweb_call` run your app's server code, as
-`pyweb dev` would. Assistants generally ask before calling them.
+`pyweb_render`, `pyweb_call`, `pyweb_screenshot` and `pyweb_test` run
+your app's code, as `pyweb dev` or `pytest` would. Assistants generally
+ask before calling them.
 
 ## AGENTS.md and CLAUDE.md
 
@@ -82,6 +88,7 @@ prompt that walks an assistant through scaffold → edit → check → verify.
 ```text
 myapp/
   app.pyweb
+  test_app.py    a starter test (pyweb.testing.TestClient); run with pytest
   AGENTS.md      the PyWeb rules and workflow for coding agents
   CLAUDE.md      "@AGENTS.md" (Claude Code imports it)
   static/app.css

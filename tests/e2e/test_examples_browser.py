@@ -102,6 +102,8 @@ def test_chat_two_clients(browser):
     with serve("examples/chat/app.pyweb") as url:
         a = browser.new_context().new_page()
         b = browser.new_context().new_page()
+        urls = []
+        b.on("request", lambda r: urls.append(r.url))
         for p in (a, b):
             p.goto(url + "/chat/python")
             ready(p)
@@ -109,8 +111,24 @@ def test_chat_two_clients(browser):
         a.fill("#draft", "hello from A")
         a.press("#draft", "Enter")
         expect(a.locator(".msg")).to_have_text(["adahello from A"])
-        expect(b.locator(".msg")).to_have_text(["adahello from A"], timeout=5000)
+        # Pushed over Server-Sent Events: no polling involved.
+        expect(b.locator(".msg")).to_have_text(["adahello from A"], timeout=2000)
+        assert any("/__pyweb/events?feed=" in u for u in urls)
+        assert not any("/__pyweb/poll" in u or "/rpc/history" in u for u in urls)
         assert b.goto(url + "/chat/nope").status == 404
+
+
+def test_chat_falls_back_to_polling_without_sse(browser):
+    with serve("examples/chat/app.pyweb") as url:
+        a = browser.new_context().new_page()
+        b = browser.new_context().new_page()
+        b.route("**/__pyweb/events*", lambda route: route.fulfill(status=503, body="no streams here"))
+        for p in (a, b):
+            p.goto(url + "/chat/random")
+            ready(p)
+        a.fill("#draft", "via polling")
+        a.press("#draft", "Enter")
+        expect(b.locator(".msg")).to_have_text(["guestvia polling"], timeout=6000)
 
 
 def test_showcase_server_search(page):

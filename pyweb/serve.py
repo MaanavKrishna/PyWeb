@@ -137,6 +137,11 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
                 resp = server_runtime.handle(Request(
                     "GET", self.path, dict(self.headers),
                     cookies=parse_cookies(self.headers.get("Cookie"))))
+                if hasattr(resp.body, "snapshot"):  # Server-Sent Events
+                    from pyweb.hosting import SECURITY_HEADERS as _sec
+                    from pyweb.hosting import write_http
+                    hdrs = list(resp.headers.items()) + [h for h in _sec if h[0] not in resp.headers]
+                    return write_http(self, resp.status, hdrs, resp.body, head=self.command == "HEAD")
                 return self._bytes(resp.body, resp.status,
                                    resp.headers.get("Content-Type", "text/html"),
                                    {k: v for k, v in resp.headers.items()

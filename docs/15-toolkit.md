@@ -45,8 +45,10 @@ bus.publish("room:python", {"author": "ada", "text": "hi"})
 bus.since("room:python", last_id=0)    # [(1, {...}), ...] shared across processes
 ```
 
-Browsers receive updates by polling a server function (see the chat
-example) or via `/__pyweb/poll?channel=NAME&since=ID`.
+`pyweb.publish(name, data)` publishes through this bus, and pages listen
+with `channel()` and `subscribe()` (see
+[Live updates](06-server-functions.md#live-updates)). To share one bus
+between processes, call `realtime.use_bus(bus)` at startup.
 
 ## Uploads, forms, observability
 

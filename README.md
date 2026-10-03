@@ -131,7 +131,7 @@ a real browser by the test suite.
 | [`todo`](examples/todo/app.pyweb) | components, list mutation, filters, keyed lists |
 | [`blog`](examples/blog/app.pyweb) | SQL database, server functions, route params, 404s, validation errors |
 | [`auth`](examples/auth/app.pyweb) | registration, password hashing, sessions, protected pages |
-| [`chat`](examples/chat/app.pyweb) | route params, shared server state, polling with `on_mount` |
+| [`chat`](examples/chat/app.pyweb) | route params, shared server state, live updates with `publish`/`subscribe` |
 | [`showcase`](examples/showcase/app.pyweb) | everything on one page, with a stylesheet |
 
 ## Command line

@@ -3,7 +3,8 @@
 A :class:`Site` answers one HTTP request: static assets, ``/healthz``,
 pages and RPC (via :class:`pyweb.runtime.server.Server`). It is
 transport-agnostic: callers pass method/path/headers/body and get back
-``(status, [(header, value)], body_bytes)``.
+``(status, [(header, value)], body)``, where ``body`` is bytes or, for
+Server-Sent Events, a :class:`pyweb.realtime.EventStream`.
 """
 
 from __future__ import annotations
@@ -32,6 +33,39 @@ def _ctype(path):
     if path.endswith(".css"):
         return "text/css; charset=utf-8"
     return mimetypes.guess_type(path)[0] or "application/octet-stream"
+
+
+def is_stream(body):
+    return not isinstance(body, (bytes, bytearray, str))
+
+
+def write_http(handler, status, headers, body, *, head=False):
+    """Write one response from a ``http.server`` handler; streams are flushed
+    chunk by chunk and end the connection."""
+    stream = is_stream(body)
+    handler.send_response(status)
+    for k, v in headers:
+        if k.lower() != "content-length":
+            handler.send_header(k, v)
+    if stream:
+        handler.send_header("Connection", "close")
+        handler.close_connection = True
+    else:
+        handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    if head:
+        return
+    if not stream:
+        handler.wfile.write(body)
+        return
+    try:
+        for chunk in body:
+            handler.wfile.write(chunk)
+            handler.wfile.flush()
+    except OSError:  # the client went away
+        pass
+    finally:
+        body.close()
 
 
 class Site:
@@ -125,6 +159,8 @@ class Site:
                     hdrs.append((k, str(item)))
             raw = resp.body.encode() if isinstance(resp.body, str) else (resp.body or b"")
             out = (resp.status, hdrs, raw)
+        if is_stream(out[2]) and method == "HEAD":
+            out = (out[0], out[1], b"")
         status, hdrs, raw = out
         names = {k.lower() for k, _ in hdrs}
         for k, v in SECURITY_HEADERS:

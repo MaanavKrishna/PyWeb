@@ -88,6 +88,8 @@ class TestClient:
 
     def request(self, method, path, body=b"", headers=None):
         status, hdrs, raw = self.site.respond(method, path, self._headers(headers), body)
+        if hasattr(raw, "snapshot"):  # an event stream: return what is available now
+            raw = raw.snapshot()
         self._store_cookies(hdrs)
         return TestResponse(status, hdrs, raw)
 
@@ -121,15 +123,9 @@ def serve(app="app.pyweb", *, host="127.0.0.1", **site_kwargs):
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def _go(self, method, body=b""):
+            from .hosting import write_http
             status, headers, raw = site.respond(method, self.path, dict(self.headers), body)
-            self.send_response(status)
-            for k, v in headers:
-                if k.lower() != "content-length":
-                    self.send_header(k, v)
-            self.send_header("Content-Length", str(len(raw)))
-            self.end_headers()
-            if method != "HEAD":
-                self.wfile.write(raw)
+            write_http(self, status, headers, raw, head=method == "HEAD")
 
         def do_GET(self):  # noqa: N802
             self._go("GET")

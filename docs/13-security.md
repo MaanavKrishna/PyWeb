@@ -74,6 +74,11 @@ table and column identifiers.
   magic bytes, and generates safe storage names.
 - Passwords use PBKDF2-HMAC-SHA256 with per-user salts; session cookies
   are HMAC-SHA256 signed and compared in constant time.
+- Live-update channels can only be read with a feed from `channel()`:
+  an HMAC-signed token that expires after 24 hours. A page that shows
+  private data should only create a feed after checking the visitor
+  (for example with `session.require()`), exactly as it would before
+  rendering the data itself.
 
 ## Reporting a vulnerability
 

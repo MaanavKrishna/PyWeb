@@ -139,14 +139,8 @@ def cmd_dev(args):
 
     class H(http.server.BaseHTTPRequestHandler):
         def _send(self, status, headers, body):
-            self.send_response(status)
-            for k, v in headers:
-                if k.lower() != "content-length":
-                    self.send_header(k, v)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(body)
+            from pyweb.hosting import write_http
+            write_http(self, status, headers, body, head=self.command == "HEAD")
 
         def _handle(self, method, body=b""):
             if self.path == "/__pyweb/dev/version":
@@ -157,7 +151,7 @@ def cmd_dev(args):
                 return self._send(500, [("Content-Type", "text/html; charset=utf-8")], html)
             status, headers, raw = state.site.respond(method, self.path, dict(self.headers), body)
             ctype = next((v for k, v in headers if k.lower() == "content-type"), "")
-            if ctype.startswith("text/html") and b"</body>" in raw:
+            if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
                 raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
             return self._send(status, headers, raw)
 

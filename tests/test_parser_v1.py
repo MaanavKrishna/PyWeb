@@ -137,3 +137,10 @@ def test_comparison_in_python_is_not_markup():
     py, ui = P.split_sources(src)
     assert "small = a <b" in py
     assert len(ui) == 1
+
+
+def test_markup_after_a_def_line_with_a_trailing_comment():
+    from pyweb.testing import TestClient
+    src = ("from pyweb import App\napp = App()\n\n\n@app.page('/')\n"
+           "def Home(q: str = 'x'):    # query parameter\n    <h1>{q}</h1>\n")
+    assert "<h1>hi</h1>" in TestClient(source=src).get("/?q=hi").text

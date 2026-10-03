@@ -40,7 +40,8 @@ def test_initialize_and_listing(server):
     assert call(server, "initialize", {"protocolVersion": "1999-01-01"})["protocolVersion"] == mcp.PROTOCOL_VERSIONS[0]
     names = [t["name"] for t in call(server, "tools/list")["tools"]]
     assert names == ["pyweb_guide", "pyweb_new_app", "pyweb_check", "pyweb_inspect",
-                     "pyweb_compiled", "pyweb_render", "pyweb_call", "pyweb_screenshot", "pyweb_test"]
+                     "pyweb_compiled", "pyweb_render", "pyweb_call", "pyweb_routes", "pyweb_packages",
+                     "pyweb_screenshot", "pyweb_test"]
     uris = [r["uri"] for r in call(server, "resources/list")["resources"]]
     assert "pyweb://guide" in uris and "pyweb://templates/todo" in uris
     assert call(server, "prompts/list")["prompts"][0]["name"] == "build_pyweb_app"
@@ -120,7 +121,7 @@ def test_every_pyweb_block_in_the_guide_compiles():
         compile_source(b)
 
 
-@pytest.mark.parametrize("name", ["counter", "todo", "blog", "auth", "chat"])
+@pytest.mark.parametrize("name", ["counter", "todo", "blog", "auth", "chat", "ai-chat"])
 def test_templates_match_examples(name):
     packaged = (ROOT / "pyweb" / "templates" / f"{name}.pyweb").read_text()
     assert packaged == (ROOT / "examples" / name / "app.pyweb").read_text()
@@ -182,3 +183,73 @@ def test_pyweb_test_reports_failures_and_missing_tests(server, tmp_path):
     (tmp_path / "empty").mkdir()
     none = tool(server, "pyweb_test", path="empty")
     assert none["ok"] is False and "No tests found" in none["hint"]
+
+
+# ------------------------------------------------------------ 0.4 features
+
+def site_app(tmp_path):
+    from tests.test_multipage import APP
+    (tmp_path / "app.pyweb").write_text(APP)
+    return "app.pyweb"
+
+
+def test_routes_map_pages_layouts_and_parameters(server, tmp_path):
+    routes = tool(server, "pyweb_routes", path=site_app(tmp_path))
+    pages = {p["page"]: p for p in routes["pages"]}
+    assert pages["Products"]["route"] == "/products" and pages["Products"]["layouts"] == ["Shell"]
+    assert pages["Products"]["params"][1] == {"name": "page", "type": "int", "from": "query", "default": "1"}
+    assert pages["Product"]["params"] == [{"name": "pid", "type": "int", "from": "path"}]
+    assert pages["Search"]["params"][0]["required"] is True
+    assert pages["Missing"]["error_status"] == 404 and pages["Bare"]["head"] == {"noindex": True}
+    assert {lay["layout"]: lay["pages"] for lay in routes["layouts"]}["Admin"] == ["Users"]
+
+
+def test_render_reports_title_head_and_roots(server, tmp_path):
+    res = tool(server, "pyweb_render", path=site_app(tmp_path), url="/products/2")
+    assert res["title"] == "Desk - Shop" and res["roots"] == ["Shell", "Product"]
+    assert res["head"]["description"] == "Buy a Desk" and res["head"]["canonical"] == "https://shop.test/products/2"
+
+
+def test_call_returns_streamed_chunks(server, tmp_path):
+    (tmp_path / "app.pyweb").write_text("from pyweb import App, server\napp = App()\n\n\n@server\n"
+                                        "def count(n: int):\n    for i in range(n):\n        yield i\n\n\n"
+                                        "@app.page('/')\ndef H():\n    <p>hi</p>\n")
+    assert tool(server, "pyweb_call", function="count", args={"n": 3}) == {
+        "ok": True, "streamed": True, "chunks": [0, 1, 2], "cookies": []}
+    check = tool(server, "pyweb_check")
+    assert check["server_functions"] == [{"name": "count", "args": [{"name": "n", "type": "int"}],
+                                          "returns": "Any", "streams": True}]
+
+
+def test_packages_add_list_remove(server, tmp_path, monkeypatch):
+    from pyweb import packages
+    from tests.test_packages import registry
+    fake = registry()
+    monkeypatch.setattr(packages, "Registry", lambda *a, **k: fake)
+    (tmp_path / "app.pyweb").write_text("from pyweb import App\napp = App()\n@app.page('/')\ndef H():\n    <p/>\n")
+    added = tool(server, "pyweb_packages", add=["gauge-widget"])
+    assert added["ok"] and added["packages"]["gauge-widget"]["version"] == "1.1.0"
+    assert "Gauge" in added["packages"]["gauge-widget"]["exports"]
+    assert added["usage"] == ['X = npm("gauge-widget")  # default export; npm("gauge-widget", "Name") for a named '
+                              'one, "*" for all']
+    assert tool(server, "pyweb_packages")["specifiers"] == ["gauge-widget", "tiny-color"]
+    assert tool(server, "pyweb_packages", remove=["gauge-widget"])["packages"] == {}
+    bad = tool(server, "pyweb_packages", add=["old-cjs"])
+    assert bad["ok"] is False and "CommonJS" in bad["error"] and "lodash-es" in bad["hint"]
+
+
+@pytest.mark.parametrize("name, words", [("add_ai_feature", ["yield", "<Markdown", ".cancel()"]),
+                                         ("make_data_live", ["live(db", "db.notify"]),
+                                         ("build_pyweb_app", ["pyweb_routes", "pyweb_packages"])])
+def test_prompts(server, name, words):
+    assert name in [p["name"] for p in call(server, "prompts/list")["prompts"]]
+    text = call(server, "prompts/get", {"name": name, "arguments": {"feature": "summaries",
+                                                                    "description": "a shop"}})
+    body = text["messages"][0]["content"]["text"]
+    assert all(w in body for w in words), body
+
+
+def test_guide_has_the_0_4_sections(server):
+    for section, title in [("streaming", "## 10. Streaming"), ("live data", "## 11. Live data"),
+                           ("npm", "## 12. npm packages"), ("multi-page", "## 9. Multi-page")]:
+        assert tool(server, "pyweb_guide", section=section).startswith(title)

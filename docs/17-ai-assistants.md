@@ -13,9 +13,10 @@ get it right:
 
 ## The MCP server
 
-The MCP server, templates and agent files need `pyweb-stack` 0.2.0 or
-later, and `pyweb_screenshot` and `pyweb_test` need 0.3.0
-(`pip install -U pyweb-stack`). Install PyWeb, then register the
+The tools below are those of `pyweb-stack` 0.4.1
+(`pip install -U pyweb-stack`; older versions have fewer:
+`pyweb_routes`, `pyweb_packages` and the task prompts arrived in 0.4.1,
+`pyweb_screenshot` and `pyweb_test` in 0.3.0). Install PyWeb, then register the
 server with your assistant. It talks
 over stdio and has no dependencies beyond PyWeb itself.
 
@@ -50,18 +51,22 @@ in, which is normally your project.
 | Tool | What it does |
 |---|---|
 | `pyweb_guide` | Returns the rules for writing `.pyweb` apps (or one section): what runs where, state, markup, components, server functions, the browser Python subset, and every common error with its fix. |
-| `pyweb_new_app` | Creates an app from a template (`blank`, `counter`, `todo`, `blog`, `auth`, `chat`) with `AGENTS.md`, `CLAUDE.md` and a stylesheet. |
-| `pyweb_check` | Compiles the app and runs security checks. Returns `ok`, errors with `line`, `message` and a fix `hint`, plus pages, signals, what's sent to the browser, JS size and the server functions. |
+| `pyweb_new_app` | Creates an app from a template (`blank`, `counter`, `todo`, `blog`, `auth`, `chat`, `ai-chat`) with `AGENTS.md`, `CLAUDE.md`, a starter test and a stylesheet. |
+| `pyweb_check` | Compiles the app and runs security checks. Returns `ok`, errors with `line`, `message` and a fix `hint`, plus pages (with their layouts, live-data variables and npm packages), signals, what's sent to the browser, JS size and the server functions (marking those that stream). |
 | `pyweb_inspect` | For every name: does it run in the browser or on the server, and why. |
 | `pyweb_compiled` | The JavaScript generated for a page, and its server-rendered HTML. |
-| `pyweb_render` | Requests a URL from the app: status, redirect target, HTML, and the Python traceback for 500s. |
-| `pyweb_call` | Calls an `@server` function exactly like the browser does, returning the result or the typed error. Cookies persist, so an assistant can log in and then render a protected page. |
+| `pyweb_render` | Requests a URL from the app: status, redirect target, title and head tags, the layouts and page that rendered, HTML, and the Python traceback for 500s. |
+| `pyweb_call` | Calls an `@server` function exactly like the browser does, returning the result (or every streamed chunk, for functions that `yield`) or the typed error. Cookies persist, so an assistant can log in and then render a protected page. |
+| `pyweb_routes` | The map of the app: every page with its route, parameters (path or query string, with types and defaults), title and head tags, the layouts around it and its live-data variables; layouts, error pages, and server functions. |
+| `pyweb_packages` | Adds, removes or lists npm packages for browser code (no Node.js): returns versions, exported names from the package's TypeScript declarations, and the `npm(...)` lines to bind them. Adding downloads from the npm registry. |
 | `pyweb_screenshot` | Opens a page in headless Chromium, optionally runs steps (click, fill, press, select, goto, wait), and returns a screenshot plus the page text, console errors and whether the page hydrated. Needs Playwright (`pip install playwright && python -m playwright install chromium`). |
 | `pyweb_test` | Runs the app's pytest tests and returns pass/fail counts, the summary and the failure output. |
 
 The server also exposes the guide and every template as resources
-(`pyweb://guide`, `pyweb://templates/<name>`) and a `build_pyweb_app`
-prompt that walks an assistant through scaffold → edit → check → verify.
+(`pyweb://guide`, `pyweb://templates/<name>`) and three prompts:
+`build_pyweb_app` (scaffold → edit → check → verify), `add_ai_feature`
+(a streaming AI feature with Stop and Markdown in an existing app) and
+`make_data_live` (switch pages to live queries).
 
 ### What a session looks like
 
@@ -78,8 +83,9 @@ prompt that walks an assistant through scaffold → edit → check → verify.
 6. You run `pyweb dev app.pyweb` and try it.
 
 `pyweb_render`, `pyweb_call`, `pyweb_screenshot` and `pyweb_test` run
-your app's code, as `pyweb dev` or `pytest` would. Assistants generally
-ask before calling them.
+your app's code, as `pyweb dev` or `pytest` would, and `pyweb_packages`
+writes files and downloads packages. Assistants generally ask before
+calling them.
 
 ## AGENTS.md and CLAUDE.md
 
@@ -119,3 +125,7 @@ Point a chat assistant at `llms-full.txt` when it can't run tools.
   ask for an `@server` function; handlers run in the browser.
 - Ask for `pyweb inspect` output when you want to know what data reaches
   the browser.
+- Name the feature you want: "a layout with a nav", "make this list live",
+  "stream the answer with a Stop button", "add chart.js". The guide has
+  a section for each, so the assistant uses the built-in way instead of
+  writing polling or fetch code by hand.

@@ -81,7 +81,10 @@ and makes Python the source language for all of it:
 
 ## When PyWeb is a good fit
 
-- Internal tools, admin panels, dashboards and CRUD apps.
+- Internal tools, admin panels, dashboards and CRUD apps, including
+  ones that update live as the database changes.
+- AI features: chat, summarising, drafting, with replies streamed from
+  your server and keys kept there.
 - Product sites and small SaaS apps where pages should be fast and
   indexable but still interactive.
 - Teams that know Python and want a web UI without adopting a separate
@@ -89,8 +92,10 @@ and makes Python the source language for all of it:
 
 ## When to choose something else
 
-- **Large single-page apps** with heavy client-side logic and a need for
-  the npm component ecosystem: use React/Svelte/Vue directly.
+- **Large single-page apps** built around a JavaScript component
+  framework (React/Svelte/Vue component libraries): use that framework
+  directly. Plain npm libraries (charts, maps, editors) work in PyWeb;
+  see [npm packages](18-npm-packages.md).
 - **Scientific Python in the browser** (NumPy, pandas client-side): use
   Pyodide/PyScript. PyWeb compiles a defined subset of Python to
   JavaScript; it does not run CPython in the browser.

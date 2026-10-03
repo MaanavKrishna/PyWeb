@@ -86,4 +86,11 @@ pyweb serve dist                               # production server with /healthz
 ## Next
 
 The [tutorial](03-tutorial.md) builds a notes app with a database,
-server functions and login.
+server functions and login. Then, depending on what you're building:
+
+- several pages with a shared header: [Layouts & navigation](19-layouts-navigation.md);
+- pages that update when data changes: [Live data](21-live-data.md);
+- chat or other AI features: [Building AI apps](20-ai-apps.md), or start
+  from `pyweb new myapp --template ai-chat`;
+- charts, maps or editors from npm: [npm packages](18-npm-packages.md);
+- working with an AI assistant: [AI assistants & MCP](17-ai-assistants.md).

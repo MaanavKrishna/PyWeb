@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Released with PyWeb 0.4.1. The marketplace page lists the npm, layout
+  and error-page support added in 0.4.0.
+
 ## 0.4.0
 
 - Hover on a name bound with `npm(...)` shows the installed version and

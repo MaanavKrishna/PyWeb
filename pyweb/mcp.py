@@ -14,6 +14,10 @@ Tools (all paths are relative to the directory the server was started in):
 * ``pyweb_compiled``     the generated JavaScript / server-rendered HTML for a page
 * ``pyweb_render``       request a URL from the app (server-side render, redirects, errors)
 * ``pyweb_call``         call an ``@server`` function like the browser does (cookies persist)
+* ``pyweb_routes``       pages, layouts, error pages, typed parameters, live data and streams
+* ``pyweb_packages``     add, remove or list npm packages for browser code (no Node.js)
+* ``pyweb_screenshot``   open a page in headless Chromium, run steps, get a PNG
+* ``pyweb_test``         run the app's pytest tests
 
 Implemented with the standard library only (JSON-RPC 2.0 over stdin/stdout).
 """
@@ -37,8 +41,10 @@ INSTRUCTIONS = (
     "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). "
     "Before writing PyWeb code, call pyweb_guide. After every edit, call pyweb_check and fix "
     "errors by line number using the hints. Use pyweb_inspect to see what runs in the browser "
-    "vs the server, pyweb_render / pyweb_call to verify behaviour, pyweb_screenshot to see the "
-    "page and try interactions in a real browser, and pyweb_test to run the app's tests."
+    "vs the server, pyweb_routes for the map of pages and layouts, pyweb_render / pyweb_call to verify "
+    "behaviour, pyweb_screenshot to see the page and try interactions in a real browser, and pyweb_test "
+    "to run the app's tests. Use pyweb_packages to add npm libraries (no Node.js). For pages that must "
+    "follow the database use live(); for AI replies use a @server function that yields."
 )
 
 ERROR_HINTS = [
@@ -292,11 +298,76 @@ def tool_check(args):
                       "sent_to_browser": p.get("state_keys", []),
                       "page_js_gzip_bytes": _gzip_size(p["js"]),
                       **({"error_status": p["error_status"]} if p.get("error_status") else {}),
-                      **({"layouts": p["layouts"]} if p.get("layouts") else {})})
+                      **({"layouts": p["layouts"]} if p.get("layouts") else {}),
+                      **({"live": list(p["info"].live)} if getattr(p["info"], "live", None) else {}),
+                      **({"npm": sorted(p["importmap"])} if p.get("importmap") else {})})
     blocking = [f for f in findings if f["kind"] in ("secret-leak",)]
     return {"ok": not blocking, "errors": [], "findings": findings, "pages": pages,
-            "server_functions": [{"name": s["name"], "args": s["args"], "returns": s["returns"]}
-                                 for s in out["rpc"]]}
+            "server_functions": [{"name": s["name"], "args": s["args"], "returns": s["returns"],
+                                  **({"streams": True} if s.get("stream") else {})} for s in out["rpc"]],
+            **({"layouts": {n: lay["prefix"] for n, lay in out["layouts"].items()}} if out.get("layouts") else {})}
+
+
+def tool_routes(args):
+    """Every URL the app answers: pages, their parameters (path or query, typed), layouts, error pages."""
+    import ast
+    out, _source, _filename = _compile(args)
+    pages = []
+    for name, p in out["pages"].items():
+        info = p["info"]
+        route = p["route"]
+        params = []
+        for a in info.node.args.args:
+            default = info.defaults.get(a.arg)
+            in_path = route is not None and "{" + a.arg + "}" in route
+            params.append({"name": a.arg, "type": ast.unparse(a.annotation) if a.annotation else "str",
+                           "from": "path" if in_path else ("error" if route is None else "query"),
+                           **({"default": ast.unparse(default)} if default is not None else
+                              {"required": True} if not in_path and route is not None else {})})
+        entry = {"page": name, "params": params, "title": p.get("title"),
+                 **({"route": route} if route is not None else {"error_status": p["error_status"]}),
+                 **({"head": p["head"]} if p.get("head") else {}),
+                 **({"layouts": p["layouts"]} if p.get("layouts") else {}),
+                 "interactive": bool(p["js"])}
+        if getattr(info, "live", None):
+            entry["live"] = list(info.live)
+        pages.append(entry)
+    layouts = [{"layout": n, "prefix": lay["prefix"], "interactive": bool(lay["js"]),
+                "pages": [p["page"] for p in pages if n in p.get("layouts", [])]}
+               for n, lay in out.get("layouts", {}).items()]
+    return {"pages": pages, "layouts": layouts,
+            "server_functions": [{"name": s["name"], "endpoint": f"POST /__pyweb/rpc/{s['name']}",
+                                  "streams": bool(s.get("stream"))} for s in out["rpc"]]}
+
+
+def tool_packages(args):
+    """Add, remove or list the npm packages an app uses in browser code."""
+    from . import packages
+    path = args.get("path") or "app.pyweb"
+    app_dir = os.path.dirname(os.path.abspath(path)) if path.endswith(".pyweb") else os.path.abspath(path)
+    add, remove = list(args.get("add") or []), list(args.get("remove") or [])
+    try:
+        if add or remove:
+            with contextlib.redirect_stdout(sys.stderr):
+                lock = packages.install(app_dir, add, remove=remove)
+        else:
+            lock = packages.read_lock(app_dir)
+    except packages.PackageError as exc:
+        return {"ok": False, "error": str(exc),
+                "hint": "Pick a package that ships ES modules for browsers (e.g. lodash-es instead of lodash), "
+                        "or do the work in an @server function."}
+    out = {}
+    for name, pkg in lock.get("packages", {}).items():
+        types = pkg.get("types") or {}
+        out[name] = {"version": pkg["version"], "direct": pkg.get("direct", False), "files": len(pkg.get("files", [])),
+                     **({"exports": dict(list(types.items())[:40])} if types and pkg.get("direct") else {})}
+    specs = sorted(lock.get("imports", {}))
+    usage = [f'X = npm("{s}")  # default export; npm("{s}", "Name") for a named one, "*" for all' for s in specs
+             if lock.get("packages", {}).get(packages.split_specifier(s)[0], {}).get("direct")]
+    return {"ok": True, "app_dir": app_dir, "packages": out, "specifiers": specs, "usage": usage,
+            "next_steps": ["from pyweb import npm, then bind at module level as shown in usage",
+                           "use the bound names only in handlers / on_mount (not directly in markup)",
+                           "commit pyweb.lock and static/vendor/"] if specs else []}
 
 
 def tool_inspect(args):
@@ -350,6 +421,17 @@ def tool_render(args):
         if pre:
             import html as _html
             res["error"] = _html.unescape(pre.group(1)).strip()[-4000:]
+    title = re.search(r"<title>(.*?)</title>", text, re.S)
+    if title:
+        import html as _html
+        res["title"] = _html.unescape(title.group(1))
+        head = {m.group(1): _html.unescape(m.group(2)) for m in re.finditer(
+            r'<(?:meta|link) data-pw-head (?:name|property|rel)="([^"]+)" (?:content|href)="([^"]*)"', text)}
+        if head:
+            res["head"] = head
+        roots = re.findall(r'data-pw-root="(\w+)"', text)
+        if roots:
+            res["roots"] = roots          # layouts first, then the page
     res["body"] = text[:limit] + ("\n... (truncated)" if len(text) > limit else "")
     return res
 
@@ -361,9 +443,13 @@ def tool_call(args):
     if not fn:
         raise ValueError("function is required")
     client = APPS.client(path)
+    streams = any(s["name"] == fn and s.get("stream") for s in client.app.compiled["rpc"]) or any(
+        s["name"] == fn and s.get("stream") for lib in client.app.libraries for s in lib.rpc)
     try:
         with contextlib.redirect_stdout(sys.stderr):
             result = client.rpc(fn, **(args.get("args") or {}))
+        if streams:
+            return {"ok": True, "streamed": True, "chunks": result, "cookies": sorted(client.cookies)}
         return {"ok": True, "result": result, "cookies": sorted(client.cookies)}
     except RPCError as exc:
         return {"ok": False, "error": {"code": exc.code, "message": str(exc), "status": exc.status}}
@@ -481,8 +567,8 @@ TOOLS = [
     {"name": "pyweb_new_app", "fn": tool_new_app, "readOnly": False,
      "description": "Create a new PyWeb app directory from a template, including AGENTS.md/CLAUDE.md instructions "
                     "for AI agents. Templates: blank, counter, todo (components, lists), blog (SQL database, "
-                    "server functions, route params), auth (sessions, passwords), chat (live updates). New apps "
-                    "include test_app.py.",
+                    "server functions, route params), auth (sessions, passwords), chat (live updates), ai-chat "
+                    "(streaming AI replies with Stop and Markdown). New apps include test_app.py.",
      "inputSchema": {"type": "object", "properties": {
          "directory": {"type": "string", "description": "Directory to create (default: current directory)."},
          "template": {"type": "string", "enum": list(TEMPLATES)},
@@ -513,11 +599,26 @@ TOOLS = [
          "max_chars": {"type": "integer", "description": "Truncate the body (default 20000)."}}}},
     {"name": "pyweb_call", "fn": tool_call, "readOnly": False,
      "description": "Call an @server function of the app exactly like the browser does (JSON RPC with "
-                    "validation). Returns the result or the typed error (code, message). Cookies persist across "
+                    "validation). Returns the result (for functions that yield: every streamed chunk) or the "
+                    "typed error (code, message). Cookies persist across "
                     "calls, so e.g. call a login function, then pyweb_render a protected page.",
      "inputSchema": {"type": "object", "required": ["function"], "properties": {
          "path": PATH_PROP, "function": {"type": "string"},
          "args": {"type": "object", "description": "Keyword arguments by parameter name."}}}},
+    {"name": "pyweb_routes", "fn": tool_routes, "readOnly": True,
+     "description": "Map of the app: every page with its route, parameters (from the path or the query "
+                    "string, with types and defaults), title and head tags, the layouts that wrap it, live-data "
+                    "variables, error pages, and server functions (marking those that stream).",
+     "inputSchema": {"type": "object", "properties": {"path": PATH_PROP, "source": SOURCE_PROP}}},
+    {"name": "pyweb_packages", "fn": tool_packages, "readOnly": False,
+     "description": "npm packages for browser code, without Node.js. With `add` (e.g. ['chart.js/auto', "
+                    "'canvas-confetti@^1']) or `remove`, downloads/removes them into static/vendor/ and pyweb.lock; "
+                    "with neither, lists what is installed. Returns versions, exported names (from TypeScript "
+                    "declarations) and the npm(...) lines to bind them.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string", "description": "The app's .pyweb file or folder (default: app.pyweb)."},
+         "add": {"type": "array", "items": {"type": "string"}, "description": "Packages to add, e.g. lit or ethers@^6."},
+         "remove": {"type": "array", "items": {"type": "string"}}}}},
     {"name": "pyweb_screenshot", "fn": tool_screenshot, "readOnly": False,
      "description": "See the app in a real browser (headless Chromium): open a URL, optionally run steps (click, "
                     "fill, press, select, goto, wait), and get a PNG screenshot plus the page text, console errors "
@@ -548,10 +649,44 @@ PROMPTS = [
      "arguments": [{"name": "description", "description": "What the app should do.", "required": True},
                    {"name": "directory", "description": "Where to create it (default: current directory).",
                     "required": False}]},
+    {"name": "add_ai_feature",
+     "description": "Add a streaming AI feature (chat, summarise, generate) to an existing PyWeb app.",
+     "arguments": [{"name": "feature", "description": "What the AI feature should do.", "required": True},
+                   {"name": "path", "description": "The app (default: app.pyweb).", "required": False}]},
+    {"name": "make_data_live",
+     "description": "Make pages of an existing PyWeb app update by themselves when the database changes.",
+     "arguments": [{"name": "path", "description": "The app (default: app.pyweb).", "required": False}]},
 ]
 
 
-def _prompt_text(args):
+def _prompt_text(name, args):
+    if name == "add_ai_feature":
+        path = args.get("path") or "app.pyweb"
+        return (
+            f"Add this AI feature to the PyWeb app at `{path}`: {args.get('feature', '').strip()}\n\n"
+            "Steps:\n"
+            "1. Call pyweb_guide with section 'streaming' and follow it; read the ai-chat template "
+            "(resource pyweb://templates/ai-chat) for a provider-agnostic model call.\n"
+            "2. Write a @server function that yields text as the model produces it. Read API keys from "
+            "os.environ inside server code only; validate and trim what the browser sends.\n"
+            "3. In the page, read it with `async for` in an `async def` handler, show the text with "
+            "<Markdown text={...} />, and add a Stop button that calls `.cancel()` on the stream.\n"
+            "4. Call pyweb_check until it is clean, pyweb_call the function (it returns the streamed chunks) "
+            "and look at the page with pyweb_screenshot.\n"
+            "5. Add a test with TestClient.rpc (it returns the list of chunks) and run pyweb_test."
+        )
+    if name == "make_data_live":
+        path = args.get("path") or "app.pyweb"
+        return (
+            f"Make the PyWeb app at `{path}` live: pages should update by themselves when the data changes.\n\n"
+            "Steps:\n"
+            "1. Call pyweb_guide with section 'live data' and pyweb_routes to see the pages.\n"
+            "2. Replace page variables loaded with db.execute(...).dicts() by live(db, sql, params) "
+            "(from pyweb import live). Keep each query small (LIMIT) and filtered per user in SQL.\n"
+            "3. Remove polling (setInterval) and hand-written publish/subscribe that only refresh data.\n"
+            "4. Make sure writes go through pyweb.db (or call db.notify('table') after other writes).\n"
+            "5. Call pyweb_check, then verify with pyweb_screenshot: change data with pyweb_call and reload."
+        )
     desc = args.get("description", "").strip()
     directory = args.get("directory") or "."
     return (
@@ -560,10 +695,11 @@ def _prompt_text(args):
         "1. Call pyweb_guide and follow its rules.\n"
         f"2. Call pyweb_new_app (directory={directory!r}) with the closest template.\n"
         "3. Edit app.pyweb. Keep database/secret/import work in @server functions; keep handlers to "
-        "browser-safe Python.\n"
+        "browser-safe Python. Use a layout for shared navigation, live() for data that changes, a "
+        "yielding @server function for AI replies, and pyweb_packages for JavaScript libraries.\n"
         "4. Call pyweb_check after every edit until ok is true with no errors; apply the hints.\n"
-        "5. Verify with pyweb_render (each page) and pyweb_call (each server function), and look at "
-        "the result with pyweb_screenshot (use steps to click and type).\n"
+        "5. Verify with pyweb_routes, pyweb_render (each page) and pyweb_call (each server function), and "
+        "look at the result with pyweb_screenshot (use steps to click and type).\n"
         "6. Add tests to test_app.py and run them with pyweb_test.\n"
         "7. Tell the user to run `pyweb dev app.pyweb` to try it."
     )
@@ -642,11 +778,12 @@ class Server:
         if method == "prompts/list":
             return {"prompts": PROMPTS}
         if method == "prompts/get":
-            if params.get("name") != "build_pyweb_app":
+            prompt = next((p for p in PROMPTS if p["name"] == params.get("name")), None)
+            if prompt is None:
                 raise _RPCFault(-32602, f"unknown prompt {params.get('name')!r}")
-            return {"description": PROMPTS[0]["description"],
-                    "messages": [{"role": "user", "content": {"type": "text",
-                                                              "text": _prompt_text(params.get("arguments") or {})}}]}
+            text = _prompt_text(prompt["name"], params.get("arguments") or {})
+            return {"description": prompt["description"],
+                    "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
         raise _RPCFault(-32601, f"method not found: {method}")
 
     def call_tool(self, name, args):

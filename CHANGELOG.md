@@ -6,6 +6,30 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.4.1]
+
+### Added
+- MCP server: `pyweb_routes` maps every page (route, path and query
+  parameters with types and defaults, title and head tags, layouts,
+  live-data variables), the layouts, error pages and server functions.
+- MCP server: `pyweb_packages` adds, removes or lists npm packages for
+  browser code, with each package's exported names and the `npm(...)`
+  lines to bind them.
+- MCP server: `add_ai_feature` and `make_data_live` prompts.
+- MCP server: `pyweb_call` returns every chunk a streaming function
+  yields; `pyweb_render` reports the title, head tags and the layouts that
+  rendered; `pyweb_check` reports layouts, live variables, npm packages
+  and streaming functions.
+- The AI guide (`pyweb_guide`, `AGENTS.md`) has sections with working
+  examples for multi-page apps, streaming and AI, live data and npm
+  packages.
+- A new README with screenshots, and docs on publishing the VS Code
+  extension.
+
+### Fixed
+- Markup right after a `def` line that ends in a comment
+  (`def Page(q: str = ""):  # ...`) failed to compile.
+
 ## [0.4.0]
 
 Apps that are bigger, livelier and smarter: npm packages without

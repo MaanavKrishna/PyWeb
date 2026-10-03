@@ -171,36 +171,10 @@ def Item(item_id: int):
 - Database: `from pyweb.db import connect; db = connect("sqlite:///app.db")`;
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
   parameters; `with db.transaction(): ...`.
-- Query parameters: page params not in the route come from the query
-  string, typed by annotation: `def Search(q: str = "", page: int = 1)`.
-  Missing required / bad values -> 400.
-- Layouts: `@app.layout` (or `@app.layout("/admin")`) on a function with
-  markup containing `{children}` once wraps every page under the prefix;
-  `@app.page(..., layout=None)` opts out. Links between pages load without
-  a full reload and keep the layout's state; mark nothing yourself: links
-  to the current page get `aria-current="page"` automatically.
-- In handlers, navigate with `navigate("/path")` (`from pyweb.browser import navigate`).
-- Head tags: `@app.page("/", title=..., description=..., image=...)`, or
-  `head(title=..., description=...)` in the page body (server). `App(base_url=...)`
-  adds canonical URLs.
-- Error pages: `@app.error(404)` on a page function taking `path` (and/or
-  `status`, `message`, `request_id`).
 - Run code after load with a handler named `on_mount`; stop timers in
   `on_unmount` (runs when the user navigates away). React to a value
   changing with `watch(lambda: value, handler)` in `on_mount`
   (`from pyweb.browser import watch`).
-- Live data: `rows = live(db, "select ... where x = ?", (x,))` in a page
-  (`from pyweb import live`) renders the rows and keeps them current in
-  every open page when the tables are written through `pyweb.db`. No
-  publish/subscribe needed. Use `db.notify("table")` after writes made
-  outside `pyweb.db`. Keep live queries small (`LIMIT`).
-- Streaming (AI replies, progress): a `@server` function that `yield`s;
-  in an `async def` handler `stream = fn(...)` then
-  `async for piece in stream: ...`; `stream.cancel()` stops it (closes the
-  generator on the server). Show model output with `<Markdown text={reply} />`
-  (`from pyweb import Markdown`): safe, renders as it streams. Template:
-  `pyweb new NAME --template ai-chat`. Keep API keys in server code
-  (`os.environ`), never in page variables.
 - Live updates: in a server function `publish("room:1", data)`; in the
   page `feed = channel("room:1")` (runs on the server); in `on_mount`
   `subscribe(feed, handler)`, where `handler(message)` assigns page
@@ -222,15 +196,6 @@ Not supported in browser code: classes, imports, `with`, generators,
 walrus, `*args/**kwargs` parameters, slice assignment, keyword arguments to
 browser globals, server-only names. Move such code into `@server` functions.
 
-npm packages (no Node.js needed): run `pyweb add chart.js/auto` in the app
-folder (writes `pyweb.lock` and `static/vendor/`; commit both), then bind at
-module level with literal strings: `Chart = npm("chart.js/auto")`,
-`Gauge = npm("pkg", "Gauge")` (named export), `lib = npm("pkg", "*")` (whole
-module). Calling a class constructs it (`new`); keyword arguments become one
-options object. npm names work only in browser code (handlers, `on_mount`,
-lambdas), never directly in markup. Give libraries an element with
-`ref={el}` (declare `el = None`; it is set before `on_mount`).
-
 ## 8. Errors and fixes
 
 | Error text contains | Fix |
@@ -250,16 +215,172 @@ lambdas), never directly in markup. Give libraries an element with
 | `isn't a valid int` / `missing ?name=` (400) | Give the query parameter a default, or link with a valid value. |
 | `pyweb add`: `is CommonJS` / `imports the Node.js module` | Pick an ES-module browser package (e.g. `lodash-es`), or do the work in an `@server` function. |
 
-## 9. Workflow for agents
+## 9. Multi-page apps
+
+```pyweb
+from pyweb import App, NotFound, head
+
+app = App(title="Shop", base_url="https://shop.example")   # base_url: canonical URLs
+
+
+@app.layout                                  # wraps every page; @app.layout("/admin") for a prefix
+def Shell(children):
+    cart = 0                                 # layout state survives page changes
+
+    def add():
+        cart += 1
+
+    <nav><a href="/">Home</a><a href="/products">Products</a></nav>
+    <button onclick={add}>Cart {cart}</button>
+    {children}
+
+
+@app.page("/products", title="Products", description="Everything we sell")
+def Products(q: str = "", page: int = 1):    # not in the route -> query string, typed; bad -> 400
+    <h1>Results for {q}, page {page}</h1>
+
+
+@app.page("/products/{pid}")
+def Product(pid: int):
+    if pid != 1:
+        raise NotFound()
+    head(title="Lamp - Shop", description="A lamp")        # per-page head tags, on the server
+    <h1>Lamp</h1>
+
+
+@app.error(404)
+def Missing(path):
+    <h1>Nothing at {path}</h1>
+```
+
+- Put `{children}` exactly once in a layout. `@app.page(..., layout=None)`
+  opts out; `layout="Admin"` picks one.
+- Plain `<a href>` links load without a full reload; layouts keep their
+  state; links to the current page get `aria-current="page"`
+  automatically (style `a[aria-current]`). Don't add active-link logic.
+- From handlers: `navigate("/path")` (`from pyweb.browser import navigate`).
+- A layout that shows per-page server data (like `request.path`) is
+  re-rendered on every navigation; keep layout data stable.
+
+## 10. Streaming and AI features
+
+```pyweb
+import os
+
+from pyweb import App, Markdown, RPCError, server
+
+app = App()
+
+
+@server
+def reply(question: str):                    # a generator: each yield reaches the browser at once
+    if not question.strip():
+        raise RPCError("validation_error", "Ask something")
+    for word in ("**Hello**", " from", " the", " server"):
+        yield word                           # call your model API here (key from os.environ)
+
+
+@app.page("/")
+def Chat():
+    question = ""
+    answer = ""
+    busy = False
+    stream = None
+
+    async def ask():
+        busy = True
+        answer = ""
+        stream = reply(question)
+        try:
+            async for piece in stream:
+                answer += piece
+        except RPCError as e:
+            answer = str(e)
+        busy = False
+
+    def stop():
+        if stream:
+            stream.cancel()                  # aborts the request and closes the generator
+
+    def on_unmount():
+        stop()
+
+    <input bind={question} />
+    <button onclick={ask} disabled={busy}>Ask</button>
+    <button onclick={stop}>Stop</button>
+    <Markdown text={answer} />
+```
+
+- Handlers that use `async for` are `async def`. Calling a streaming
+  function returns a stream; `break` or `.cancel()` stops it.
+- `<Markdown text={...} />` is safe on model output (no raw HTML, no
+  `javascript:` links) and renders as text streams in.
+- API keys: only in `@server` code via `os.environ`. Validate and trim
+  the conversation the browser sends (roles, length).
+- Full example: `pyweb new NAME --template ai-chat` (Anthropic,
+  OpenAI-compatible servers such as Ollama, or a built-in demo model).
+- `TestClient.rpc("reply", question="hi")` returns the list of yielded values.
+
+## 11. Live data
+
+```pyweb
+from pyweb import App, live, server
+from pyweb.db import connect
+
+app = App()
+db = connect("sqlite:///app.db")
+
+
+@server
+def add(title: str) -> None:
+    db.execute("insert into todos (title) values (?)", (title,))   # announces "todos" after commit
+
+
+@app.page("/")
+def Todos():
+    todos = live(db, "select id, title from todos order by id desc limit 50")
+
+    <ul>
+        for t in todos:
+            <li>{t["title"]}</li>
+    </ul>
+```
+
+- Every open page showing `todos` updates when the table is written
+  through `pyweb.db` (including `pyweb.models`). Don't add publish /
+  subscribe or polling for this.
+- Live variables are reactive in the browser; use `watch(lambda: todos, fn)`
+  for side effects (redrawing a chart).
+- Filter per user in SQL (`where owner = ?`), keep queries small
+  (`LIMIT`), and call `db.notify("table")` after writes made elsewhere.
+- Several processes: `realtime.use_bus(RedisBus(url))`.
+
+## 12. npm packages
+
+- Add with `pyweb add chart.js/auto` (MCP: `pyweb_packages`) in the app
+  folder; it writes `pyweb.lock` and `static/vendor/` (commit both; no
+  Node.js needed). Remove with `pyweb remove NAME`.
+- Bind at module level with literal strings: `Chart = npm("chart.js/auto")`
+  (default export), `Gauge = npm("pkg", "Gauge")` (named export),
+  `lib = npm("pkg", "*")` (whole module). `from pyweb import npm`.
+- Calling a class constructs it (`new`); keyword arguments become one
+  options object: `confetti(particleCount=80)`.
+- npm names work only in browser code (handlers, `on_mount`, lambdas),
+  never directly in markup: store results in page variables.
+- Give libraries an element with `ref={el}` (declare `el = None`; it is
+  set before `on_mount`).
+
+## 13. Workflow for agents
 
 1. Start from a template: `pyweb new NAME --template todo` (or the
    `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, auth, chat, ai-chat.
 2. Edit `app.pyweb`. After every edit run `pyweb check app.pyweb`
    (MCP: `pyweb_check`) and fix errors by line number.
-3. Use `pyweb inspect` (MCP: `pyweb_inspect`) to confirm what runs in the
+3. Need a JavaScript library? `pyweb add NAME` (MCP: `pyweb_packages`).
+   Use `pyweb inspect` (MCP: `pyweb_inspect`) to confirm what runs in the
    browser vs server and what is sent to the browser.
-4. Verify behaviour: render pages (`pyweb_render`) and call server
-   functions (`pyweb_call`). See the page and try interactions in a real
+4. Verify behaviour: list pages, layouts and parameters (`pyweb_routes`),
+   render pages (`pyweb_render`) and call server functions (`pyweb_call`). See the page and try interactions in a real
    browser with `pyweb_screenshot` (steps: click, fill, press, ...).
 5. Test: new apps include `test_app.py` (`pyweb.testing.TestClient`); add
    tests for what you change and run `pytest` (MCP: `pyweb_test`).

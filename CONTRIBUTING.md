@@ -70,3 +70,38 @@ runtime is `pyweb/runtime/browser/runtime.js`, server rendering is
    the VS Code extension and attaches the `.vsix`; with `VSCE_PAT` /
    `OVSX_PAT` repository secrets it publishes it to the VS Code
    Marketplace / Open VSX too.
+
+### Publishing the VS Code extension
+
+The Release workflow publishes the extension once the repository has the
+tokens. One-time setup:
+
+1. **Publisher.** Sign in at
+   [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage)
+   with a Microsoft account and create a publisher with the ID
+   `maanavkrishna` (it must match `"publisher"` in
+   `editors/vscode/package.json`).
+2. **Token.** At [dev.azure.com](https://dev.azure.com) (same account):
+   User settings → Personal access tokens → New token. Organization:
+   **All accessible organizations**; Scopes: Custom defined →
+   **Marketplace → Manage**. Copy the token.
+3. **Secret.** On GitHub: Settings → Secrets and variables → Actions →
+   New repository secret, name `VSCE_PAT`, value the token.
+4. **Open VSX** (VSCodium, Cursor, Windsurf, Gitpod): sign in at
+   [open-vsx.org](https://open-vsx.org) with GitHub, sign the publisher
+   agreement, create a namespace `maanavkrishna`
+   (`npx ovsx create-namespace maanavkrishna -p <token>`), create an
+   access token in your profile and add it as the `OVSX_PAT` secret.
+
+From then on every published release puts the extension on both
+marketplaces. To publish an existing release's `.vsix` by hand instead:
+
+```bash
+cd editors/vscode
+npm ci && npx vsce package
+npx vsce publish --packagePath pyweb-<version>.vsix -p <VSCE token>
+npx ovsx publish pyweb-<version>.vsix -p <OVSX token>
+```
+
+Marketplace tokens expire (one year at most); when publishing fails
+with 401, make a new one and update the secret.

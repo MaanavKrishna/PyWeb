@@ -11,20 +11,24 @@ files: full-stack web apps written in Python.
   including errors in other `.pyweb` files you import. Security checks
   show as warnings.
 - **Hover** over a name to see whether it runs in the browser or on the
-  server, and why. Hover a component for its props, or a server function
-  for its signature and RPC endpoint.
+  server, and why. Hover a component for its props, a server function
+  for its signature and RPC endpoint, or a name bound with `npm(...)` for
+  the installed version and its TypeScript signature.
 - **Completion** for components and HTML tags after `<`, a component's
-  props inside its tag, and names after `from pyweb import`.
+  props inside its tag, names after `from pyweb import`, installed npm
+  packages inside `npm("`, and a package's exports after `name.`.
 - **Go to definition** for components, server functions and helpers,
   across files.
-- **Outline** of pages, components and server functions.
+- **Outline** of pages, layouts, error pages, components and server
+  functions.
 - **Snippets**: `pyweb` (new app), `page`, `component`, `server`,
   `handler`, `for`, `live`.
 
 ## Requirements
 
 Highlighting and snippets work on their own. Everything else comes from
-the language server that ships with PyWeb 0.3 or later:
+the language server that ships with PyWeb 0.3 or later (0.4 or later for
+npm packages, layouts and error pages):
 
 ```bash
 pip install -U pyweb-stack

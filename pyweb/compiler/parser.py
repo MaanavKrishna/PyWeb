@@ -50,6 +50,18 @@ class _Incomplete(Exception):
 
 # ---------------------------------------------------------------- scanner
 
+
+def _opens_block(text):
+    """Does this Python line end with ``:`` (ignoring a trailing ``# comment``)?"""
+    import io
+    import tokenize
+    skip = (tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.ENDMARKER, tokenize.INDENT, tokenize.DEDENT)
+    try:
+        toks = [t for t in tokenize.generate_tokens(io.StringIO(text).readline) if t.type not in skip]
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return re.sub(r"\s*#[^'\"]*$", "", text).endswith(":")   # e.g. the last line of a multi-line def
+    return bool(toks) and toks[-1].string == ":"
+
 def _skip_string(s, i):
     """``s[i]`` is a quote. Return the index just past the string literal."""
     q = s[i]
@@ -319,7 +331,7 @@ def split_sources(source):
                 continue
             pj = _indent(lines[j])
             if pj < m:
-                return m if stripped[j].endswith(":") else pj
+                return m if _opens_block(stripped[j]) else pj
             if pj == m:
                 return m
         return 0

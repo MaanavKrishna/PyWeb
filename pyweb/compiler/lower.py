@@ -129,11 +129,39 @@ class PageInfo:
         self.js_body = ""
 
 
+def npm_alias(spec, export):
+    """The JavaScript name a page module imports ``npm(spec, export)`` as."""
+    import hashlib
+    tag = hashlib.sha1(f"{spec}|{export}".encode()).hexdigest()[:6]
+    return f"$npm_{re.sub(r'[^A-Za-z0-9]', '_', spec)}_{re.sub(r'[^A-Za-z0-9]', '_', export)}_{tag}"
+
+
+def _npm_binding(node, ctx, filename):
+    """``Name = npm("pkg", "Export")`` at module level -> a browser binding."""
+    if not (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Call) and _deco_name(node.value) == "npm"):
+        return False
+    args = node.value.args
+    if not args or len(args) > 2 or node.value.keywords \
+            or not all(isinstance(a, ast.Constant) and isinstance(a.value, str) for a in args):
+        raise CompileError('npm() takes literal strings: npm("package") or npm("package", "Export")',
+                           node.lineno, filename)
+    spec = args[0].value
+    export = args[1].value if len(args) == 2 else "default"
+    name = node.targets[0].id
+    alias = npm_alias(spec, export)
+    ctx.npm_bindings[name] = (spec, export, node.lineno)
+    ctx.npm_aliases[alias] = (spec, export)
+    ctx.browser_globals[name] = alias
+    return True
+
+
 def _import_library(ctx, lib, node, filename):
     """Bind the names of ``from <lib> import ...`` (another .pyweb file)."""
     where = os.path.basename(lib.path)
     if lib not in ctx.libraries:
         ctx.libraries.append(lib)
+        ctx.npm_aliases.update(lib.ctx.npm_aliases)
     for alias in node.names:
         name, local = alias.name, alias.asname or alias.name
         if name == "*":
@@ -151,6 +179,10 @@ def _import_library(ctx, lib, node, filename):
             ctx.server_fns[name] = lib.ctx.server_fns[name]
         elif name in lib.ctx.modconsts:
             ctx.modconsts[local] = lib.ctx.modconsts[name]
+        elif name in lib.ctx.npm_bindings:
+            spec, export, _line = lib.ctx.npm_bindings[name]
+            ctx.npm_bindings[local] = (spec, export, node.lineno)
+            ctx.browser_globals[local] = npm_alias(spec, export)
         elif name in lib.defined:
             ctx.server_only[local] = (f"imported from {where}; browser code can use components, "
                                       "@server functions and constants from other .pyweb files")
@@ -215,6 +247,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                 ctx.helpers[node.name] = node
         elif isinstance(node, ast.ClassDef):
             ctx.server_only[node.name] = "a class (classes and models live on the server)"
+        elif _npm_binding(node, ctx, filename):
+            continue
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             if isinstance(node.value, ast.Call) and _deco_name(node.value) == "App":
                 ctx.app_config = _literal_kwargs(node.value)
@@ -275,8 +309,8 @@ def ui_refs(nodes):
                 for key, val in n.attrs.items():
                     if not isinstance(val, tuple) or val[0] != "expr":
                         continue
-                    if key == "bind":
-                        binds[val[1]] = val[2]
+                    if key in ("bind", "ref"):
+                        binds[val[1]] = (val[2], key)
                     names.update(_expr_names(val[1]))
                 walk(n.children)
             elif isinstance(n, ControlFor):
@@ -311,7 +345,7 @@ def used_components(nodes):
 def _has_events(nodes):
     for n in nodes:
         if isinstance(n, Element):
-            if any(k.startswith("on") or k == "bind" for k in n.attrs) or _has_events(n.children):
+            if any(k.startswith("on") or k in ("bind", "ref") for k in n.attrs) or _has_events(n.children):
                 return True
             if n.is_component:
                 return True
@@ -390,11 +424,12 @@ def classify(info, ctx):
                            info.server_logic[0].lineno, ctx.filename)
 
     ui_names, binds = ui_refs(info.ui)
-    for name, line in binds.items():
+    for name, (line, key) in binds.items():
         if name not in state_names:
-            raise CompileError(f"bind={{{name}}} must name a local variable of {info.name}()",
+            raise CompileError(f"{key}={{{name}}} must name a local variable of {info.name}()",
                                line, ctx.filename)
-        info.mutated.setdefault(name, f"bound to an input (line {line})")
+        why = "bound to an input" if key == "bind" else "set to an element by ref="
+        info.mutated.setdefault(name, f"{why} (line {line})")
     for h in info.handlers.values():
         for name, why in _mutations(h, state_names).items():
             info.mutated.setdefault(name, why)
@@ -539,11 +574,24 @@ class Emitter:
             info.js_body = ""
             return ""
         fn_js = self.function_js(info)
-        parts = [RUNTIME_IMPORT] + self.module_parts(used_components(info.ui))
+        parts = self.module_parts(used_components(info.ui))
         parts.append(fn_js)
         parts.append(f"$mount({json.dumps(info.name)}, {jsname(info.name)});")
+        body = "\n".join(parts) + "\n"
+        imports = [RUNTIME_IMPORT]
+        info.npm = []
+        for alias in sorted(set(re.findall(r"\$npm_[A-Za-z0-9_]+", body))):
+            spec, export = self.ctx.npm_aliases[alias]
+            info.npm.append(spec)
+            if export == "default":
+                imports.append(f"import {alias} from {json.dumps(spec)};")
+            elif export == "*":
+                imports.append(f"import * as {alias} from {json.dumps(spec)};")
+            else:
+                imports.append(f"import {{ {export} as {alias} }} from {json.dumps(spec)};")
+        info.npm = sorted(set(info.npm))
         info.js_body = fn_js
-        return "\n".join(parts) + "\n"
+        return "\n".join(imports) + "\n" + body
 
     def module_parts(self, names):
         """JS for components ``names`` (and what they use): blocks for other
@@ -655,6 +703,12 @@ class Emitter:
     def _expr(self, code, line, scope):
         node = self._parse(code, line)
         _relocate(node, line)
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Name) and sub.id in self.ctx.npm_bindings and not _inside_lambda(node, sub):
+                spec = self.ctx.npm_bindings[sub.id][0]
+                raise CompileError(f"{{{code}}} uses {sub.id!r} from npm(\"{spec}\"), which only exists in the "
+                                   "browser, but markup is first rendered on the server. Use it in an event "
+                                   "handler or on_mount (with ref= for elements)", line, self.ctx.filename)
         if self.tr._calls_server(node, scope):
             raise CompileError(f"{{{code}}} calls a server function; markup expressions must be "
                                "synchronous. Load the value in a page variable or a handler",
@@ -715,10 +769,10 @@ class Emitter:
             if kind == "lit":
                 props.append(f"{json.dumps(name)}: {json.dumps(body)}")
                 continue
-            if key == "bind":
+            if key in ("bind", "ref"):
                 if scope.lookup(body) != SIGNAL:
-                    raise CompileError(f"bind={{{body}}} must name a page variable", line, self.ctx.filename)
-                props.append(f"\"$bind\": {jsname(body)}")
+                    raise CompileError(f"{key}={{{body}}} must name a page variable", line, self.ctx.filename)
+                props.append(f"\"${key}\": {jsname(body)}")
                 continue
             if key.startswith("on"):
                 props.append(f"{json.dumps(name)}: {self.handler_js(body, line, scope)}")
@@ -793,6 +847,13 @@ class Emitter:
             raise CompileError(f"<{n.tag}> is missing required prop(s): {', '.join(missing)}",
                                n.line, self.ctx.filename)
         return f"{jsname(n.tag)}({{{', '.join(props)}}})"
+
+
+def _inside_lambda(root, target):
+    for sub in ast.walk(root):
+        if isinstance(sub, ast.Lambda) and any(n is target for n in ast.walk(sub)):
+            return True
+    return False
 
 
 def _thunk(js):

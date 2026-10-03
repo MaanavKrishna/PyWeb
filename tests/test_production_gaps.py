@@ -494,21 +494,6 @@ def test_migrations_reject_orphan_down(tmp_path):
         _migrate.migrate(":memory:", d)
 
 
-def test_npm_importmap_in_build(tmp_path):
-    src = ('from pyweb import App\nfrom npm.chartjs import Chart\n'
-           'app = App()\n@app.page("/")\n'
-           "def Home():\n    chart = package('chart.js@4.4.0')\n"
-           "    title = 'Hi'\n"
-           "    <main>\n        <h1>{title}</h1>\n    </main>\n")
-    dist = _dist(str(tmp_path), src)
-    with open(os.path.join(dist, "manifest.json")) as fh:
-        manifest = json.load(fh)
-    assert manifest["npm"]["chart.js"] == "4.4.0"
-    with open(os.path.join(dist, "server", "Home.html")) as fh:
-        shell = fh.read()
-    assert "importmap" in shell and "esm.sh" in shell
-
-
 def test_cache_minutes_means_minutes():
     from pyweb.cache import MemoryCache
     now = [1000.0]

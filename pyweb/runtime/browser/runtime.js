@@ -94,6 +94,7 @@ export function signal(value) {
     return next;
   }
   s.peek = () => node.value;
+  s.touch = () => notify(node); // the value was changed in place (e.g. a library object)
   s.set = (v) => s(v);
   s.update = (fn) => s(fn(node.value));
   s.subscribe = (cb) => effect(() => cb(s()));
@@ -369,7 +370,8 @@ export function h(tag, props, children) {
   const bound = props && props.$bind;
   if (bound && tag !== "select") { if (props.type) el.setAttribute("type", props.type); bind(el, bound); }
   if (props) {
-    for (const k of Object.keys(props)) if (k !== "$bind") setProp(el, k, props[k]);
+    for (const k of Object.keys(props)) if (k !== "$bind" && k !== "$ref") setProp(el, k, props[k]);
+    if (props.$ref) props.$ref(el);
   }
   if (H) claimChildren(el, children || []);
   else if (children) for (const n of toNodes(typeof children === "function" ? children() : children, [])) el.appendChild(n);
@@ -1024,12 +1026,43 @@ function m(obj, name, ...args) {
   throw err("AttributeError", `'${typeName(obj)}' object has no attribute '${name}'`);
 }
 
+// Objects from JavaScript libraries (class instances, DOM nodes) are
+// changed in place; plain data is copied so keyed lists see new items.
+function foreign(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v) || v instanceof Set || v instanceof Map) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto !== Object.prototype && proto !== null;
+}
+
 function clone(v) {
   if (Array.isArray(v)) return v.slice();
   if (v instanceof Set) return new Set(v);
   if (v instanceof Map) return new Map(v);
+  if (foreign(v)) return v;
   if (v && typeof v === "object") return { ...v };
   return v;
+}
+
+function commit(s, prev, next) {
+  if (next === prev) s.touch(); else s(next);
+}
+
+function isClass(f) {
+  return typeof f === "function" && /^class[\s{]/.test(Function.prototype.toString.call(f));
+}
+
+/** Call a JavaScript library function or class (`npm(...)` exports) from Python. */
+function call(f, args, options) {
+  if (options !== undefined) args = [...args, options];
+  if (typeof f !== "function") throw err("TypeError", `'${typeName(f)}' object is not callable`);
+  return isClass(f) ? new f(...args) : f(...args);
+}
+
+function callm(obj, name, args, options) {
+  const f = obj[name];
+  if (options !== undefined) args = [...args, options];
+  if (typeof f !== "function") throw err("AttributeError", `'${typeName(obj)}' object has no attribute '${name}'`);
+  return isClass(f) ? new f(...args) : f.apply(obj, args);
 }
 
 function walk(rootVal, path) {
@@ -1037,7 +1070,7 @@ function walk(rootVal, path) {
   for (const k of path) {
     const idx = Array.isArray(cur) ? normIndex(cur, k) : k;
     if (Array.isArray(cur) || isDict(cur)) {
-      if (!Array.isArray(cur) && !Object.prototype.hasOwnProperty.call(cur, idx)) throw err("KeyError", repr(k));
+      if (!Array.isArray(cur) && !foreign(cur) && !Object.prototype.hasOwnProperty.call(cur, idx)) throw err("KeyError", repr(k));
       cur[idx] = clone(cur[idx]);
       cur = cur[idx];
     } else {
@@ -1049,9 +1082,10 @@ function walk(rootVal, path) {
 
 /** Mutate state copy-on-write: `todos.append(x)` → new list, then notify. */
 function mut(s, path, fn) {
-  const next = clone(s.peek());
+  const prev = s.peek();
+  const next = clone(prev);
   const r = fn(walk(next, path));
-  s(next);
+  commit(s, prev, next);
   return r === undefined ? null : r;
 }
 
@@ -1073,9 +1107,10 @@ function delitem(obj, k) {
 /** `state[a][b] = v` with structural sharing so keyed rows see a new item. */
 function setp(s, path, v) {
   if (!path.length) { s(v); return; }
-  const next = clone(s.peek());
+  const prev = s.peek();
+  const next = clone(prev);
   setitem(walk(next, path.slice(0, -1)), path[path.length - 1], v);
-  s(next);
+  commit(s, prev, next);
 }
 
 function getp(v, path) {
@@ -1085,7 +1120,7 @@ function getp(v, path) {
 
 export const py = {
   kw, truth, iter, str, repr, text, eq, contains, len, at, slice, add, mul, mod, div, floordiv,
-  int, float, round, range, sorted, format, m, mut, setp, getp, setitem, delitem, cmp,
+  int, float, round, range, sorted, format, m, mut, setp, getp, setitem, delitem, cmp, call, callm,
   bool: (v) => truth(v),
   abs: (v) => Math.abs(v),
   min: (...a) => extreme(-1, a),
@@ -1123,9 +1158,10 @@ export const py = {
   exc: (e, types) => types.includes("Exception") || types.includes("BaseException")
     || types.includes((e && (e.type || e.name)) || "Error"),
   delp: (s, path) => {
-    const next = clone(s.peek());
+    const prev = s.peek();
+    const next = clone(prev);
     delitem(walk(next, path.slice(0, -1)), path[path.length - 1]);
-    s(next);
+    commit(s, prev, next);
   },
 };
 

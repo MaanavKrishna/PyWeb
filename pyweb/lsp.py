@@ -9,6 +9,9 @@ and gives editors, for ``.pyweb`` files:
   signatures and server functions;
 * completion: components and HTML tags after ``<``, a component's props
   and common attributes inside a tag, names after ``from pyweb import``;
+* npm packages: hover shows the installed version and its TypeScript
+  declaration, completion offers installed packages inside ``npm("`` and
+  a module's exports after ``name.``;
 * go to definition for components, server functions and helpers, across
   files;
 * an outline of pages, components and server functions.
@@ -38,11 +41,12 @@ HTML_TAGS = sorted({
 })
 HTML_ATTRS = ["id", "class", "style", "href", "src", "alt", "title", "type", "name", "value", "placeholder",
               "disabled", "checked", "required", "for", "role", "aria-label", "bind", "onclick", "oninput",
-              "onchange", "onsubmit", "onkeydown", "onfocus", "onblur"]
+              "onchange", "onsubmit", "onkeydown", "onfocus", "onblur", "ref"]
 PYWEB_EXPORTS = ["App", "server", "component", "request", "session", "redirect", "NotFound", "RPCError",
-                 "channel", "publish", "subscribe", "Model", "task", "worker", "edge"]
+                 "channel", "publish", "subscribe", "Model", "task", "worker", "edge", "npm"]
 
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_NPM = re.compile(r"""^\s*([A-Za-z_]\w*)\s*=\s*npm\(\s*["']([^"']+)["']\s*(?:,\s*["']([^"']+)["']\s*)?\)""", re.M)
 
 
 # ------------------------------------------------------------- analysis
@@ -167,11 +171,42 @@ def _local_definitions(text, path):
     return out
 
 
+def _lock(path):
+    from . import packages
+    root = packages.find_lock(os.path.dirname(os.path.abspath(path))) if path else None
+    return packages.read_lock(root) if root else {"packages": {}, "imports": {}}
+
+
+def _npm_bindings(text):
+    """``{name: (spec, export)}`` for ``name = npm("spec", "export")`` lines (works while the file is broken)."""
+    return {m.group(1): (m.group(2), m.group(3) or "default") for m in _NPM.finditer(text)}
+
+
+def _npm_hover(word, spec, export, path):
+    from .packages import split_specifier
+    lock = _lock(path)
+    pkg = lock["packages"].get(split_specifier(spec)[0])
+    head = f"```python\n{word} = npm({spec!r}{'' if export == 'default' else f', {export!r}'})\n```\n"
+    if not pkg:
+        return head + f"Not installed: run `pyweb add {spec}` in the app folder."
+    types = pkg.get("types") or {}
+    decl = types.get(word if export == "default" else export) if export != "*" else None
+    lines = [f"npm package **{split_specifier(spec)[0]}@{pkg['version']}**, runs in the browser."]
+    if decl:
+        lines.append(f"```ts\n{decl}\n```")
+    elif export == "*" and types:
+        lines.append("Exports: " + ", ".join(f"`{n}`" for n in sorted(types)[:30]))
+    return head + "\n".join(lines)
+
+
 def hover(text, path, line, col, analysis=None):
     """Markdown describing the name at the position, or ``None``."""
     word = word_at(text, line, col)
     if not word:
         return None
+    bound = _npm_bindings(text)
+    if word in bound:
+        return _npm_hover(word, *bound[word], path)
     a = analysis or Analysis(text, path)
     defs = _local_definitions(text, path)
     if a.ok:
@@ -209,6 +244,19 @@ def completions(text, path, line, col, analysis=None):
     prefix = lines[line][:col] if 0 <= line < len(lines) else ""
     if re.search(r"^\s*from\s+pyweb\s+import\s+[\w\s,]*$", prefix):
         return [{"label": n, "kind": 9} for n in PYWEB_EXPORTS]
+    if re.search(r"""\bnpm\(\s*["'][^"']*$""", prefix):
+        from .packages import split_specifier
+        lock = _lock(path)
+        return [{"label": spec, "kind": 9,
+                 "detail": lock["packages"].get(split_specifier(spec)[0], {}).get("version", "")}
+                for spec in sorted(lock["imports"])]
+    member = re.search(r"\b([A-Za-z_]\w*)\.(\w*)$", prefix)
+    if member:
+        bound = _npm_bindings(text).get(member.group(1))
+        if bound and bound[1] == "*":
+            from .packages import split_specifier
+            pkg = _lock(path)["packages"].get(split_specifier(bound[0])[0]) or {}
+            return [{"label": n, "kind": 6, "detail": d} for n, d in sorted((pkg.get("types") or {}).items())]
     a = analysis
     components = {}
     if a is not None and a.ok:

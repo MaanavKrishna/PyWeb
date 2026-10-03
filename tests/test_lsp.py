@@ -185,3 +185,20 @@ def test_vscode_extension_version_matches_the_package():
     pkg = json.loads((root / "editors" / "vscode" / "package.json").read_text())
     version = re.search(r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(), re.M).group(1)
     assert pkg["version"] == version
+
+
+def test_npm_hover_and_completion_use_the_lock(tmp_path):
+    from pyweb import packages
+    from tests.test_packages import registry
+    packages.install(str(tmp_path), ["gauge-widget"], registry=registry())
+    path = str(tmp_path / "app.pyweb")
+    text = 'from pyweb import npm\nGauge = npm("gauge-widget", "Gauge")\nW = npm("gauge-widget", "*")\nW.\n'
+    h = lsp.hover(text, path, 1, 1)
+    assert "gauge-widget@1.1.0" in h and "class Gauge(el: HTMLElement" in h
+    assert "Exports: `Gauge`" in lsp.hover(text, path, 2, 0)
+    assert "run `pyweb add left-pad`" in lsp.hover('x = npm("left-pad")\n', path, 0, 0)
+    line = 'y = npm("'
+    items = lsp.completions(line, path, 0, len(line))
+    assert [(i["label"], i["detail"]) for i in items] == [("gauge-widget", "1.1.0"), ("tiny-color", "2.4.1")]
+    assert [i["label"] for i in lsp.completions(text, path, 3, 2)] == ["Gauge", "burst"]
+    assert "ref" in [i["label"] for i in lsp.completions("<div ", path, 0, 5)]

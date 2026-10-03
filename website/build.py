@@ -41,6 +41,7 @@ DOCS = [
     ("04-pyweb-files.md", "language", "The .pyweb language", "Language"),
     ("05-reactivity.md", "reactivity", "State & reactivity", "Language"),
     ("07-browser-python.md", "browser-python", "Python in the browser", "Language"),
+    ("18-npm-packages.md", "npm", "npm packages", "Language"),
     ("06-server-functions.md", "server-functions", "Server functions & RPC", "Server"),
     ("08-pages-routing-assets.md", "routing", "Pages, routing & assets", "Server"),
     ("09-data.md", "data", "Data & databases", "Server"),

@@ -363,9 +363,29 @@ def cmd_deploy(args):
     print(f"deploy {target} -> {outdir}/ ({', '.join(files)})")
 
 
-def cmd_npm(args):
-    from pyweb.npm import npm_main
-    raise SystemExit(npm_main([args.dts] + (["-o", args.out] if args.out else [])))
+def cmd_dts(args):
+    from pyweb.dts import dts_main
+    raise SystemExit(dts_main([args.dts] + (["-o", args.out] if args.out else [])))
+
+
+def _app_dir(args):
+    app = getattr(args, "app", None) or "app.pyweb"
+    return os.path.dirname(os.path.abspath(app))
+
+
+def cmd_add(args):
+    from pyweb import packages
+    lock = packages.install(_app_dir(args), args.packages)
+    for name, p in lock["packages"].items():
+        kind = "" if p["direct"] else "  (dependency)"
+        print(f"  {name}@{p['version']}  {len(p['files'])} file(s){kind}")
+    print(f"pyweb.lock: {len(lock['packages'])} package(s); files in static/vendor/")
+
+
+def cmd_remove(args):
+    from pyweb import packages
+    lock = packages.install(_app_dir(args), remove=args.packages)
+    print(f"removed {', '.join(args.packages)}; pyweb.lock: {len(lock['packages'])} package(s)")
 
 
 def _parse_budget(spec):
@@ -412,7 +432,16 @@ def main(argv=None):
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
     p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
-    p = sub.add_parser("npm"); p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_npm)
+    p = sub.add_parser("dts", help="generate Python stubs from a TypeScript .d.ts file (experimental)")
+    p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_dts)
+    p = sub.add_parser("add", help="add npm packages for browser code (no Node.js needed)")
+    p.add_argument("packages", nargs="*", help="e.g. chart.js/auto canvas-confetti@^1.9 (none: reinstall from pyweb.lock)")
+    p.add_argument("--app", default="app.pyweb", help="the app file; packages go next to it")
+    p.set_defaults(fn=cmd_add)
+    p = sub.add_parser("remove", help="remove npm packages added with `pyweb add`")
+    p.add_argument("packages", nargs="+")
+    p.add_argument("--app", default="app.pyweb")
+    p.set_defaults(fn=cmd_remove)
     p = sub.add_parser("deploy")
     p.add_argument("--target", default="docker")
     p.add_argument("--out", default="deploy")
@@ -434,8 +463,12 @@ def main(argv=None):
         ap.print_help()
         raise SystemExit(2)
     from pyweb.compiler.errors import CompileError
+    from pyweb.packages import PackageError
     try:
         args.fn(args)
+    except PackageError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
     except (CompileError, SyntaxError) as exc:
         if isinstance(exc, SyntaxError) and not isinstance(exc, CompileError):
             where = f"{exc.filename or getattr(args, 'file', '')}:{exc.lineno}" if exc.lineno else ""

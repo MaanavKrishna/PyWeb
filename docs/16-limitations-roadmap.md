@@ -11,8 +11,9 @@ can decide up front whether they matter for your app.
 - **Multi-page navigation.** Links do full page loads (fast, because
   pages are small and the runtime is cached). There is no client-side
   router.
-- **No npm imports in browser code.** Browser code can use the
-  browser's own APIs but not npm packages.
+- **npm packages must ship ES modules.** CommonJS-only packages and
+  packages built on Node.js modules can't run in the browser; see
+  [npm packages](18-npm-packages.md).
 - **Dev reload is a full page reload.** State is not preserved across
   edits.
 
@@ -34,9 +35,7 @@ See the [changelog](https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.m
 
 Planned, roughly in order. Nothing here is promised for a date.
 
-1. **npm interop**: importing ES modules into browser code with typed
-   stubs generated from TypeScript declarations.
-2. **Client-side navigation** between pages of the same app.
+1. **Client-side navigation** between pages of the same app.
 
 Ideas, bug reports and pull requests are welcome; see
 [CONTRIBUTING.md](https://github.com/MaanavKrishna/PyWeb/blob/main/CONTRIBUTING.md).

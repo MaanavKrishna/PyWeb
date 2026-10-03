@@ -83,7 +83,7 @@ warning in an earlier release. They are the intended 1.0 API.
 `pyweb.models` (ORM-style models), `pyweb.live` (live queries),
 `pyweb.sync` (offline sync), `pyweb.css` helpers, `pyweb.plugins`,
 `pyweb.platform`, `pyweb.lsp` (its Python functions; the `pyweb lsp`
-command itself is supported), `pyweb.npm` (TypeScript declaration stub generator; npm
-packages cannot yet be imported into browser code), `pyweb.browser`
+command itself is supported), `pyweb.dts` (TypeScript declarations to Python dataclasses;
+it was `pyweb.npm` before 0.4), `pyweb.browser`
 server-side stubs, the `pyweb.compiler` internals and the generated
 JavaScript.

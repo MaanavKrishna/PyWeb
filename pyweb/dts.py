@@ -1,13 +1,12 @@
-"""npm interop stub: typed package references + .d.ts binding sketch."""
+"""TypeScript declarations (``.d.ts``) to typed Python stubs: ``pyweb dts FILE``.
+
+Experimental. For using npm packages in browser code see :mod:`pyweb.packages`.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-
-
-def package(name: str, version: str = "latest"):
-    return {"npm": name, "version": version, "kind": "esm"}
 
 
 _TS_SCALARS = {"number": "float", "string": "str", "boolean": "bool",
@@ -250,9 +249,9 @@ def generate_stubs_from_file(dts_path, out_path=None):
     return code
 
 
-def npm_main(argv=None):
+def dts_main(argv=None):
     import argparse
-    ap = argparse.ArgumentParser(prog="pyweb npm",
+    ap = argparse.ArgumentParser(prog="pyweb dts",
                                  description="Generate typed Python stubs from .d.ts")
     ap.add_argument("dts", help="Input .d.ts file")
     ap.add_argument("-o", "--out", default=None,
@@ -261,10 +260,10 @@ def npm_main(argv=None):
     try:
         code = generate_stubs_from_file(args.dts, args.out)
     except FileNotFoundError:
-        print(f"npm: {args.dts}: file not found")
+        print(f"dts: {args.dts}: file not found")
         return 1
     if args.out:
-        print(f"npm: wrote {args.out}")
+        print(f"dts: wrote {args.out}")
     else:
         print(code, end="")
     return 0

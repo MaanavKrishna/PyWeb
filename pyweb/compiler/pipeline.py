@@ -168,6 +168,8 @@ def _compile(source, filename, route, title, libs, stack):
     for comp in components:
         comp.ctx = ctx
         classify(comp, ctx)
+    lock = _read_lock(filename) if ctx.npm_bindings or ctx.npm_aliases else None
+    importmap = {}
     for info in pages:
         classify(info, ctx)
     emitter = Emitter(ctx)
@@ -175,6 +177,8 @@ def _compile(source, filename, route, title, libs, stack):
     page_infos, all_signals, all_computeds, all_place, all_edges = [], {}, {}, {}, []
     for info in pages:
         js = emitter.page_js(info)
+        page_map = _page_importmap(info, ctx, lock, filename)
+        importmap.update(page_map)
         args = {p: None for p in info.params}
         env = static_state(info, ctx, args)
         body = _renderer(ctx).render(info.ui, env)
@@ -183,7 +187,7 @@ def _compile(source, filename, route, title, libs, stack):
         js_url = f"/static/{info.name}.js?v={version}" if js else None
         app_cfg = ctx.app_config
         page_title = info.title or app_cfg.get("title") or title
-        html = page_html(name=info.name, title=page_title, body=body, state=state, js_url=js_url,
+        html = page_html(name=info.name, title=page_title, body=body, state=state, js_url=js_url, importmap=page_map,
                          css_urls=app_cfg.get("stylesheets") or (), lang=app_cfg.get("lang") or "en")
         signals = [n for n in info.order if info.kinds[n] == "signal"]
         computeds = {n: {"code": ast.unparse(info.inits[n]),
@@ -211,6 +215,7 @@ def _compile(source, filename, route, title, libs, stack):
             "source": ast.get_source_segment(source, info.node) or "",
             "dynamic": bool(info.params) or any(info.origin[n] == "server" for n in info.order),
             "state_keys": list(info.sent), "title": page_title, "info": info, "js_url": js_url,
+            "importmap": page_map,
         }
         all_signals.update({s: initial.get(s) for s in signals})
         all_computeds.update(computeds)
@@ -227,7 +232,29 @@ def _compile(source, filename, route, title, libs, stack):
     graph = build_graph(page_infos, rpc, all_signals, all_computeds, all_place, all_edges)
     return {"graph": graph, "ir_text": to_text(graph), "rpc": rpc, "pages": artifacts,
             "components": {c.name: c for c in components}, "context": ctx,
-            "libraries": libraries, "emitter": emitter}
+            "libraries": libraries, "emitter": emitter, "importmap": importmap}
+
+
+def _read_lock(filename):
+    """The nearest pyweb.lock, or None when compiling loose source."""
+    from pyweb import packages
+    if not filename or filename.startswith("<") or not os.path.isfile(filename):
+        return None
+    root = packages.find_lock(os.path.dirname(os.path.abspath(filename)))
+    return packages.read_lock(root) if root else {}
+
+
+def _page_importmap(info, ctx, lock, filename):
+    from pyweb import packages
+    specs = getattr(info, "npm", [])
+    if not specs or lock is None:
+        return {}
+    for spec in specs:
+        if spec not in lock.get("imports", {}):
+            line = next((ln for s, _e, ln in ctx.npm_bindings.values() if s == spec), info.node.lineno)
+            raise CompileError(f"npm package {spec!r} isn't installed: run `pyweb add {spec}` in the app folder "
+                               "(it downloads it into static/vendor/ and records it in pyweb.lock)", line, filename)
+    return packages.page_imports(lock, specs)
 
 
 def _library_order(libs):

@@ -11,6 +11,7 @@ from .context import NotFound, redirect, request, session
 from .rpc import RPCError
 from .decorators import component, edge, server, worker
 from .realtime import channel, publish, subscribe
+from .packages import npm
 
 __all__ = [
     "App",
@@ -26,6 +27,7 @@ __all__ = [
     "channel",
     "publish",
     "subscribe",
+    "npm",
     "Email",
     "Model",
     "task",

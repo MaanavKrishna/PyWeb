@@ -1,11 +1,11 @@
-"""Forms, security checks, observability, npm d.ts generation."""
+"""Forms, security checks, observability, d.ts generation."""
 
 import io
 
 from pyweb import security
 from pyweb.forms import fields_for, render_form, validate
 from pyweb.models import Email, Model
-from pyweb.npm import from_dts, package
+from pyweb.dts import from_dts
 from pyweb.observability import Logger, Metrics, Tracer, format_error
 
 
@@ -87,8 +87,7 @@ def test_format_error_points_at_line():
         assert "ValueError" in out
 
 
-def test_npm_package_and_dts():
-    assert package("chart.js")["npm"] == "chart.js"
+def test_dts_to_dataclasses():
     py = from_dts("interface ChartProps {\n data: number[]\n animated?: boolean\n name: string\n meta: Record<string, number>\n}")
     assert "data: list[float]" in py and "animated: bool = None" in py
     assert "Record" not in py

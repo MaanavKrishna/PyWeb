@@ -63,6 +63,11 @@ ERROR_HINTS = [
                                       "into an @server function."),
     ("must be called", "Call the server function inside a handler: `result = fn(...)`."),
     ("is a server function; call it from a", "Use a handler or lambda: onclick={lambda: fn(...)}"),
+    ("isn't installed: run `pyweb add", "Run the `pyweb add` command from the message in the app folder, then "
+                                       "check again."),
+    ("which only exists in the browser", "Call the npm package in a handler or on_mount and keep the result in a "
+                                         "page variable that the markup shows."),
+    ("npm() takes literal strings", "Bind at module level: Name = npm(\"package\") or npm(\"package\", \"Export\")."),
 ]
 
 

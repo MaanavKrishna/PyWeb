@@ -167,4 +167,4 @@ class LoadedApp:
             title = self.app.title_for(page_name) or title
         return page_html(name=page_name, title=title, body=body, state=state,
                          js_url=js_url if page["js"] else None, css_urls=self.stylesheets,
-                         lang=self.lang)
+                         lang=self.lang, importmap=page.get("importmap"))

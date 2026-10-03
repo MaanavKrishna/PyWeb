@@ -18,6 +18,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import re
 import socketserver
 import threading
 import time
@@ -70,13 +71,25 @@ MAX_BODY = 1_048_576
 DEFAULT_CSP = ("default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; "
                "frame-ancestors 'self'; img-src 'self' data: https:; "
                "style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; "
-               "connect-src 'self'")
+               "connect-src 'self'; worker-src 'self' blob:")
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
     "X-Frame-Options": "SAMEORIGIN",
 }
+
+
+def csp_for(csp, html):
+    """``csp`` allowing the page's inline import map (npm packages) by its hash."""
+    import base64
+    import hashlib
+    body = html if isinstance(html, bytes) else html.encode()
+    m = re.search(rb'<script type="importmap">(.*?)</script>', body, re.S)
+    if not m or "script-src" not in csp:
+        return csp
+    digest = base64.b64encode(hashlib.sha256(m.group(1)).digest()).decode()
+    return re.sub(r"script-src ([^;]*)", lambda x: f"script-src {x.group(1)} 'sha256-{digest}'", csp, count=1)
 
 
 def make_handler(*, static_dir, server_runtime=None, logger=None,
@@ -93,7 +106,7 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             self.send_header("Content-Length", str(len(raw)))
             merged = dict(SECURITY_HEADERS)
             if ctype.startswith("text/html"):
-                merged["Content-Security-Policy"] = os.environ.get("PYWEB_CSP", DEFAULT_CSP)
+                merged["Content-Security-Policy"] = csp_for(os.environ.get("PYWEB_CSP", DEFAULT_CSP), raw)
             merged.update(extra or {})
             for k, v in merged.items():
                 for item in (v if isinstance(v, list) else [v]):
@@ -110,12 +123,12 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
                 return self._bytes("forbidden", 403)
             if not os.path.isfile(target):
                 return self._bytes("not found", 404)
-            ctype = "text/javascript" if target.endswith(".js") else (
+            ctype = "text/javascript" if target.endswith((".js", ".mjs")) else (
                 "text/css" if target.endswith(".css") else
                 "application/json" if target.endswith(".map") else
                 "application/octet-stream")
             extra = {}
-            if "?" in self.path or target.endswith((".js", ".css", ".map")):
+            if "?" in self.path or target.endswith((".js", ".mjs", ".css", ".map")):
                 # Production assets are content-hashed; dev ``?v=`` query
                 # strings version the rest. Both are safe to cache forever.
                 extra["Cache-Control"] = "public, max-age=31536000, immutable"

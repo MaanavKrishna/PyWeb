@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pyweb.npm import generate_stub, generate_stubs_from_file, npm_main, parse_dts
+from pyweb.dts import dts_main, generate_stub, generate_stubs_from_file, parse_dts
 
 SAMPLE = """
 interface User {
@@ -58,19 +58,16 @@ def test_cli_file_roundtrip(tmp_path, capsys):
     dts.write_text("interface A { name: string; }", encoding="utf-8")
     assert generate_stubs_from_file(dts).find("class A") != -1
     out = tmp_path / "out.py"
-    assert npm_main([str(dts), "-o", str(out)]) == 0
+    assert dts_main([str(dts), "-o", str(out)]) == 0
     assert "class A" in out.read_text()
-    assert npm_main([str(tmp_path / "missing.d.ts")]) == 1
+    assert dts_main([str(tmp_path / "missing.d.ts")]) == 1
 
 
-def test_npm_subcommand_end_to_end(tmp_path, capsys):
+def test_dts_subcommand_end_to_end(tmp_path, capsys):
     import subprocess
     import sys
     dts = tmp_path / "a.d.ts"
     dts.write_text("interface A { name: string; }", encoding="utf-8")
-    proc = subprocess.run([sys.executable, "-c",
-                           "import sys; from pyweb.npm import npm_main; "
-                           "sys.exit(npm_main(sys.argv[1:]))",
-                           str(dts)],
+    proc = subprocess.run([sys.executable, "-m", "pyweb.cli", "dts", str(dts)],
                           capture_output=True, text=True, cwd=".")
     assert proc.returncode == 0 and "class A" in proc.stdout

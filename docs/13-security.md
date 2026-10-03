@@ -45,10 +45,15 @@ reads, credential-like literals) and exits non-zero on findings.
   default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self';
   frame-ancestors 'self'; img-src 'self' data: https:;
   style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:;
-  connect-src 'self'
+  connect-src 'self'; worker-src 'self' blob:
   ```
 
-  Override it with `PYWEB_CSP` if you load scripts from a CDN.
+  `worker-src ... blob:` lets npm packages that start Web Workers from
+  generated code (canvas-confetti, PDF and map libraries) do so; only
+  scripts already allowed by `script-src` can create one. When a page
+  uses npm packages, the hash of its import map is added to
+  `script-src`. Override the policy with `PYWEB_CSP` if you load
+  scripts from a CDN.
 
 ## Cross-site request forgery
 

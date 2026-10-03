@@ -124,6 +124,8 @@ class ModuleContext:
         self.components = {}       # name -> component info (local or imported)
         self.imported_components = {}  # local name -> (library, name in that file)
         self.libraries = []        # other .pyweb files imported directly
+        self.npm_bindings = {}     # local name -> (specifier, export, line)
+        self.npm_aliases = {}      # JS alias -> (specifier, export), including imported files
         self.server_only = {}      # name -> reason
         self.browser_globals = {}  # name -> js expression (pyweb.browser imports)
         # results of on-demand helper compilation
@@ -554,6 +556,9 @@ class Translator:
                     return f"(await {call})"
                 return call
             callee = self.expr(f, scope)
+            if f.id in self.ctx.npm_bindings and kind == "browser_global":
+                # npm exports: classes are constructed, keyword arguments become an options object.
+                return self.js_call("$py.call", [callee], node, scope)
             if node.keywords:
                 raise self.error(node, f"keyword arguments are not supported when calling {f.id!r} from browser code")
             return f"{callee}({', '.join(self.args(node, scope))})"
@@ -573,12 +578,24 @@ class Translator:
                     sig, keys = path
                     return f"$py.mut({sig}, [{', '.join(keys)}], ($v) => $py.m($v, {json.dumps(f.attr)}{argstr}))"
                 return f"$py.m({self.expr(f.value, scope)}, {json.dumps(f.attr)}{argstr})"
+            if root in self.ctx.npm_bindings and root_kind == "browser_global":
+                return self.js_call("$py.callm", [self.expr(f.value, scope), json.dumps(f.attr)], node, scope)
             if node.keywords:
                 raise self.error(node, f"keyword arguments are not supported for .{f.attr}() in browser code")
             return f"{self.expr(f, scope)}({', '.join(self.args(node, scope))})"
         if node.keywords:
             raise self.error(node, "keyword arguments are not supported here in browser code")
         return f"{self.expr(f, scope)}({', '.join(self.args(node, scope))})"
+
+    def js_call(self, helper, head, node, scope):
+        """``helper(head..., [args], options)`` for calls into JavaScript libraries."""
+        options = ""
+        if node.keywords:
+            if any(k.arg is None for k in node.keywords):
+                raise self.error(node, "**kwargs is not supported in browser code")
+            fields = ", ".join(f"{json.dumps(k.arg)}: {self.expr(k.value, scope)}" for k in node.keywords)
+            options = f", {{{fields}}}"
+        return f"{helper}({', '.join(head)}, [{', '.join(self.args(node, scope))}]{options})"
 
     def _params_of(self, fn_node):
         if fn_node is None:

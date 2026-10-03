@@ -221,20 +221,11 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
             "signals": page.get("signals", []),
             "computeds": list(page.get("computeds", []))}
 
-    npm = detect_npm(compiled)
-    if npm:
-        importmap = {"imports": {
-            name: f"https://esm.sh/{name}@{ver}" for name, ver in npm.items()}}
-        for name in compiled["pages"]:
-            shell = f"{out}/server/{name}.html"
-            with open(shell, encoding="utf-8") as fh:
-                html = fh.read()
-            tag = ('<script type="importmap">' + json.dumps(importmap) + "</script></head>")
-            with open(shell, "w", encoding="utf-8") as fh:
-                fh.write(html.replace("</head>", tag))
     if source is not None:
         with open(f"{out}/app.pyweb", "w", encoding="utf-8") as fh:
             fh.write(source)
+        if app_dir and os.path.isfile(os.path.join(app_dir, "pyweb.lock")):  # npm packages (files are in static/)
+            shutil.copyfile(os.path.join(app_dir, "pyweb.lock"), os.path.join(out, "pyweb.lock"))
         # Other .pyweb files the app imports, at the same relative paths.
         for lib in compiled.get("libraries", []):
             rel = os.path.relpath(lib.path, app_dir) if app_dir else os.path.basename(lib.path)
@@ -250,39 +241,12 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
                 "rpc": compiled.get("rpc", []), "ir": compiled.get("ir_text", ""),
                 "runtime": rt_name, "runtime_bytes": len(runtime_js.encode()),
                 "runtime_gzip_bytes": _gzip_size(runtime_js),
-                "app": "app.pyweb" if source is not None else None, "npm": npm}
+                "app": "app.pyweb" if source is not None else None,
+                "npm": compiled.get("importmap") or {}}
     with open(f"{out}/manifest.json", "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
     write_dockerfile(f"{out}/Dockerfile", version=pyweb_version)
     return manifest
-
-
-def detect_npm(compiled: dict) -> dict:
-    """Collect ``{package: version}`` from ``package(\"name[@ver]\")`` calls
-    and ``from npm[.x] import ...`` lines in page sources.
-
-    The mapping flows into the SSR importmap and ``manifest["npm"]`` so
-    deployments pin exactly what the browser loads (default: latest).
-    """
-    def split_spec(spec):
-        # "@scope/name@ver" keeps its scope; "name@ver" splits once.
-        if spec.startswith("@"):
-            head, _, tail = spec[1:].partition("@")
-            name = "@" + head
-            ver = tail
-        else:
-            name, _, ver = spec.partition("@")
-        return name or spec, ver or "latest"
-
-    found: dict[str, str] = {}
-    for page in compiled.get("pages", {}).values():
-        src = page.get("source") or ""
-        for m in re.finditer(r"""package\(\s*['"]([^'"]+)['"]""", src):
-            name, ver = split_spec(m.group(1))
-            found.setdefault(name, ver)
-        for m in re.finditer(r"""from\s+npm\.([\w-]+)\s+import""", src):
-            found.setdefault(m.group(1), "latest")
-    return found
 
 
 def write_dockerfile(path: str, version: str = "") -> None:

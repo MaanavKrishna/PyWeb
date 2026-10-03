@@ -17,6 +17,11 @@ pyweb db migrate|status|rollback|new [--database URL] [--migrations DIR]
                                      [--name NAME] [--steps N] [--to VERSION]
 pyweb deploy [--target docker|compose|k8s] [--out deploy] [--port 8000]
                                      write deployment files
+pyweb add [PKG[@RANGE] ...] [--app DIR]
+                                     download npm packages for browser code into static/vendor/
+                                     and pin them in pyweb.lock; no arguments: reinstall from the lock
+pyweb remove PKG ... [--app DIR]     remove npm packages (see npm packages)
+pyweb dts FILE.d.ts                  Python dataclasses from TypeScript declarations
 pyweb mcp                            MCP server over stdio for AI assistants (see AI assistants & MCP)
 pyweb lsp                            language server over stdio for editors (see below)
 pyweb test [PATH]                    run pytest
@@ -36,8 +41,9 @@ budget breaches, so they can gate CI.
 `pyweb lsp` is a Language Server Protocol server for `.pyweb` files. It
 reports compile errors and security warnings as you type (including
 errors in imported `.pyweb` files), shows on hover whether a name runs
-in the browser or on the server and why, completes components, props and
-HTML tags, jumps to definitions across files, and outlines pages,
+in the browser or on the server and why (and, for npm packages, the
+installed version and TypeScript signature), completes components,
+props, HTML tags and installed npm packages, jumps to definitions across files, and outlines pages,
 components and server functions.
 
 ### VS Code

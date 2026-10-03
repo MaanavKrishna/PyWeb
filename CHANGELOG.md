@@ -6,7 +6,35 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **npm packages without Node.js.** `pyweb add chart.js/auto` downloads a
+  package from the npm registry, checks its sha512 checksum, follows its
+  imports from the browser entry point and copies only the files it
+  needs (and its dependencies) into `static/vendor/`, pinning versions in
+  `pyweb.lock`. `pyweb add` with no arguments reinstalls from the lock;
+  `pyweb remove` takes a package out. Browser code binds exports with
+  `Chart = npm("chart.js/auto")` or `npm("pkg", "Export")`. Calling a
+  class constructs it and keyword arguments become an options object.
+  Each page imports only the packages it uses, through an import map
+  that the Content Security Policy allows by hash. CommonJS-only and
+  Node.js-only packages are refused with an explanation, and an
+  uninstalled package is a compile error that names the command to run.
+- **`ref={el}`** sets a page variable to an element, in time for
+  `on_mount`, for libraries that draw into the page.
+- Changing an attribute of a package's object (`chart.value = 5`)
+  re-renders whatever shows it.
+- Web components (custom elements from npm) work in markup.
+- `pyweb lsp`: hover shows an npm binding's installed version and
+  TypeScript signature; completion offers installed packages in
+  `npm("` and a module's exports after `name.`.
+- New docs page: npm packages.
+
 ### Changed
+- `pyweb.npm` (TypeScript declarations to dataclasses) is now
+  `pyweb.dts`, and its command is `pyweb dts`. `pyweb build` no longer
+  writes an esm.sh import map; packages come from `pyweb.lock`.
+- The default Content Security Policy adds `worker-src 'self' blob:` so
+  packages can start Web Workers.
 - New website design: a colour system where blue means the browser and
   amber the server, self-hosted Inter / Bricolage Grotesque / JetBrains
   Mono, dark code windows, and a landing page that shows each line of an

@@ -178,7 +178,7 @@ class Renderer:
     def attrs_html(self, n, env):
         parts = []
         for key, val in n.attrs.items():
-            if key.startswith("on"):
+            if key.startswith("on") or key == "ref":
                 continue
             if key == "bind":
                 if not isinstance(val, tuple):
@@ -265,9 +265,12 @@ def _bind(target, value, scope):
     raise RenderError("unsupported loop target")
 
 
-def page_html(*, name, title, body, state, js_url=None, css_urls=(), head_extra="", lang="en"):
-    """The full HTML document for one page."""
+def page_html(*, name, title, body, state, js_url=None, css_urls=(), head_extra="", lang="en", importmap=None):
+    """The full HTML document for one page. ``importmap`` maps npm specifiers to vendored files."""
     css = "".join(f'<link rel="stylesheet" href="{_html.escape(u)}">' for u in css_urls)
+    if importmap and js_url:
+        from .packages import importmap_json
+        head_extra = f'<script type="importmap">{importmap_json(importmap)}</script>' + head_extra
     script = ""
     if js_url:
         script = (f'<script id="pw-state" type="application/json">{state_json(state)}</script>'

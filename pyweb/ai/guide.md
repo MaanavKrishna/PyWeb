@@ -192,7 +192,16 @@ JS globals are available directly: `window`, `document`, `localStorage`,
 
 Not supported in browser code: classes, imports, `with`, generators,
 walrus, `*args/**kwargs` parameters, slice assignment, keyword arguments to
-JS functions, server-only names. Move such code into `@server` functions.
+browser globals, server-only names. Move such code into `@server` functions.
+
+npm packages (no Node.js needed): run `pyweb add chart.js/auto` in the app
+folder (writes `pyweb.lock` and `static/vendor/`; commit both), then bind at
+module level with literal strings: `Chart = npm("chart.js/auto")`,
+`Gauge = npm("pkg", "Gauge")` (named export), `lib = npm("pkg", "*")` (whole
+module). Calling a class constructs it (`new`); keyword arguments become one
+options object. npm names work only in browser code (handlers, `on_mount`,
+lambdas), never directly in markup. Give libraries an element with
+`ref={el}` (declare `el = None`; it is set before `on_mount`).
 
 ## 8. Errors and fixes
 
@@ -207,6 +216,9 @@ JS functions, server-only names. Move such code into `@server` functions.
 | `unknown component <X>` | Define `def X(...)` with markup (capitalized) in this file, or import it: `from widgets import X`. |
 | `mismatched </tag>` / `is never closed` | Close every tag; void tags (`input`, `img`, `br`) need no close (`<input ... />`). |
 | `... is not supported in browser code` | Rewrite with supported constructs or move it to `@server`. |
+| `npm package 'x' isn't installed` | Run `pyweb add x` in the app folder (the folder with `pyweb.lock`). |
+| `uses X from npm(...), which only exists in the browser` | Use the package in a handler or `on_mount` and store the result in a page variable that markup shows. |
+| `pyweb add`: `is CommonJS` / `imports the Node.js module` | Pick an ES-module browser package (e.g. `lodash-es`), or do the work in an `@server` function. |
 
 ## 9. Workflow for agents
 

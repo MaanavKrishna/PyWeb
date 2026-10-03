@@ -168,7 +168,8 @@ class Site:
                 hdrs.append((k, v))
         ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
         if ctype.startswith("text/html") and not self.debug and "content-security-policy" not in names:
-            hdrs.append(("Content-Security-Policy", self.csp))
+            from .serve import csp_for
+            hdrs.append(("Content-Security-Policy", csp_for(self.csp, raw) if isinstance(raw, bytes) else self.csp))
         if method == "HEAD":
             hdrs.append(("Content-Length", str(len(raw))))
             raw = b""

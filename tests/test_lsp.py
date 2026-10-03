@@ -176,3 +176,12 @@ def test_stdio_session(tmp_path):
     assert by_id[4]["result"]["uri"].endswith("/widgets.pyweb")
     assert [s["name"] for s in by_id[5]["result"]] == ["latest", "Home"]
     assert by_id[6]["result"] is None and proc.returncode == 0
+
+
+def test_vscode_extension_version_matches_the_package():
+    import re
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+    pkg = json.loads((root / "editors" / "vscode" / "package.json").read_text())
+    version = re.search(r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(), re.M).group(1)
+    assert pkg["version"] == version

@@ -598,7 +598,8 @@ def landing(bench, demo_gz):
     <h2>Built for AI assistants</h2>
     <p>One file, plain Python, and a compiler that answers mistakes with a line number and a fix. The built-in MCP
     server lets Claude Code, Cursor and other assistants scaffold apps, check them, see what runs where, render
-    pages and call server functions. New projects include <code>AGENTS.md</code> and <code>CLAUDE.md</code>.</p>
+    pages, call server functions, look at the result in a real browser and run the tests. New projects include
+    <code>AGENTS.md</code>, <code>CLAUDE.md</code> and a starter test.</p>
     <p><a href="ai-assistants.html">Set it up →</a></p>
   </div>
   <div>{mcp_setup}</div>

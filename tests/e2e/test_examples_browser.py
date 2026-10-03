@@ -142,3 +142,23 @@ def test_showcase_server_search(page):
         expect(page.locator("#total")).to_have_text("Total: $300")
         page.click("#inc")
         expect(page.locator("#inc")).to_have_text("Count: 1")
+
+
+def test_mcp_screenshot_sees_the_page_and_runs_steps(tmp_path, monkeypatch):
+    import base64
+
+    from pyweb import mcp
+    monkeypatch.chdir(tmp_path)
+    server = mcp.Server()
+    mcp.scaffold(str(tmp_path / "app"), "counter")
+    res = server.call_tool("pyweb_screenshot", {"path": "app/app.pyweb", "steps": [
+        {"action": "click", "selector": "#inc"}, {"action": "click", "selector": "#inc"}]})
+    assert res["isError"] is False
+    info = res["structuredContent"]
+    assert info["status"] == 200 and info["hydration"] == "hydrated"
+    assert "Count: 2" in info["text"] and info["console"] == []
+    image = next(c for c in res["content"] if c["type"] == "image")
+    assert base64.b64decode(image["data"]).startswith(b"\x89PNG")
+    bad = server.call_tool("pyweb_screenshot", {"path": "app/app.pyweb", "steps": [
+        {"action": "click", "selector": "#missing"}]})["structuredContent"]
+    assert bad["steps"][0]["ok"] is False and "#missing" in bad["steps"][0]["error"]

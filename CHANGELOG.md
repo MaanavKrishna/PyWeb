@@ -6,6 +6,11 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.3.0]
+
+Faster pages that feel like an app, apps that span several files, and
+tools for editors, the browser and AI assistants.
+
 ### Added
 - **Hydration.** Pages now adopt the server-rendered DOM instead of
   rebuilding it: nodes are kept, focus and text typed before the script
@@ -39,6 +44,10 @@ project uses [semantic versioning](https://semver.org).
   sessions and live updates running on Pyodide. Shows the compiled
   JavaScript and what runs where, reports errors with a fix, and shares
   code as links.
+- **MCP tools** `pyweb_screenshot` (open a page in headless Chromium,
+  run click/fill/press steps, get a screenshot, the page text, console
+  errors and hydration status) and `pyweb_test` (run the app's pytest
+  tests and report failures). New apps include a starter `test_app.py`.
 - `python -m pyweb.bench --max-ssr-ms N --max-compile-ms N` fails when
   a benchmark exceeds its budget; CI runs it.
 

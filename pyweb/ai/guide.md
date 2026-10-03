@@ -217,8 +217,11 @@ JS functions, server-only names. Move such code into `@server` functions.
 3. Use `pyweb inspect` (MCP: `pyweb_inspect`) to confirm what runs in the
    browser vs server and what is sent to the browser.
 4. Verify behaviour: render pages (`pyweb_render`) and call server
-   functions (`pyweb_call`), or write tests with `pyweb.testing.TestClient`.
-5. Ship: `pyweb build app.pyweb --out dist --production` then
+   functions (`pyweb_call`). See the page and try interactions in a real
+   browser with `pyweb_screenshot` (steps: click, fill, press, ...).
+5. Test: new apps include `test_app.py` (`pyweb.testing.TestClient`); add
+   tests for what you change and run `pytest` (MCP: `pyweb_test`).
+6. Ship: `pyweb build app.pyweb --out dist --production` then
    `pyweb serve dist` (set `PYWEB_AUTH_SECRET` in production).
 
 Full docs: https://maanavkrishna.github.io/PyWeb/

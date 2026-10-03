@@ -158,8 +158,24 @@ the same `Server` behind its threaded HTTP handler.
 Copies the source to `dist/app.pyweb`, writes the runtime and page
 modules (rewriting the runtime import to the hashed file name),
 token-aware minification in production mode, the static prerender per
-page, the user's `static/` folder, `manifest.json` (with raw and gzip
-sizes) and a Dockerfile.
+page, the user's `static/` folder, imported `.pyweb` files,
+`manifest.json` (with raw and gzip sizes) and a Dockerfile.
+
+## 9. Tools around the compiler
+
+- **`pyweb lsp`** (`lsp.py`): a stdio Language Server. Every keystroke
+  compiles the buffer with its real path (so imports resolve); errors and
+  `security.check_source` findings become diagnostics, the placement
+  report answers hover, and the context's component table drives
+  completion and go to definition. `editors/vscode` adds a TextMate
+  grammar and starts the server.
+- **`pyweb mcp`** (`mcp.py`): the same compiler, `TestClient`, Playwright
+  and pytest behind MCP tools for AI assistants.
+- **Playground** (`website/playground`): PyWeb itself runs in Pyodide.
+  `host.py` wraps a `TestClient`; the page renders its HTML into an
+  iframe and a fetch bridge sends the iframe's `/__pyweb/` requests back
+  to Python, so pages, RPC, sessions and live updates behave as under
+  `pyweb dev`.
 
 ## Design decisions
 

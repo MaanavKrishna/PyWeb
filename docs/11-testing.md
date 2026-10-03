@@ -1,5 +1,8 @@
 # Testing
 
+Apps created with `pyweb new` include a `test_app.py` that checks the
+home page renders; run `pytest` in the app folder and add tests next to it.
+
 ## `TestClient`: fast, in-process, no browser
 
 `pyweb.testing.TestClient` loads your app exactly like the production

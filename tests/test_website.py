@@ -80,7 +80,9 @@ def test_playground_page_and_bundle(site):
     wb, out, _ = site
     html = (out / "playground.html").read_text()
     config = json.loads(re.search(r'<script id="pg-config" type="application/json">(.*?)</script>', html, re.S).group(1))
-    assert config["pyodide"] == wb.PYODIDE_CDN and set(config["examples"]) == {n for n, _ in wb.PLAYGROUND_EXAMPLES}
+    import os
+    expected = "pyodide/" if os.environ.get("PYWEB_PYODIDE_DIR") else wb.PYODIDE_CDN
+    assert config["pyodide"] == expected and set(config["examples"]) == {n for n, _ in wb.PLAYGROUND_EXAMPLES}
     assert config["examples"]["counter"]["source"] == (ROOT / "examples" / "counter" / "app.pyweb").read_text()
     names = zipfile.ZipFile(out / "playground" / "pyweb.zip").namelist()
     assert "pyweb/__init__.py" in names and "pyweb/runtime/browser/runtime.js" in names

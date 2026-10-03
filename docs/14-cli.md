@@ -1,7 +1,7 @@
 # Command line
 
 ```text
-pyweb new NAME [--template T]        create NAME/ with app.pyweb, AGENTS.md, CLAUDE.md, static/;
+pyweb new NAME [--template T]        create NAME/ with app.pyweb, test_app.py, AGENTS.md, CLAUDE.md, static/;
                                      T = blank | counter (default) | todo | blog | auth | chat
 pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
                                      development server: recompile on save, live reload,

@@ -18,6 +18,10 @@ can decide up front whether they matter for your app.
 
 ## Released so far
 
+- **0.3**: hydration, live updates over Server-Sent Events, multi-file
+  apps, the `pyweb lsp` language server and VS Code extension, the
+  browser playground, faster server rendering, and screenshot and test
+  tools for AI assistants.
 - **0.2**: tools for building with AI assistants: the `pyweb mcp` server,
   an AI guide, project templates with `AGENTS.md`/`CLAUDE.md`, and
   `llms.txt`.

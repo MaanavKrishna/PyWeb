@@ -185,7 +185,7 @@ def Home():
 ```
 
 - Lowercase tags are HTML elements; capitalised tags are components
-  defined in the same file.
+  defined in the same file or imported from another `.pyweb` file.
 - Parameters are props. Parameters with defaults are optional; missing
   required props and unknown props are compile errors.
 - A `children` parameter receives the nested markup.
@@ -194,6 +194,60 @@ def Home():
   server data in as props).
 - Callback props are called like functions: `on_delete={...}` in the
   parent, `onclick={on_delete}` inside the component.
+
+## Splitting an app into files
+
+Components, `@server` functions and constants can live in other `.pyweb`
+files next to `app.pyweb` (or in subfolders) and be imported with
+`from ... import`:
+
+```text
+app.pyweb            pages
+widgets.pyweb        components and the server functions they use
+ui/icons.pyweb       imported as ui.icons
+```
+
+```pyweb
+# widgets.pyweb
+from pyweb import server
+
+COLOR = "red"
+
+
+@server
+def save(item: str) -> str:
+    return "saved " + item
+
+
+def Card(title, children):
+    <section class={COLOR}>
+        <h2>{title}</h2>
+        {children}
+    </section>
+```
+
+```python
+# app.pyweb
+from pyweb import App
+from widgets import Card, save
+
+app = App()
+...
+```
+
+- An imported component works exactly like a local one: props, children,
+  its own state, and the components it uses or imports itself (so
+  `widgets.pyweb` can do `from ui.icons import Icon`).
+- Each file keeps its own names. `widgets.pyweb` and `app.pyweb` can both
+  define `COLOR`; each component sees its own file's value.
+- `@server` functions are imported by name (no `as`), because their name
+  is their RPC endpoint; two server functions with the same name anywhere
+  in the app are a compile error.
+- Pages belong in the app file. Other files hold components, server
+  functions, helpers and constants. Circular imports are a compile error.
+- Plain `.py` modules still import as usual for server code.
+- `pyweb build` copies the imported files into `dist/`, and `pyweb dev`
+  reloads when any of them changes.
 
 ## Pages
 

@@ -116,12 +116,18 @@ def _loop_target(target):
     return ast.parse(target, mode="eval").body
 
 
+#: Key in a component's render env naming the .pyweb file it came from, so
+#: components it uses are looked up in that file (``None``: the app itself).
+NS_KEY = "__pyweb_ns__"
+
+
 class Renderer:
     """Render UI nodes.
 
-    ``component_state(name, props) -> (ui_nodes, env)`` is supplied by the
-    caller: the compiler uses static evaluation, the server calls the real
-    component function.
+    ``component_state(name, props, ns) -> (ui_nodes, env)`` is supplied by
+    the caller: the compiler uses static evaluation, the server calls the
+    real component function. ``ns`` is the file whose markup uses the
+    component (see :data:`NS_KEY`).
     """
 
     def __init__(self, globals_=None, component_state=None, strict=True):
@@ -241,7 +247,7 @@ class Renderer:
                 props[key] = self.eval(val[1], env, val[2])
         if n.children:
             props["children"] = Markup(self.render(n.children, env))
-        ui, cenv = self.component_state(n.tag, props)
+        ui, cenv = self.component_state(n.tag, props, env.get(NS_KEY))
         return self.render(ui, cenv)
 
 

@@ -50,7 +50,8 @@ ERROR_HINTS = [
     ("would be sent to the browser", "Keep secrets inside @server functions; never read them in markup or handlers."),
     ("must name a local variable", "Declare the bound variable in the page first, e.g. `name = \"\"`."),
     ("must name a page variable", "bind= needs a page variable name, e.g. bind={name}."),
-    ("unknown component", "Define the component in the same file: a capitalized function containing markup."),
+    ("unknown component", "Define it in this file (a capitalized function containing markup) or import it "
+                          "from another .pyweb file: `from widgets import Card`."),
     ("is never closed", "Close the tag (or self-close void tags: <input ... />)."),
     ("mismatched </", "Make closing tags match the most recently opened tag."),
     ("unterminated tag or expression", "A tag or {expression} is missing its closing > or }."),
@@ -91,7 +92,7 @@ def _error_record(exc, filename):
     if isinstance(msg, str) and msg.startswith("pyweb: "):
         msg = msg[len("pyweb: "):]
     line = getattr(exc, "lineno", None)
-    rec = {"file": filename, "line": line, "message": str(msg)}
+    rec = {"file": getattr(exc, "filename", None) or filename, "line": line, "message": str(msg)}
     hint = _hint(str(msg))
     if hint:
         rec["hint"] = hint
@@ -196,13 +197,15 @@ class _Apps:
     def client(self, path):
         from .testing import TestClient
         path = os.path.abspath(path)
-        mtime = os.path.getmtime(path)
         entry = self._clients.get(path)
+        files = entry[1].site.app.files if entry else [path]  # the app and the .pyweb files it imports
+        mtime = tuple(os.path.getmtime(f) if os.path.exists(f) else 0 for f in files)
         if entry is None or entry[0] != mtime:
             cookies = entry[1].cookies if entry else {}
             with contextlib.redirect_stdout(sys.stderr):
                 client = TestClient(path)
             client.cookies = dict(cookies)
+            mtime = tuple(os.path.getmtime(f) for f in client.site.app.files)
             self._clients[path] = (mtime, client)
         return self._clients[path][1]
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 
 from . import pyjs
@@ -128,8 +129,41 @@ class PageInfo:
         self.js_body = ""
 
 
-def scan_module(tree, ui_all, filename):
-    """Collect module facts and the pages/components it defines."""
+def _import_library(ctx, lib, node, filename):
+    """Bind the names of ``from <lib> import ...`` (another .pyweb file)."""
+    where = os.path.basename(lib.path)
+    if lib not in ctx.libraries:
+        ctx.libraries.append(lib)
+    for alias in node.names:
+        name, local = alias.name, alias.asname or alias.name
+        if name == "*":
+            raise CompileError(f"import names from {where} explicitly (`from {node.module} import Card, ...`)",
+                               node.lineno, filename)
+        if local in ctx.components or local in ctx.server_fns:
+            raise CompileError(f"{local!r} is imported twice", node.lineno, filename)
+        if name in lib.components:
+            ctx.components[local] = lib.components[name]
+            ctx.imported_components[local] = (lib, name)
+        elif name in lib.ctx.server_fns:
+            if local != name:
+                raise CompileError(f"import server function {name!r} from {where} without `as` "
+                                   "(its RPC name is its own name)", node.lineno, filename)
+            ctx.server_fns[name] = lib.ctx.server_fns[name]
+        elif name in lib.ctx.modconsts:
+            ctx.modconsts[local] = lib.ctx.modconsts[name]
+        elif name in lib.defined:
+            ctx.server_only[local] = (f"imported from {where}; browser code can use components, "
+                                      "@server functions and constants from other .pyweb files")
+        else:
+            raise CompileError(f"{where} has no {name!r}", node.lineno, filename)
+
+
+def scan_module(tree, ui_all, filename, resolve=None):
+    """Collect module facts and the pages/components it defines.
+
+    ``resolve(module_name, lineno)`` returns a compiled library for
+    ``from <module_name> import ...`` when that names another .pyweb file.
+    """
     import importlib
     browser_api = importlib.import_module("pyweb.browser")
     ctx = ModuleContext(filename)
@@ -138,6 +172,12 @@ def scan_module(tree, ui_all, filename):
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             mod = getattr(node, "module", None) or ""
+            lib = None
+            if isinstance(node, ast.ImportFrom) and mod and not node.level and resolve:
+                lib = resolve(mod, node.lineno)
+            if lib is not None:
+                _import_library(ctx, lib, node, filename)
+                continue
             for alias in node.names:
                 local = alias.asname or alias.name.split(".")[0]
                 if mod == "pyweb" and alias.name == "subscribe":
@@ -164,6 +204,9 @@ def scan_module(tree, ui_all, filename):
                 if not node.name[:1].isupper():
                     raise CompileError(f"component {node.name!r} must start with a capital letter "
                                        "(lowercase tags are HTML elements)", node.lineno, filename)
+                if node.name in ctx.imported_components:
+                    raise CompileError(f"component {node.name!r} is both imported and defined here",
+                                       node.lineno, filename)
                 components.append(PageInfo(node, "component"))
                 ctx.components[node.name] = components[-1]
             elif decos:
@@ -496,32 +539,56 @@ class Emitter:
             info.js_body = ""
             return ""
         fn_js = self.function_js(info)
-        comps = self.components_for(info.ui)
-        parts = [RUNTIME_IMPORT]
-        for name in sorted(self.ctx.used_consts):
-            parts.append(f"const {jsname(name)} = {json.dumps(self.ctx.modconsts[name])};")
-        for name in self.ctx.used_helpers:
-            parts.append(self.ctx.helper_js[name])
-        for name in comps:
-            parts.append(self.component_js[name])
+        parts = [RUNTIME_IMPORT] + self.module_parts(used_components(info.ui))
         parts.append(fn_js)
         parts.append(f"$mount({json.dumps(info.name)}, {jsname(info.name)});")
         info.js_body = fn_js
         return "\n".join(parts) + "\n"
 
-    def components_for(self, nodes, out=None):
+    def module_parts(self, names):
+        """JS for components ``names`` (and what they use): blocks for other
+        .pyweb files, then this file's constants, helpers and components."""
+        local, imports = self.components_for(names)
+        parts = [lib.emitter.library_block(wanted) for lib, wanted in imports.values()]
+        for name in sorted(self.ctx.used_consts):
+            parts.append(f"const {jsname(name)} = {json.dumps(self.ctx.modconsts[name])};")
+        for name in self.ctx.used_helpers:
+            parts.append(self.ctx.helper_js[name])
+        parts += [self.component_js[name] for name in local]
+        return parts
+
+    def library_block(self, wanted):
+        """Components from this (imported) file, in their own scope so their
+        constants and helpers can't clash with the importer's names."""
+        inner = self.module_parts([orig for orig, _ in wanted])
+        body = "\n".join("  " + line for part in inner for line in part.splitlines())
+        names = ", ".join(jsname(orig) for orig, _ in wanted)
+        binds = ", ".join(jsname(orig) if orig == local else f"{jsname(orig)}: {jsname(local)}"
+                          for orig, local in wanted)
+        where = os.path.basename(self.ctx.filename)
+        return f"// {where}\nconst {{ {binds} }} = (() => {{\n{body}\n  return {{ {names} }};\n}})();"
+
+    def components_for(self, names, out=None, imports=None):
         out = [] if out is None else out
-        for name in used_components(nodes):
+        imports = {} if imports is None else imports
+        for name in names:
             comp = self.ctx.components.get(name)
             if comp is None:
+                continue
+            source = self.ctx.imported_components.get(name)
+            if source is not None:
+                lib, orig = source
+                wanted = imports.setdefault(lib.path, (lib, []))[1]
+                if (orig, name) not in wanted:
+                    wanted.append((orig, name))
                 continue
             if name not in self.component_js:
                 self.component_js[name] = ""  # recursion guard
                 self.component_js[name] = self.function_js(comp)
-            self.components_for(comp.ui, out)
+            self.components_for(used_components(comp.ui), out, imports)
             if name not in out:
                 out.append(name)
-        return out
+        return out, imports
 
     def function_js(self, info):
         scope = info.scope
@@ -697,7 +764,8 @@ class Emitter:
     def component_call(self, n, scope, ind):
         if n.tag not in self.ctx.components:
             raise CompileError(f"unknown component <{n.tag}>: define `def {n.tag}(...)` with markup "
-                               "in this file", n.line, self.ctx.filename)
+                               f"in this file, or import it (`from widgets import {n.tag}`)",
+                               n.line, self.ctx.filename)
         comp = self.ctx.components[n.tag]
         props = []
         for key, val in n.attrs.items():

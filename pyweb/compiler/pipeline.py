@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import builtins
 import hashlib
+import os
 
 from . import parser as P
 from .codegen.ir import build_graph, to_text
@@ -60,11 +61,66 @@ def static_globals(ctx):
     return env
 
 
-def _renderer(ctx, globals_=None, strict=False):
-    from pyweb.ssr import Renderer
+class Library:
+    """Another .pyweb file imported with ``from <name> import ...``."""
 
-    def component_state(name, props):
-        comp = ctx.components[name]
+    def __init__(self, name, path, compiled, tree):
+        self.name, self.path = name, path
+        self.ctx = compiled["context"]
+        self.components = compiled["components"]
+        self.rpc = compiled["rpc"]
+        self.libraries = compiled["libraries"]
+        self.emitter = compiled["emitter"]
+        self.defined = {n for node in tree.body for n in _defined_names(node)}
+
+
+def _defined_names(node):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [node.name]
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return [a.asname or a.name.split(".")[0] for a in node.names]
+    if isinstance(node, (ast.Assign, ast.AnnAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return [n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)]
+    return []
+
+
+def _resolver(filename, libs, stack):
+    """Find ``<module>.pyweb`` next to ``filename`` and compile it (once)."""
+    if not filename or filename.startswith("<") or not os.path.isfile(filename):
+        return None
+    base = os.path.dirname(os.path.abspath(filename))
+
+    def resolve(module, lineno):
+        path = os.path.join(base, *module.split(".")) + ".pyweb"
+        if not os.path.isfile(path):
+            return None
+        path = os.path.abspath(path)
+        if path in stack:
+            chain = " -> ".join(os.path.basename(p) for p in (*stack, path))
+            raise CompileError(f"circular import between .pyweb files: {chain}", lineno, filename)
+        if path not in libs:
+            with open(path, encoding="utf-8") as fh:
+                source = fh.read()
+            compiled = compile_source(source, filename=path, _libs=libs, _stack=(*stack, path))
+            if compiled["pages"]:
+                first = next(iter(compiled["pages"].values()))
+                raise CompileError(f"pages belong in the app file; {os.path.basename(path)} can only "
+                                   "define components, @server functions, helpers and constants",
+                                   first["lineno"], path)
+            libs[path] = Library(module, path, compiled, P.parse_source(source, path)[0])
+        return libs[path]
+
+    return resolve
+
+
+def _renderer(ctx, globals_=None, strict=False):
+    from pyweb.ssr import NS_KEY, Renderer
+
+    def component_state(name, props, ns=None):
+        table = ns or ctx
+        comp = table.components[name]
+        cctx = getattr(comp, "ctx", table)
         args = {}
         for p in comp.params:
             if p in props:
@@ -76,26 +132,41 @@ def _renderer(ctx, globals_=None, strict=False):
                     args[p] = None
             else:
                 args[p] = None
-        return comp.ui, static_state(comp, ctx, args)
+        env = static_state(comp, cctx, args)
+        env[NS_KEY] = cctx
+        return comp.ui, env
 
     return Renderer(globals_ or static_globals(ctx), component_state=component_state, strict=strict)
 
 
-def compile_source(source, filename="<pyweb>", route="/", title="PyWeb"):
+def compile_source(source, filename="<pyweb>", route="/", title="PyWeb", *, _libs=None, _stack=None):
     try:
-        return _compile(source, filename, route, title)
+        if _stack is None and filename and not filename.startswith("<"):
+            _stack = (os.path.abspath(filename),)
+        return _compile(source, filename, route, title, {} if _libs is None else _libs, _stack or ())
     except CompileError as exc:
         if not exc.filename or exc.filename == "<pyweb>":
             exc.with_file(filename)
         raise
 
 
-def _compile(source, filename, route, title):
+def _compile(source, filename, route, title, libs, stack):
     from pyweb.ssr import page_html
     tree, ui_all, _pages = P.parse_source(source, filename)
     rpc = rpc_specs(tree)
-    ctx, pages, components = scan_module(tree, ui_all, filename)
+    ctx, pages, components = scan_module(tree, ui_all, filename, _resolver(filename, libs, stack))
+    libraries = _library_order(ctx.libraries)
+    seen = {spec["name"]: os.path.basename(filename) for spec in rpc}
+    for lib in libraries:
+        for spec in lib.rpc:
+            where = os.path.basename(lib.path)
+            if seen.get(spec["name"], where) != where:
+                raise CompileError(f"two @server functions are named {spec['name']!r} ({seen[spec['name']]} "
+                                   f"and {where}); RPC names must be unique across the app",
+                                   spec.get("line") or 1, filename)
+            seen[spec["name"]] = where
     for comp in components:
+        comp.ctx = ctx
         classify(comp, ctx)
     for info in pages:
         classify(info, ctx)
@@ -155,4 +226,20 @@ def _compile(source, filename, route, title):
         all_place.setdefault(spec["name"], ("server", "@server function (not called from browser code)"))
     graph = build_graph(page_infos, rpc, all_signals, all_computeds, all_place, all_edges)
     return {"graph": graph, "ir_text": to_text(graph), "rpc": rpc, "pages": artifacts,
-            "components": {c.name: c for c in components}, "context": ctx}
+            "components": {c.name: c for c in components}, "context": ctx,
+            "libraries": libraries, "emitter": emitter}
+
+
+def _library_order(libs):
+    """Imported files, dependencies first, each once."""
+    out = []
+
+    def visit(lib):
+        for dep in lib.libraries:
+            visit(dep)
+        if lib not in out:
+            out.append(lib)
+
+    for lib in libs:
+        visit(lib)
+    return out

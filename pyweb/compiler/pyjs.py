@@ -121,7 +121,9 @@ class ModuleContext:
         self.server_fns = {}       # name -> [param names]
         self.helpers = {}          # name -> FunctionDef
         self.modconsts = {}        # name -> python value
-        self.components = {}       # name -> component info
+        self.components = {}       # name -> component info (local or imported)
+        self.imported_components = {}  # local name -> (library, name in that file)
+        self.libraries = []        # other .pyweb files imported directly
         self.server_only = {}      # name -> reason
         self.browser_globals = {}  # name -> js expression (pyweb.browser imports)
         # results of on-demand helper compilation

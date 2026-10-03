@@ -52,6 +52,14 @@ capitalised functions with markup), helpers (undecorated functions),
 literal constants, and server-only names (imports, classes, non-literal
 module values). `pyweb.browser` imports map to JavaScript globals.
 
+`from widgets import Card` where `widgets.pyweb` sits next to the file is
+a *library import*: the pipeline compiles that file first (cached per
+build, cycles rejected) and binds its components, `@server` functions
+and constants into the importer's context. The emitter writes each
+library's components into its own scope:
+`const { Card } = (() => { ...constants, helpers, components...; return { Card }; })();`,
+so files never see each other's names.
+
 ## 3. Classification (`lower.classify`)
 
 For each page and component, local assignments are collected in order.
@@ -131,7 +139,10 @@ placeholders are no-ops) and appends, for each page and component, a
 returns `locals()`. Rendering a page calls it with the route parameters
 (converted by annotation), honours an early `redirect(...)`, renders the
 UI tree with `ssr.Renderer` (real Python evaluation, same rules as the
-browser), and embeds the browser-read values as JSON.
+browser), and embeds the browser-read values as JSON. Imported `.pyweb`
+files are executed the same way as modules registered under their
+import name; a component's render env carries the file it came from, so
+nested components resolve in that file and its markup sees its globals.
 
 `Server` routes pages, dispatches RPC (validation by annotation, JSON
 and Origin checks, auth/permission gates, rate limiting, timeouts in a

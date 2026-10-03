@@ -235,6 +235,13 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
     if source is not None:
         with open(f"{out}/app.pyweb", "w", encoding="utf-8") as fh:
             fh.write(source)
+        # Other .pyweb files the app imports, at the same relative paths.
+        for lib in compiled.get("libraries", []):
+            rel = os.path.relpath(lib.path, app_dir) if app_dir else os.path.basename(lib.path)
+            if rel.startswith(".."):
+                rel = os.path.basename(lib.path)
+            os.makedirs(os.path.dirname(os.path.join(out, rel)) or out, exist_ok=True)
+            shutil.copyfile(lib.path, os.path.join(out, rel))
     try:
         from pyweb import __version__ as pyweb_version
     except ImportError:  # pragma: no cover

@@ -10,6 +10,7 @@ from .jobs import task
 from .context import NotFound, redirect, request, session
 from .rpc import RPCError
 from .decorators import component, edge, server, worker
+from .realtime import channel, publish, subscribe
 
 __all__ = [
     "App",
@@ -22,6 +23,9 @@ __all__ = [
     "edge",
     "server",
     "worker",
+    "channel",
+    "publish",
+    "subscribe",
     "Email",
     "Model",
     "task",

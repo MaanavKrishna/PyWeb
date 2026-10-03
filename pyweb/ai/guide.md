@@ -167,8 +167,12 @@ def Item(item_id: int):
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
   parameters; `with db.transaction(): ...`.
 - In handlers, navigate with `window.location.href = "/path"`.
-- Run code after load with a handler named `on_mount` (e.g.
-  `setInterval(refresh, 2000)` for polling).
+- Run code after load with a handler named `on_mount`.
+- Live updates: in a server function `publish("room:1", data)`; in the
+  page `feed = channel("room:1")` (runs on the server); in `on_mount`
+  `subscribe(feed, handler)`, where `handler(message)` assigns page
+  variables. Import all three from `pyweb`. Never poll with
+  `setInterval` when `publish` fits.
 
 ## 7. Python that compiles to the browser
 

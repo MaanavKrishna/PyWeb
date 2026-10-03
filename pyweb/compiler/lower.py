@@ -34,7 +34,8 @@ from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
                    ModuleContext, Translator, jsname)
 
 RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when as $when, signal as $signal, "
-                  "computed as $computed, mount as $mount, onMount as $onMount, py as $py, rpc as $rpc } "
+                  "computed as $computed, mount as $mount, onMount as $onMount, py as $py, rpc as $rpc, "
+                  "subscribe as $subscribe } "
                   "from \"./runtime.js\";")
 
 SECRET_NAME = re.compile(r"(?i)(secret|password|passwd|api_?key|token|private_?key|credential)")
@@ -139,7 +140,9 @@ def scan_module(tree, ui_all, filename):
             mod = getattr(node, "module", None) or ""
             for alias in node.names:
                 local = alias.asname or alias.name.split(".")[0]
-                if mod == "pyweb.browser" and alias.name in browser_bindings:
+                if mod == "pyweb" and alias.name == "subscribe":
+                    ctx.browser_globals[local] = "$subscribe"
+                elif mod == "pyweb.browser" and alias.name in browser_bindings:
                     ctx.browser_globals[local] = browser_bindings[alias.name]
                 elif mod == "pyweb.browser" and alias.name in pyjs.JS_GLOBALS:
                     ctx.browser_globals[local] = alias.name

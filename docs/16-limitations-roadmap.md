@@ -14,9 +14,6 @@ can decide up front whether they matter for your app.
 - **Multi-page navigation.** Links do full page loads (fast, because
   pages are small and the runtime is cached). There is no client-side
   router.
-- **Realtime is polling-based.** There is no persistent push channel to
-  the browser yet; poll a server function (as the chat example does)
-  or `/__pyweb/poll`.
 - **No npm imports in browser code.** Browser code can use the
   browser's own APIs but not npm packages.
 - **No language server.** Editors treat `.pyweb` files as Python with
@@ -38,8 +35,6 @@ See the [changelog](https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.m
 
 Planned, roughly in order. Nothing here is promised for a date.
 
-2. **Push updates**: a streaming channel (Server-Sent Events) for
-   `realtime` and live queries, with the polling path as fallback.
 3. **Multi-file apps**: components imported from other `.pyweb` files.
 4. **Editor support**: a language server for `.pyweb` (diagnostics,
    completion, go-to-definition) built on the compiler.

@@ -13,10 +13,20 @@ project uses [semantic versioning](https://semver.org).
   HTML doesn't match, the page falls back to a client render and logs
   a warning. The page root carries `data-pw-mode="hydrated"` or
   `"rendered"`.
+- **Live updates.** `publish(name, data)` in server code pushes to every
+  page that called `subscribe(channel_feed, handler)`, over Server-Sent
+  Events with a polling fallback. Feeds come from `channel(name)` while
+  rendering: signed, expiring, and positioned so no message published
+  after the render is missed. `pyweb dev`, `pyweb serve` and the ASGI
+  adapter stream; `realtime.use_bus()` shares the bus (e.g. Redis)
+  between processes. The chat example uses it instead of polling.
 - `python -m pyweb.bench --max-ssr-ms N --max-compile-ms N` fails when
   a benchmark exceeds its budget; CI runs it.
 
 ### Changed
+- `/__pyweb/events` and `/__pyweb/poll` require a signed `?feed=`; the
+  unauthenticated `?channel=` form is gone, so channels are no longer
+  readable by anyone who guesses a name.
 - Server rendering caches compiled template expressions; rendering a
   page is about twice as fast.
 - Generated page modules pass element children as a function and wrap

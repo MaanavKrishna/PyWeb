@@ -1,9 +1,9 @@
-"""Chat rooms: route parameters, server state, polling for new messages."""
+"""Chat rooms: route parameters, server state and live updates."""
 
 import itertools
 import threading
 
-from pyweb import App, RPCError, server
+from pyweb import App, RPCError, channel, publish, server, subscribe
 
 app = App(title="Chat", stylesheets=["/static/app.css"])
 
@@ -30,7 +30,9 @@ def send(room: str, author: str, text: str) -> None:
     if not text:
         return
     with _lock:
-        _room(room).append({"id": next(_ids), "author": author.strip() or "guest", "text": text[:500]})
+        message = {"id": next(_ids), "author": author.strip() or "guest", "text": text[:500]}
+        _room(room).append(message)
+    publish("chat:" + room, message)  # every open page for this room receives it
 
 
 @app.page("/", title="Chat rooms")
@@ -47,24 +49,20 @@ def Lobby():
 @app.page("/chat/{room}", title="Chat")
 def Room(room: str):
     messages = history(room)
-    last_id = messages[-1]["id"] if messages else 0
+    feed = channel("chat:" + room)  # signed on the server; lets this page listen
     author = "guest"
     draft = ""
 
-    def poll():
-        fresh = history(room, last_id)
-        if fresh:
-            messages = messages + fresh
-            last_id = fresh[-1]["id"]
+    def received(message):
+        messages = messages + [message]
 
     def on_mount():
-        setInterval(poll, 1000)
+        subscribe(feed, received)
 
     def submit():
         if draft.strip():
             send(room, author, draft)
             draft = ""
-            poll()
 
     <main>
         <p><a href="/">← Rooms</a></p>

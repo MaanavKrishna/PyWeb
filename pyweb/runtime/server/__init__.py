@@ -401,45 +401,52 @@ class Server:
         pages = self.compiled.setdefault("error_pages", {})
         pages[status] = html_template
 
-    def handle_events(self, req: Request):
-        """SSE stream: GET /__pyweb/events?channel=NAME replays missed frames
-        (via Last-Event-ID) then emits a live snapshot. Real servers hold the
-        connection open; this runtime returns buffered frames so tests and
-        simple deployments work without streaming infrastructure."""
+    def _feed(self, req: Request):
+        """(bus, channel name, query) for a ``?feed=`` request, or an error Response."""
         from urllib.parse import urlparse, parse_qs
+        from pyweb import context as _ctx
         from pyweb import realtime as _rt
         qs = parse_qs(urlparse(req.path).query)
-        channel_name = (qs.get("channel") or [""])[0]
-        if not channel_name:
-            return Response(400, json.dumps({"error": "missing ?channel="}),
-                            {"Content-Type": "application/json"})
-        last_id = int(req.headers.get("Last-Event-ID", "0") or 0)
-        bus = getattr(self, "bus", None) or _rt._default_bus
-        frames = "".join(
-            _rt.sse_format(seq, channel_name, msg)
-            for seq, msg in bus.since(channel_name, last_id))
-        return Response(200, frames, {
+        token = (qs.get("feed") or [""])[0]
+        if not token:
+            return self._err(400, "missing ?feed= (create one with channel(name) while rendering)")
+        feed = _rt.read_feed(token, _ctx._secret(_ctx.current()))
+        if feed is None:
+            return self._err(403, "invalid or expired feed; reload the page")
+        name, start = feed
+        return getattr(self, "bus", None) or _rt.current_bus(), name, start, qs
+
+    def handle_events(self, req: Request):
+        """Server-Sent Events: GET /__pyweb/events?feed=TOKEN streams the
+        channel's messages, resuming after ``Last-Event-ID``."""
+        from pyweb import realtime as _rt
+        feed = self._feed(req)
+        if isinstance(feed, Response):
+            return feed
+        bus, name, start, _qs = feed
+        try:
+            last_id = int(req.headers.get("Last-Event-ID", "0") or 0)
+        except ValueError:
+            last_id = 0
+        last_id = max(last_id, start)
+        return Response(200, _rt.EventStream(bus, name, last_id), {
             "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "X-Channel": channel_name,
-            "X-Last-Id": str(bus._seq),
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
         })
 
     def handle_poll(self, req: Request):
-        """Polling fallback: GET /__pyweb/poll?channel=NAME&since=ID."""
-        from urllib.parse import urlparse, parse_qs
-        from pyweb import realtime as _rt
-        qs = parse_qs(urlparse(req.path).query)
-        channel_name = (qs.get("channel") or [""])[0]
-        if not channel_name:
-            return Response(400, json.dumps({"error": "missing ?channel="}),
-                            {"Content-Type": "application/json"})
+        """Polling fallback: GET /__pyweb/poll?feed=TOKEN&since=ID."""
+        feed = self._feed(req)
+        if isinstance(feed, Response):
+            return feed
+        bus, name, start, qs = feed
         try:
             since = int((qs.get("since") or ["0"])[0])
         except ValueError:
             since = 0
-        bus = getattr(self, "bus", None) or _rt._default_bus
-        messages = [{"id": seq, "channel": channel_name, "data": msg}
-                    for seq, msg in bus.since(channel_name, since)]
-        return Response(200, json.dumps({"messages": messages, "last_id": bus._seq}),
-                        {"Content-Type": "application/json"})
+        since = max(since, start)
+        messages = [{"id": seq, "data": msg} for seq, msg in bus.since(name, since, limit=100)]
+        last_id = messages[-1]["id"] if messages else since
+        return Response(200, json.dumps({"messages": messages, "last_id": last_id}),
+                        {"Content-Type": "application/json", "Cache-Control": "no-store"})

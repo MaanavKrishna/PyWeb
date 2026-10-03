@@ -1238,33 +1238,48 @@ export async function rpc(name, args = {}, opts = {}) {
   throw lastErr;
 }
 
-// Realtime: SSE at /__pyweb/events?channel=NAME with poll fallback.
-// subscribe(channel, onMsg, {lastId}) returns an unsubscribe function.
-export function subscribe(channel, onMsg, opts = {}) {
+// Live updates. `feed` is a signed token made on the server with
+// channel(name). Messages arrive over Server-Sent Events (the browser
+// reconnects and resumes on its own); if the stream can't be opened the
+// page polls instead. Each message runs `onMsg` like an event handler.
+// Returns an unsubscribe function; the subscription also ends with the
+// page or component that made it.
+export function subscribe(feed, onMsg, opts = {}) {
   let stopped = false;
   let lastId = opts.lastId || 0;
-  if (typeof EventSource !== "undefined" && !opts.poll) {
-    const src = new EventSource(`/__pyweb/events?channel=${encodeURIComponent(channel)}`);
-    src.addEventListener(channel, (e) => {
-      if (e.lastEventId) lastId = e.lastEventId;
-      try { onMsg(JSON.parse(e.data)); } catch { onMsg(e.data); }
-    });
-    src.onerror = () => { src.close(); if (!stopped) poll(); };
-    return () => { stopped = true; src.close(); };
-  }
+  let src = null;
+  const q = `feed=${encodeURIComponent(feed)}`;
+  const deliver = (raw) => {
+    let v = raw;
+    if (typeof raw === "string") { try { v = JSON.parse(raw); } catch { /* plain text */ } }
+    try {
+      const r = batch(() => onMsg(v));
+      if (r && typeof r.then === "function") r.then(null, reportError);
+    } catch (e) { reportError(e); }
+  };
+  const stop = () => { stopped = true; if (src) src.close(); };
+  onCleanup(stop);
   async function poll() {
     while (!stopped) {
       try {
-        const res = await fetch(`/__pyweb/poll?channel=${encodeURIComponent(channel)}&since=${lastId}`);
+        const res = await fetch(`/__pyweb/poll?${q}&since=${lastId}`, { credentials: "same-origin" });
+        if (res.status === 403 || res.status === 400) { reportError(new Error(`pyweb: feed rejected (${res.status}); reload the page`)); return; }
         if (!res.ok) throw new Error(`poll ${res.status}`);
         const data = await res.json();
-        for (const msg of data.messages || []) { lastId = msg.id; onMsg(msg.data); }
+        for (const msg of data.messages || []) { lastId = msg.id; if (!stopped) deliver(msg.data); }
       } catch { /* retry below */ }
       await _sleep(opts.interval || 2500);
     }
   }
-  poll();
-  return () => { stopped = true; };
+  if (typeof EventSource !== "undefined" && !opts.poll) {
+    src = new EventSource(`/__pyweb/events?${q}`);
+    src.onmessage = (e) => { if (e.lastEventId) lastId = Number(e.lastEventId) || lastId; deliver(e.data); };
+    // CONNECTING means the browser is reconnecting by itself; CLOSED means it gave up.
+    src.onerror = () => { if (src.readyState === 2 && !stopped) { src = null; poll(); } };
+  } else {
+    poll();
+  }
+  return stop;
 }
 
 // Optimistic mutation: apply local patch, run server call, reconcile/rollback.

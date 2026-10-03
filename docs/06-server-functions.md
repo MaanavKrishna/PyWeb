@@ -116,6 +116,68 @@ Every response carries `X-Request-Id` and a W3C `traceparent` header.
 Because it is plain JSON over HTTP, server functions can also be called
 from scripts, tests (`TestClient.rpc`) or other services.
 
+## Live updates
+
+Server code can push messages to every browser showing a page, over
+Server-Sent Events. Three functions from `pyweb` do it:
+
+- `publish(name, data)` in server code sends `data` (anything
+  JSON-serialisable) to channel `name`.
+- `channel(name)` in a page function returns a *feed*: a signed token
+  that lets that page listen to channel `name`. Only visitors who were
+  served the page get it, so the page decides who may listen.
+- `subscribe(feed, handler)` in browser code (usually `on_mount`) calls
+  `handler(message)` for every message. The handler runs like an event
+  handler, so assigning page variables updates the page.
+
+```pyweb
+from pyweb import App, channel, publish, server, subscribe
+
+app = App()
+_scores = {"home": 0, "away": 0}
+
+
+@server
+def score(team: str) -> None:
+    _scores[team] += 1
+    publish("scores", _scores)
+
+
+@app.page("/")
+def Scoreboard():
+    scores = dict(_scores)
+    feed = channel("scores")
+
+    def changed(new_scores):
+        scores = new_scores
+
+    def on_mount():
+        subscribe(feed, changed)
+
+    <main>
+        <p id="home">Home {scores["home"]}</p>
+        <p id="away">Away {scores["away"]}</p>
+        <button onclick={score("home")}>Home scores</button>
+    </main>
+```
+
+How it behaves:
+
+- **Nothing is missed.** A feed remembers the channel's position when the
+  page rendered, so messages published before the browser connects are
+  still delivered, and a browser that reconnects resumes after the last
+  message it saw.
+- **It falls back to polling** (`/__pyweb/poll`) if the stream can't be
+  opened, for example behind a proxy that refuses streaming responses.
+- **Feeds expire** after 24 hours; reloading the page makes a new one.
+- **One process or many.** Messages go through `pyweb.realtime`'s bus,
+  in memory by default. With several processes, share it through Redis
+  once at startup: `realtime.use_bus(RedisBus("redis://..."))`.
+- **Servers.** `pyweb dev`, `pyweb serve` and the ASGI adapter all stream.
+  Each open page holds one connection; streams close after five minutes
+  and browsers reconnect on their own. Behind nginx, responses carry
+  `X-Accel-Buffering: no` so they aren't buffered.
+
 ## Limits and protection
 
 `pyweb serve` and the ASGI adapter apply:

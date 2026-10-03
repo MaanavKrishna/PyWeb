@@ -64,6 +64,11 @@ class Bus:
             self._log[channel_name] = self._log[channel_name][-100:]
         return self.channel(channel_name).publish(message)
 
+    def position(self, channel_name):
+        """An id such that ``since(channel_name, id)`` returns only newer messages."""
+        with self._lock:
+            return self._seq
+
     def since(self, channel_name, last_id=0, limit=50):
         """Messages on a channel after last_id (poll fallback)."""
         with self._lock:
@@ -161,6 +166,15 @@ class RedisBus(Bus):
             self._log[channel_name] = log[-100:]
         return self.channel(channel_name).publish(message)
 
+    def position(self, channel_name):
+        if self._broken:
+            return super().position(channel_name)
+        try:
+            return int(self._r.get(self._seq_key(channel_name)) or 0)
+        except Exception as exc:  # noqa: BLE001
+            self._broken = exc
+            return super().position(channel_name)
+
     def since(self, channel_name, last_id=0, limit=50):
         """Messages after ``last_id`` from the shared Redis stream."""
         if self._broken:
@@ -187,3 +201,181 @@ class RedisBus(Bus):
     def history(self, channel_name, limit=50):
         """Newest-first convenience wrapper used by chat/presence UIs."""
         return list(reversed(self.since(channel_name, 0, limit)))
+
+
+# ------------------------------------------------------------ live updates
+#
+# Pages subscribe to channels through *feeds*: signed, expiring tokens
+# minted on the server while rendering (``channel(name)``), so only
+# visitors who were served the page can listen. The browser opens
+# ``/__pyweb/events?feed=TOKEN`` (Server-Sent Events) and falls back to
+# polling ``/__pyweb/poll?feed=TOKEN&since=ID``.
+
+FEED_MAX_AGE = 24 * 3600
+
+
+def use_bus(bus):
+    """Make ``bus`` (e.g. a :class:`RedisBus`) the one ``publish()`` and feeds use."""
+    global _default_bus
+    _default_bus = bus
+    return bus
+
+
+def current_bus():
+    return _default_bus
+
+
+def _b64(raw: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _unb64(text: str) -> bytes:
+    import base64
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def _signature(secret, payload):
+    import hashlib
+    import hmac
+    key = secret.encode() if isinstance(secret, str) else secret
+    return hmac.new(key, b"pyweb-feed:" + payload.encode(), hashlib.sha256).hexdigest()[:40]
+
+
+def make_feed(name, secret, *, since=0, max_age=FEED_MAX_AGE, now=None):
+    """A signed token for channel ``name``. Streams start after message ``since``."""
+    import json as _json
+    import time as _time
+    expires = int((now or _time.time()) + max_age)
+    payload = _b64(_json.dumps([str(name), expires, int(since)], separators=(",", ":")).encode())
+    return f"{payload}.{_signature(secret, payload)}"
+
+
+def read_feed(token, secret, *, now=None):
+    """``(channel name, start id)`` for a valid feed token, else ``None``."""
+    import hmac
+    import json as _json
+    import time as _time
+    payload, _, sig = (token or "").partition(".")
+    if not payload or not hmac.compare_digest(sig, _signature(secret, payload)):
+        return None
+    try:
+        name, expires, since = _json.loads(_unb64(payload))
+    except (ValueError, TypeError):
+        return None
+    if expires < (now or _time.time()):
+        return None
+    return name, since
+
+
+def open_feed(token, secret, *, now=None):
+    """The channel name a feed token grants, or ``None`` if forged or expired."""
+    feed = read_feed(token, secret, now=now)
+    return feed[0] if feed else None
+
+
+def channel(name: str) -> str:
+    """A feed for channel ``name``: call while rendering a page and hand it to
+    ``subscribe()`` in browser code. Anyone served the page can listen.
+
+    The feed remembers the channel's position, so messages published after
+    the page rendered (even before the browser connects) are delivered.
+    """
+    from .context import _secret, current
+    return make_feed(name, _secret(current()), since=_default_bus.position(name))
+
+
+def publish(name: str, data=None) -> int:
+    """Send ``data`` (anything JSON-serialisable) to every browser listening on ``name``."""
+    from .ssr import to_jsonable
+    return _default_bus.publish(name, to_jsonable(data))
+
+
+def subscribe(feed, handler):  # noqa: ARG001 - the browser implementation takes these
+    """Browser-only: call ``handler(message)`` for every message on ``feed``."""
+    raise RuntimeError("subscribe() runs in the browser: call it from on_mount() or an event handler")
+
+
+class EventStream:
+    """A Server-Sent Events response body for one channel.
+
+    Iterate it in a thread (stdlib servers) or ``async for`` over
+    :meth:`aiter` (ASGI). Messages come from ``bus.since()``, so a client
+    reconnecting with ``Last-Event-ID`` resumes exactly where it stopped.
+    Streams end after ``max_age`` seconds; browsers reconnect on their own.
+    """
+
+    def __init__(self, bus, name, last_id=0, *, heartbeat=15.0, max_age=300.0, tick=1.0):
+        import threading
+        self.bus, self.name, self.last_id = bus, name, int(last_id or 0)
+        self.heartbeat, self.max_age, self.tick = heartbeat, max_age, tick
+        self._stop = threading.Event()
+
+    def _poll(self):
+        import json as _json
+        out = []
+        for seq, msg in self.bus.since(self.name, self.last_id, limit=100):
+            data = _json.dumps(msg, separators=(",", ":"))
+            out.append(f"id: {seq}\ndata: {data}\n\n")
+            self.last_id = seq
+        return "".join(out).encode()
+
+    def snapshot(self):
+        """The frames available right now, without waiting (tests, HEAD)."""
+        return b"retry: 2000\n\n" + self._poll()
+
+    def close(self):
+        self._stop.set()
+
+    def __iter__(self):
+        import threading
+        import time as _time
+        wake = threading.Event()
+        unsub = self.bus.channel(self.name).subscribe(lambda _msg: wake.set())
+        try:
+            yield b"retry: 2000\n\n"
+            start = beat = _time.monotonic()
+            while not self._stop.is_set():
+                frames = self._poll()
+                now = _time.monotonic()
+                if frames:
+                    yield frames
+                    beat = now
+                elif now - beat >= self.heartbeat:
+                    yield b": ping\n\n"
+                    beat = now
+                if now - start >= self.max_age:
+                    return
+                wake.wait(self.tick)
+                wake.clear()
+        finally:
+            unsub()
+
+    async def aiter(self):
+        import asyncio
+        import time as _time
+        loop = asyncio.get_running_loop()
+        wake = asyncio.Event()
+        unsub = self.bus.channel(self.name).subscribe(lambda _msg: loop.call_soon_threadsafe(wake.set))
+        local = type(self.bus) is Bus  # in-memory reads are instant; others may do I/O
+        try:
+            yield b"retry: 2000\n\n"
+            start = beat = _time.monotonic()
+            while not self._stop.is_set():
+                frames = self._poll() if local else await asyncio.to_thread(self._poll)
+                now = _time.monotonic()
+                if frames:
+                    yield frames
+                    beat = now
+                elif now - beat >= self.heartbeat:
+                    yield b": ping\n\n"
+                    beat = now
+                if now - start >= self.max_age:
+                    return
+                try:
+                    await asyncio.wait_for(wake.wait(), self.tick)
+                except asyncio.TimeoutError:
+                    pass
+                wake.clear()
+        finally:
+            unsub()

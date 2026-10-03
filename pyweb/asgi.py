@@ -20,6 +20,27 @@ import asyncio
 from .hosting import Site
 
 
+async def _stream(stream, receive, send):
+    """Send an event stream until it ends or the client disconnects."""
+    async def watch():
+        while (await receive())["type"] != "http.disconnect":
+            pass
+        stream.close()
+
+    watcher = asyncio.ensure_future(watch())
+    try:
+        async for chunk in stream.aiter():
+            if watcher.done():
+                break
+            await send({"type": "http.response.body", "body": chunk, "more_body": True})
+        await send({"type": "http.response.body", "body": b""})
+    except OSError:
+        pass
+    finally:
+        stream.close()
+        watcher.cancel()
+
+
 def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_kwargs):
     """Return an ASGI 3 application serving ``target`` (a `.pyweb` file or dist dir)."""
     site = Site(target, debug=debug, max_body=max_body, **server_kwargs)
@@ -62,6 +83,10 @@ def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_
             status, hdrs, body = await asyncio.to_thread(
                 site.respond, scope.get("method", "GET"), path, headers, b"".join(chunks))
         raw_headers = [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in hdrs]
+        if hasattr(body, "aiter"):  # Server-Sent Events
+            await send({"type": "http.response.start", "status": status, "headers": raw_headers})
+            await _stream(body, receive, send)
+            return
         if not any(k == b"content-length" for k, _ in raw_headers):
             raw_headers.append((b"content-length", str(len(body)).encode()))
         await send({"type": "http.response.start", "status": status, "headers": raw_headers})

@@ -59,7 +59,7 @@ EXAMPLES = [
     ("todo", "Todos", "Components, list mutation, filters and keyed lists.", True),
     ("blog", "Blog", "SQL database, server functions, route parameters, 404s and validation errors.", False),
     ("auth", "Accounts", "Registration, password hashing, sessions and protected pages.", False),
-    ("chat", "Chat rooms", "Route parameters, shared server state and polling with on_mount.", False),
+    ("chat", "Chat rooms", "Route parameters, shared server state and live updates over Server-Sent Events.", False),
     ("showcase", "Showcase", "Reactive state, derived values and a server-backed search on one page.", False),
 ]
 

@@ -89,9 +89,12 @@ Each page becomes one ES module: the runtime import, used module
 constants, used helpers, used components, and the page function, which
 creates signals/computeds (initial values from the page state JSON with
 literal fallbacks), defines handlers, and returns the UI as nested
-`$h(tag, props, children)` calls. Reactive children/props are thunks;
-`for` becomes `$list(items, row)`, `if` becomes `$when(test, yes, no)`,
-components become calls with getter props. Pages with no signals,
+`$h(tag, props, () => children)` calls. Children are a thunk and every
+child is a call (`$t("text")`, `$dyn(() => expr)`, `$h`, `$list`,
+`$when`, a component), so nodes are created in document order, which is
+what hydration needs. Reactive props are thunks; `for` becomes
+`$list(items, row)`, `if` becomes `$when(test, yes, no)`, components
+become calls with getter props. Pages with no signals,
 handlers or events get no module.
 
 ## 6. Browser runtime (`pyweb/runtime/browser/runtime.js`)
@@ -108,6 +111,13 @@ handlers or events get no module.
   key for tuples) and reuses DOM for unchanged items. `bind()` handles
   text, number, checkbox, radio and select controls and registers before
   other listeners.
+- **Hydration:** `mount()` first tries to adopt the server-rendered DOM.
+  While hydrating, `h()` claims the next server element instead of
+  creating one, `t()`/`dyn()` claim the next text node (splitting text
+  the HTML parser merged), and regions insert their comment markers in
+  place. Values typed before hydration are kept and pushed into their
+  signals afterwards. Any mismatch throws inside the hydration pass,
+  which disposes what it built and falls back to a fresh client render.
 - **Safety:** text is always set as text; `javascript:` URLs are
   neutralised.
 - **RPC:** `rpc()` posts JSON, maps errors to `RPCError(code, message)`,
@@ -159,8 +169,9 @@ sizes) and a Dockerfile.
 - **Stateless HTTP everywhere.** Pages per request, RPC as JSON POST,
   sessions as signed cookies: operationally boring, horizontally
   scalable, debuggable with curl.
-- **Take-over before hydration.** Rebuilding the DOM after server
-  rendering is simple and correct; true hydration is on the roadmap.
+- **Hydrate, but never trust it blindly.** The client adopts the server
+  DOM when it matches exactly and otherwise renders from scratch, so a
+  mismatch costs a re-render, never a broken page.
 
 ## Testing strategy
 

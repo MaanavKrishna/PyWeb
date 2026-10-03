@@ -14,9 +14,6 @@ can decide up front whether they matter for your app.
 - **Multi-page navigation.** Links do full page loads (fast, because
   pages are small and the runtime is cached). There is no client-side
   router.
-- **Take-over, not hydration.** After the server renders a page, the
-  page module rebuilds the DOM with live bindings rather than attaching
-  to the existing nodes. Text typed before the module loads is reset.
 - **Realtime is polling-based.** There is no persistent push channel to
   the browser yet; poll a server function (as the chat example does)
   or `/__pyweb/poll`.
@@ -41,7 +38,6 @@ See the [changelog](https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.m
 
 Planned, roughly in order. Nothing here is promised for a date.
 
-1. **Hydration**: attach to server-rendered nodes instead of rebuilding.
 2. **Push updates**: a streaming channel (Server-Sent Events) for
    `realtime` and live queries, with the polling path as fallback.
 3. **Multi-file apps**: components imported from other `.pyweb` files.

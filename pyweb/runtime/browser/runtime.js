@@ -79,7 +79,10 @@ function runEffect(e) {
   cleanNode(e);
   const pl = Listener; const po = Owner;
   Listener = e; Owner = e;
-  try { e.fn(); } catch (err) { reportError(err); } finally { Listener = pl; Owner = po; }
+  try { e.fn(); } catch (err) {
+    if (err instanceof Mismatch || H) throw err; // abort hydration; the client render reports it
+    reportError(err);
+  } finally { Listener = pl; Owner = po; }
 }
 
 /** A reactive value. `s()` reads (and tracks), `s(v)` writes. */
@@ -169,6 +172,63 @@ export function reportError(err) {
   }
 }
 
+// --------------------------------------------------------------- hydration
+//
+// The server already rendered the page. Instead of rebuilding it, the
+// first render *adopts* those nodes: `h()` claims the next element, text
+// holes claim (and split) the next text node, and region markers are
+// inserted where the client needs them. Nothing is moved or replaced, so
+// focus, caret position and anything typed before the script loaded
+// survive. If the server DOM does not match what the client would render,
+// hydration stops and the page is rendered from scratch instead.
+
+let H = null; // {parent, next}: the next server node to claim, or null
+let afterHydrate = [];
+
+class Mismatch extends Error {}
+function mismatch(what, node) {
+  const found = node ? (node.nodeType === 1 ? `<${node.localName}>` : JSON.stringify(node.data)) : "nothing";
+  throw new Mismatch(`pyweb: server HTML did not match (expected ${what}, found ${found}); rendering on the client`);
+}
+
+function isBlank(n) { return n.nodeType === 8 || (n.nodeType === 3 && !n.data.trim()); }
+
+function place(node) {
+  H.parent.insertBefore(node, H.next);
+  return node;
+}
+
+function claimEl(tag) {
+  let n = H.next;
+  while (n && n.nodeType !== 1 && isBlank(n)) { const x = n.nextSibling; n.remove(); n = x; }
+  if (!n || n.nodeType !== 1 || (n.localName !== tag && n.localName !== tag.toLowerCase())) mismatch(`<${tag}>`, n);
+  H.next = n.nextSibling;
+  return n;
+}
+
+function claimText(s) {
+  if (s === "") return place(document.createTextNode(""));
+  const n = H.next;
+  if (!n || n.nodeType !== 3 || !n.data.startsWith(s)) mismatch(JSON.stringify(s), n);
+  if (n.data.length > s.length) n.splitText(s.length);
+  H.next = n.nextSibling;
+  return n;
+}
+
+function claimChildren(el, kids) {
+  const saved = H;
+  H = { parent: el, next: el.firstChild };
+  try {
+    toNodes(typeof kids === "function" ? kids() : kids, []);
+    while (H.next) {
+      const n = H.next; H.next = n.nextSibling;
+      if (el.localName === "textarea") continue; // its text is the value
+      if (!isBlank(n)) mismatch("end of <" + el.localName + ">", n);
+      n.remove();
+    }
+  } finally { H = saved; }
+}
+
 // --------------------------------------------------------------------- DOM
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -227,13 +287,26 @@ function listen(el, ev, handler) {
 /** Two-way binding between a form control and a signal. */
 export function bind(el, s) {
   const type = (el.getAttribute("type") || "").toLowerCase();
+  // While hydrating, a control the user already changed keeps its value and
+  // pushes it into state once the page is live.
+  let typed = false;
+  if (H) {
+    if (type === "checkbox" || type === "radio") typed = el.checked !== el.defaultChecked;
+    else if (el.tagName === "SELECT") typed = Array.from(el.options).some((o) => o.selected !== o.defaultSelected);
+    else typed = el.value !== el.defaultValue;
+    if (typed) {
+      const ev = el.tagName === "SELECT" || type === "checkbox" || type === "radio" ? "change" : "input";
+      afterHydrate.push(() => el.dispatchEvent(new Event(ev)));
+    }
+  }
+  const keep = () => { if (!typed) return false; typed = false; return true; };
   if (type === "checkbox") {
-    effect(() => { el.checked = truth(s()); });
+    effect(() => { const v = truth(s()); if (!keep()) el.checked = v; });
     el.addEventListener("change", () => s(el.checked));
     return;
   }
   if (type === "radio") {
-    effect(() => { el.checked = el.value === String(s()); });
+    effect(() => { const v = el.value === String(s()); if (!keep()) el.checked = v; });
     el.addEventListener("change", () => { if (el.checked) s(el.value); });
     return;
   }
@@ -241,7 +314,7 @@ export function bind(el, s) {
   effect(() => {
     const v = s();
     const str = v == null ? "" : String(v);
-    if (el.value !== str) el.value = str;
+    if (!keep() && el.value !== str) el.value = str;
   });
   el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
     if (numeric) {
@@ -271,18 +344,26 @@ function toNodes(v, out) {
     return out;
   }
   if (typeof v === "function") { out.push(...toNodes(dyn(v), [])); return out; }
-  out.push(document.createTextNode(String(v)));
+  out.push(H ? claimText(String(v)) : document.createTextNode(String(v)));
   return out;
 }
+
+/** Static text: a string, or while hydrating the server's text node. */
+export function t(s) { return H ? claimText(s) : s; }
 
 function hasNode(v) {
   if (typeof Node !== "undefined" && v instanceof Node) return true;
   return Array.isArray(v) && v.some(hasNode);
 }
 
-/** Create an element. Function-valued props and children are reactive. */
+/**
+ * Create an element (or, while hydrating, adopt the server's). Function-valued
+ * props and children are reactive. `children` is an array, or a function
+ * returning one, called once after the element exists.
+ */
 export function h(tag, props, children) {
-  const el = SVG_TAGS.has(tag) ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
+  const el = H ? claimEl(tag)
+    : SVG_TAGS.has(tag) ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
   // Bindings register first so state is current when on* handlers run;
   // <select> binds after its <option> children exist.
   const bound = props && props.$bind;
@@ -290,7 +371,8 @@ export function h(tag, props, children) {
   if (props) {
     for (const k of Object.keys(props)) if (k !== "$bind") setProp(el, k, props[k]);
   }
-  if (children) for (const n of toNodes(children, [])) el.appendChild(n);
+  if (H) claimChildren(el, children || []);
+  else if (children) for (const n of toNodes(typeof children === "function" ? children() : children, [])) el.appendChild(n);
   if (bound && tag === "select") bind(el, bound);
   return el;
 }
@@ -299,6 +381,7 @@ export function h(tag, props, children) {
 // can change shape (text → nodes, branch swaps, nested lists) while the
 // enclosing row or branch can still move/remove it as one unit.
 function region(label) {
+  if (H) return [null, place(document.createComment(label)), null];
   const frag = document.createDocumentFragment();
   const start = document.createComment(label);
   const end = document.createComment("/" + label);
@@ -325,10 +408,17 @@ function insertAll(before, nodes) {
 
 /** A reactive hole: text when `fn()` returns a value, nodes when it returns nodes. */
 export function dyn(fn) {
-  const [frag, start, end] = region("pw");
+  const hydrating = !!H;
+  const [frag, start] = region("pw");
+  let end = frag ? start.nextSibling : null;
   let textNode = null;
   effect(() => {
     const v = fn();
+    if (!end) {
+      if (hasNode(v)) toNodes(v, []); else textNode = claimText(text(v));
+      end = place(document.createComment("/pw"));
+      return;
+    }
     if (hasNode(v)) {
       clearBetween(start, end);
       textNode = null;
@@ -341,7 +431,7 @@ export function dyn(fn) {
     textNode = document.createTextNode(s);
     insertAll(end, [textNode]);
   });
-  return frag;
+  return hydrating ? rangeNodes(start, end) : frag;
 }
 
 const _ids = new WeakMap();
@@ -358,12 +448,23 @@ function keyOf(item) {
 
 /** Keyed list: unchanged items keep their DOM; only added/removed rows render. */
 export function list(getItems, renderRow) {
-  const [frag, , end] = region("pw-for");
+  const hydrating = !!H;
+  const [frag, start] = region("pw-for");
+  let end = frag ? start.nextSibling : null;
   let entries = [];
   onCleanup(() => { for (const e of entries) e.dispose(); entries = []; });
   effect(() => {
     const items = iter(getItems());
     untrack(() => {
+      if (!end) {
+        entries = items.map((item, i) => {
+          const rs = place(document.createComment("pw-row"));
+          const dispose = root((d) => { toNodes(renderRow(item, i), []); return d; });
+          return { key: keyOf(item), start: rs, end: place(document.createComment("/pw-row")), dispose, frag: null };
+        });
+        end = place(document.createComment("/pw-for"));
+        return;
+      }
       const pool = new Map();
       for (const e of entries) {
         const q = pool.get(e.key);
@@ -394,12 +495,14 @@ export function list(getItems, renderRow) {
       entries = next;
     });
   });
-  return frag;
+  return hydrating ? rangeNodes(start, end) : frag;
 }
 
 /** Conditional region: renders `yes()` or `no()` and swaps only on change. */
 export function when(test, yes, no) {
-  const [frag, start, end] = region("pw-if");
+  const hydrating = !!H;
+  const [frag, start] = region("pw-if");
+  let end = frag ? start.nextSibling : null;
   let cur = -1;
   let disposeBranch = null;
   onCleanup(() => { if (disposeBranch) disposeBranch(); });
@@ -409,14 +512,14 @@ export function when(test, yes, no) {
     cur = idx;
     untrack(() => {
       if (disposeBranch) disposeBranch();
-      clearBetween(start, end);
+      if (end) clearBetween(start, end);
       const branch = idx === 0 ? yes : no;
       let nodes = [];
       disposeBranch = root((d) => { if (branch) nodes = toNodes(branch(), []); return d; });
-      insertAll(end, nodes);
+      if (end) insertAll(end, nodes); else end = place(document.createComment("/pw-if"));
     });
   });
-  return frag;
+  return hydrating ? rangeNodes(start, end) : frag;
 }
 
 /** Run `fn` once the current page/component is in the document. */
@@ -437,10 +540,37 @@ export function mount(name, page) {
     const el = document.getElementById("pw-state");
     let state = {};
     if (el) { try { state = JSON.parse(el.textContent || "{}"); } catch (e) { reportError(e); } }
-    root(() => {
-      const nodes = toNodes(page(state), []);
-      host.replaceChildren(...nodes);
-    });
+    let mode = "rendered";
+    if (host.firstChild && host !== document.body && !host.hasAttribute("data-pw-no-hydrate")) {
+      let dispose = null;
+      batchDepth++; // effects queued while adopting run once it is complete
+      try {
+        root((d) => {
+          dispose = d;
+          try { claimChildren(host, () => page(state)); } finally { H = null; }
+        });
+        mode = "hydrated";
+      } catch (e) {
+        H = null;
+        afterHydrate = [];
+        if (dispose) dispose();
+        // A real error in page code surfaces again from the client render below.
+        if (e instanceof Mismatch && typeof console !== "undefined") console.warn(e.message);
+      } finally {
+        if (--batchDepth === 0) flush();
+      }
+    }
+    if (mode === "hydrated") {
+      const typed = afterHydrate;
+      afterHydrate = [];
+      for (const f of typed) f();
+    } else {
+      root(() => {
+        const nodes = toNodes(page(state), []);
+        host.replaceChildren(...nodes);
+      });
+    }
+    host.setAttribute("data-pw-mode", mode);
     host.setAttribute("data-pw-ready", "");
   };
   if (typeof document === "undefined") return;

@@ -579,7 +579,8 @@ def landing(bench, demo_gz):
     server calls become typed RPC; everything else stays on the server.</li>
     <li><b>The server renders HTML.</b> Each request runs the page function, renders real data, and sends only the values
     browser code reads.</li>
-    <li><b>The browser takes over.</b> A small module binds every dynamic piece of the page to the state it reads.</li>
+    <li><b>The browser hydrates it.</b> A small module attaches to the server's HTML and binds every dynamic piece of
+    the page to the state it reads; nothing is rebuilt, and typing done before it loads is kept.</li>
   </ol>
 </section>
 <section class="feats">{feat_html}</section>

@@ -101,12 +101,17 @@ the latest values immediately.
 ## Rendering model
 
 1. The server renders the page to HTML with real values.
-2. The page module rebuilds the same DOM with live bindings and swaps it
-   in. This takes a few milliseconds and does not change what is
-   displayed.
+2. The page module **hydrates** it: it walks the server's DOM in order and
+   attaches event handlers and live bindings to the existing nodes. No
+   node is recreated or moved, so focus, the caret position and anything
+   the user typed before the module loaded are kept, and text typed into
+   a bound field is copied into its variable.
 3. From then on each signal write re-runs only the bindings that read it.
 
-Input that a user types into a field *before* the module has loaded is
-replaced by the server value when the page takes over. Modules load in
-parallel with the HTML and are small, so this window is short, but it
-exists.
+If the server HTML doesn't match what the browser code would render (for
+example, a value that formats differently in Python and JavaScript, or
+HTML the browser's parser restructures, like a `<div>` inside a `<p>`),
+hydration stops and the page is rendered from scratch on the client, as
+earlier versions always did. The browser console shows a warning that
+names the first difference, and the page root gets
+`data-pw-mode="rendered"` instead of `"hydrated"`.

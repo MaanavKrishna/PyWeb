@@ -6,6 +6,23 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **Hydration.** Pages now adopt the server-rendered DOM instead of
+  rebuilding it: nodes are kept, focus and text typed before the script
+  loads survive, and typed values reach their variables. When the server
+  HTML doesn't match, the page falls back to a client render and logs
+  a warning. The page root carries `data-pw-mode="hydrated"` or
+  `"rendered"`.
+- `python -m pyweb.bench --max-ssr-ms N --max-compile-ms N` fails when
+  a benchmark exceeds its budget; CI runs it.
+
+### Changed
+- Server rendering caches compiled template expressions; rendering a
+  page is about twice as fast.
+- Generated page modules pass element children as a function and wrap
+  every child in a call (`$t`, `$dyn`), so nodes are created in document
+  order.
+
 ## [0.2.0]
 
 Tools for building PyWeb apps with AI assistants.

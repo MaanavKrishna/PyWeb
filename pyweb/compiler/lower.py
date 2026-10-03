@@ -33,7 +33,7 @@ from .errors import CompileError
 from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
                    ModuleContext, Translator, jsname)
 
-RUNTIME_IMPORT = ("import { h as $h, list as $list, when as $when, signal as $signal, "
+RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when as $when, signal as $signal, "
                   "computed as $computed, mount as $mount, onMount as $onMount, py as $py, rpc as $rpc } "
                   "from \"./runtime.js\";")
 
@@ -598,13 +598,15 @@ class Emitter:
 
     def node_js(self, n, scope, ind):
         t = type(n).__name__
+        # Every child is a call, so children are created (or, when hydrating,
+        # claimed from the server HTML) in document order.
         if t == "TextNode":
-            return json.dumps(n.text)
+            return f"$t({json.dumps(n.text)})"
         if t == "ExprNode":
             node, js = self._expr(n.code, n.line, scope)
             if self.tr.is_reactive(node, scope):
-                return _thunk(js)
-            return f"$py.text({js})"
+                return f"$dyn({_thunk(js)})"
+            return f"$t($py.text({js}))"
         if t == "ControlFor":
             it_node, it_js = self._expr(n.iterable, n.line, scope)
             target = self._parse(n.target, n.line)
@@ -659,7 +661,9 @@ class Emitter:
         children = self.ui_js(n.children, scope, ind) if n.children else None
         p = "{" + ", ".join(props) + "}" if props else "null"
         if children:
-            return f"$h({json.dumps(n.tag)}, {p}, {children})"
+            # A thunk, so children are created (or claimed, when hydrating)
+            # after their parent, in document order.
+            return f"$h({json.dumps(n.tag)}, {p}, () => {children})"
         return f"$h({json.dumps(n.tag)}, {p})"
 
     def handler_js(self, code, line, scope):

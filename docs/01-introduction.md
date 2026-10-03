@@ -110,9 +110,9 @@ and makes Python the source language for all of it:
    Everything else stays on the server.
 4. **Render.** On each request the server runs the page function, renders
    HTML, and embeds only the values the browser code reads as JSON.
-5. **Take over.** The page's module rebuilds the DOM with live bindings;
-   from then on, each signal update touches only the nodes that depend on
-   it.
+5. **Hydrate.** The page's module adopts the server-rendered DOM and
+   attaches live bindings to it; from then on, each signal update touches
+   only the nodes that depend on it.
 
 Read on: [Quickstart](02-quickstart.md) · [Tutorial](03-tutorial.md) ·
 [The .pyweb language](04-pyweb-files.md).

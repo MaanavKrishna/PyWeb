@@ -174,7 +174,7 @@ Postgres, MySQL and Redis servers, on Python 3.10–3.13.
 
 ## Authors
 
-Built by [MaanavKrishna](https://github.com/MaanavKrishna) and Claude.
+Built by [MaanavKrishna](https://github.com/MaanavKrishna).
 
 ## Contributing
 

@@ -25,6 +25,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(HERE, "dist")
 SITE = "https://maanavkrishna.github.io/PyWeb"
+# Search engine ownership checks: paste the content="..." value each one gives you.
+GOOGLE_SITE_VERIFICATION = ""
+BING_SITE_VERIFICATION = ""
 REPO = "https://github.com/MaanavKrishna/PyWeb"
 sys.path.insert(0, ROOT)
 
@@ -494,7 +497,46 @@ def footer():
 </footer>"""
 
 
-def shell(name, title, desc, body, *, active="", layout="doc"):
+def head_extra(name, title, desc, robots):
+    """Social cards, ownership checks and the structured data search engines read."""
+    url = f"{SITE}/{name}"
+    tags = [f'<link rel="canonical" href="{url}">',
+            f'<meta property="og:title" content="{esc(title)}">',
+            f'<meta property="og:description" content="{esc(desc)}">',
+            f'<meta property="og:url" content="{url}">',
+            f'<meta property="og:type" content="{"website" if not name else "article"}">',
+            '<meta property="og:site_name" content="PyWeb">',
+            f'<meta property="og:image" content="{SITE}/assets/social.png">',
+            '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">',
+            '<meta name="twitter:card" content="summary_large_image">',
+            f'<meta name="twitter:image" content="{SITE}/assets/social.png">']
+    if robots:
+        tags.append(f'<meta name="robots" content="{robots}">')
+    if not name:
+        if GOOGLE_SITE_VERIFICATION:
+            tags.append(f'<meta name="google-site-verification" content="{esc(GOOGLE_SITE_VERIFICATION)}">')
+        if BING_SITE_VERIFICATION:
+            tags.append(f'<meta name="msvalidate.01" content="{esc(BING_SITE_VERIFICATION)}">')
+        data = [
+            {"@context": "https://schema.org", "@type": "WebSite", "name": "PyWeb",
+             "alternateName": ["pyweb-stack", "PyWeb framework", "PyWeb Python web framework"], "url": f"{SITE}/"},
+            {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "PyWeb",
+             "alternateName": "pyweb-stack", "description": desc, "url": f"{SITE}/",
+             "applicationCategory": "DeveloperApplication", "applicationSubCategory": "Web framework",
+             "operatingSystem": "Windows, macOS, Linux", "softwareVersion": __version__,
+             "programmingLanguage": "Python", "license": "https://opensource.org/licenses/MIT",
+             "downloadUrl": "https://pypi.org/project/pyweb-stack/", "image": f"{SITE}/assets/social.png",
+             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+             "author": {"@type": "Person", "name": "MaanavKrishna", "url": "https://github.com/MaanavKrishna"},
+             "sameAs": [REPO, "https://pypi.org/project/pyweb-stack/",
+                        "https://marketplace.visualstudio.com/items?itemName=maanavkrishna.pyweb"]},
+        ]
+        tags.append('<script type="application/ld+json">' + json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
+                    + "</script>")
+    return "\n".join(tags)
+
+
+def shell(name, title, desc, body, *, active="", layout="doc", robots=""):
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -502,10 +544,10 @@ def shell(name, title, desc, body, *, active="", layout="doc"):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(desc)}">
-<meta property="og:title" content="{esc(title)}">
-<meta property="og:description" content="{esc(desc)}">
-<link rel="canonical" href="{SITE}/{name}">
+{head_extra(name, title, desc, robots)}
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
 <meta name="theme-color" content="#0b0c12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fafaf7" media="(prefers-color-scheme: light)">
 <link rel="preload" href="assets/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
@@ -702,7 +744,7 @@ def landing(bench, demo_gz):
   <div class="hero-text">
     <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: npm packages, layouts, streaming AI, live queries →</a>
     <h1>Full-stack web apps in <span class="grad">one Python file.</span></h1>
-    <p class="sub">Server-rendered pages, reactive UI compiled from Python, and typed calls to server functions.
+    <p class="sub">PyWeb is a Python web framework: server-rendered pages, reactive UI compiled from Python, and typed calls to server functions.
     No JavaScript toolchain, no WebSocket per user, no runtime download.</p>
     <div class="cta"><a class="btn primary" href="quickstart.html">Get started <span class="arrow">→</span></a>
     <a class="btn" href="playground.html">Try it in your browser</a></div>
@@ -903,7 +945,7 @@ def build(out=None):
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(os.path.join(OUT, "assets"))
-    for asset in ("style.css", "site.js", "icon.svg", "playground.js"):
+    for asset in ("style.css", "site.js", "icon.svg", "icon-192.png", "social.png", "playground.js"):
         shutil.copy(os.path.join(HERE, "assets", asset), os.path.join(OUT, "assets", asset))
     shutil.copytree(os.path.join(HERE, "assets", "fonts"), os.path.join(OUT, "assets", "fonts"))
     write(".nojekyll", "")
@@ -975,17 +1017,21 @@ def build(out=None):
     write("benchmarks.html", shell("benchmarks.html", "Benchmarks · PyWeb", "What PyWeb ships and how fast it renders.", body, active="benchmarks"))
     pages.append("benchmarks.html")
 
-    write("index.html", shell("", "PyWeb: full-stack web apps in one Python file",
-                              "Server-rendered pages, reactive UI compiled from Python, and typed server calls. "
-                              "No JavaScript toolchain.", landing(bench, demo_gz), active="home", layout="home"))
+    write("index.html", shell("", "PyWeb: the Python web framework for full-stack apps in one file",
+                              "PyWeb is an open-source Python web framework: pages, reactive UI and server code in "
+                              "one .pyweb file, with no JavaScript toolchain. pip install pyweb-stack.",
+                              landing(bench, demo_gz), active="home", layout="home"))
     pages.insert(0, "index.html")
 
     body = ('<main class="landing"><section class="final"><h1>Page not found</h1><p>That page doesn\'t exist. '
             'Try the <a href="introduction.html">docs</a> or the search box above.</p></section></main>')
-    write("404.html", shell("404.html", "Not found · PyWeb", "Page not found.", body, layout="home"))
+    write("404.html", shell("404.html", "Not found · PyWeb", "Page not found.", body, layout="home", robots="noindex"))
 
     write("search.json", json.dumps(search, separators=(",", ":")))
-    urls = "".join(f"<url><loc>{SITE}/{p if p != 'index.html' else ''}</loc></url>" for p in pages)
+    import datetime
+    today = datetime.date.today().isoformat()
+    urls = "".join(f"<url><loc>{SITE}/{p if p != 'index.html' else ''}</loc><lastmod>{today}</lastmod></url>"
+                   for p in pages)
     write("sitemap.xml", f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n')
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {SITE}/sitemap.xml\n")
     write_llms_txt()

@@ -949,6 +949,10 @@ def build(out=None):
         shutil.copy(os.path.join(HERE, "assets", asset), os.path.join(OUT, "assets", asset))
     shutil.copytree(os.path.join(HERE, "assets", "fonts"), os.path.join(OUT, "assets", "fonts"))
     write(".nojekyll", "")
+    # Search engine ownership files (google*.html, BingSiteAuth.xml) are served from the site root.
+    for fn in sorted(os.listdir(HERE)):
+        if re.fullmatch(r"google[0-9a-f]+\.html|BingSiteAuth\.xml", fn):
+            shutil.copy(os.path.join(HERE, fn), os.path.join(OUT, fn))
     search = []
     pages = []
 

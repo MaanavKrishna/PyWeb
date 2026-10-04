@@ -18,6 +18,10 @@ your server, live data and streaming AI, with no JavaScript toolchain.
 **[Examples](#examples)** ·
 **[Changelog](CHANGELOG.md)**
 
+<br>
+
+<img src="https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/demo.gif" alt="A guestbook app written in one .pyweb file: the submit handler runs in the browser and sign() runs on the server" width="860">
+
 </div>
 
 ```pyweb

@@ -201,3 +201,23 @@ def test_security_scan_reports_findings():
     assert "secret-leak" in kinds
     assert "xss-risk" in kinds
     assert "missing-auth-on-mutating-rpc" in kinds
+
+
+def test_login_redirects_stay_on_this_site():
+    from pyweb import auth
+    from pyweb.runtime.server import Request
+    assert auth.safe_next("/orders?page=2") == "/orders?page=2"
+    for bad in ("//evil.example", "/\\evil.example", "https://evil.example", "javascript:alert(1)", "/a\r\nX: y", ""):
+        assert auth.safe_next(bad) == "/"
+    assert auth.login_response(1, "s", next_url="//evil.example").headers["Location"] == "/"
+    _, redirect = auth.require_session(Request("GET", "/orders?page=2&sort=new"), "s")
+    assert redirect.headers["Location"] == "/login?next=/orders%3Fpage%3D2%26sort%3Dnew"
+
+
+def test_session_cookies_and_login_links_are_not_interchangeable():
+    from pyweb import auth
+    secret = "one-secret"
+    cookie = auth.issue_session({"sub": 1, "email": "a@example.com", "exp": 2**40}, secret)
+    assert auth.verify_magic_token(secret, cookie) is None
+    link = auth.issue_magic_token(secret, "a@example.com")
+    assert auth.verify_session(link, secret) is None

@@ -149,10 +149,8 @@ def _alternatives(rng):
         alt = alt.strip()
         m = re.match(r"^(\S+)\s+-\s+(\S+)$", alt)
         if m:  # hyphen range
-            lo = _comparators(">=" + m.group(1))
-            hi_parts = _partial(m.group(2))
-            hi = _comparators("<=" + m.group(2)) if len(hi_parts) == 3 else _comparators("<=" + m.group(2))
-            out.append(lo + hi)
+            # `<=` of a partial version (`- 2.3`) already means "below 2.4.0" (see _comparators).
+            out.append(_comparators(">=" + m.group(1)) + _comparators("<=" + m.group(2)))
             continue
         alt = re.sub(r"(>=|<=|>|<|=|\^|~)\s+", r"\1", alt)
         bounds = []

@@ -386,6 +386,11 @@ class _PooledDB:
                     return res
                 except Exception as exc:  # noqa: BLE001
                     last = exc
+                    if not owned:
+                        # Inside transaction(): rolling back here would drop the
+                        # transaction's earlier writes while later ones still commit.
+                        # transaction() rolls back if the error escapes it.
+                        raise
                     try:
                         conn.rollback()
                     except Exception:
@@ -400,7 +405,10 @@ class _PooledDB:
 
     def stream(self, sql, params=(), *, chunksize=1000):
         """Yield ``Result`` pages without loading the full result set."""
-        conn = self._acquire()
+        conn = self._current()            # inside transaction(): use (and see) its connection
+        owned = conn is None
+        if owned:
+            conn = self._acquire()
         sql = self._adapt(sql, params)
         try:
             cur = conn.cursor() if hasattr(conn, "cursor") else None
@@ -420,7 +428,8 @@ class _PooledDB:
             except Exception:
                 pass
         finally:
-            self._pool.put(conn)
+            if owned:
+                self._pool.put(conn)
 
     @contextmanager
     def transaction(self):

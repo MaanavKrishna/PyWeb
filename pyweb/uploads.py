@@ -70,9 +70,13 @@ def validate_content(filename, content, max_bytes=MAX_BYTES):
     raise UploadRejected("content does not match extension allowlist")
 
 
-def safe_filename(name):
+def safe_filename(name, max_length=100):
     base = os.path.basename((name or "").strip())
     base = _UNSAFE.sub("_", base).strip("._")
+    if len(base) > max_length:  # filesystems refuse names over 255 bytes; keep the extension
+        stem, ext = os.path.splitext(base)
+        ext = ext[:16]
+        base = stem[:max_length - len(ext)].rstrip("._") + ext
     return base or "file"
 
 

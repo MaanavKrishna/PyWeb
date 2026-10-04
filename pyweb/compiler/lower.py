@@ -321,6 +321,11 @@ def scan_module(tree, ui_all, filename, resolve=None):
                     except (ValueError, SyntaxError, TypeError):
                         ctx.server_only[name] = "a module-level object created on the server"
                         ctx.modconsts.pop(name, None)
+    for name in _mutated_globals(tree) & set(ctx.modconsts):
+        # e.g. `ITEMS = []` that an @server function appends to: a browser copy of the
+        # starting value would be wrong, so pages get its current value from the server.
+        ctx.modconsts.pop(name)
+        ctx.server_only[name] = "a module-level value that server code changes"
     taken = {i.name for i in pages + layouts} | set(ctx.components)
     if not any(p.error_status is None for p in pages):
         # Single-page fallback: the first function with markup is "/".
@@ -337,6 +342,32 @@ def scan_module(tree, ui_all, filename, resolve=None):
         info.layouts = _layouts_for(info, layouts, filename)
     ctx.layouts = {info.name: info for info in layouts}
     return ctx, pages, components
+
+
+_MUTATORS = {"append", "extend", "insert", "pop", "remove", "clear", "update", "setdefault", "popitem",
+             "add", "discard", "sort", "reverse", "difference_update", "intersection_update",
+             "symmetric_difference_update"}
+
+
+def _mutated_globals(tree):
+    """Module-level names that some code changes after they're defined."""
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Global):
+            out.update(node.names)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and node.func.attr in _MUTATORS and isinstance(node.func.value, ast.Name):
+            out.add(node.func.value.id)
+        elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)):
+            targets = node.targets if isinstance(node, (ast.Assign, ast.Delete)) else [node.target]
+            for t in targets:
+                while isinstance(t, (ast.Subscript, ast.Attribute)):
+                    t = t.value
+                    if isinstance(t, ast.Name):
+                        out.add(t.id)
+            if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+                out.add(node.target.id)
+    return out
 
 
 def _ui_of(node, ui_all):
@@ -846,7 +877,7 @@ class Emitter:
                 lines.append(f"  const {js} = $s[{key}];")
             else:
                 lines.append(f"  const {js} = {fallback};")
-        for hname, hnode in info.handlers.items():
+        for hnode in info.handlers.values():
             lines.append(self.tr.function(hnode, scope, "  "))
         for name in getattr(info, "live", ()):
             if name in info.refs:
@@ -925,7 +956,7 @@ class Emitter:
                 return f"$dyn({_thunk(js)})"
             return f"$t($py.text({js}))"
         if t == "ControlFor":
-            it_node, it_js = self._expr(n.iterable, n.line, scope)
+            _it_node, it_js = self._expr(n.iterable, n.line, scope)
             target = self._parse(n.target, n.line)
             inner = scope.child({name: VALUE for name in pyjs._target_names(target)})
             try:

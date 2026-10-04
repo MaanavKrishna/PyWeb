@@ -10,8 +10,9 @@ import uuid
 
 
 class Request:
-    def __init__(self, method, path, headers=None, body=b"", cookies=None):
+    def __init__(self, method, path, headers=None, body=b"", cookies=None, client=None):
         self.method = method.upper()
+        self.client = client  # the peer's IP address, when the server knows it
         self.path = path
         self.headers = headers or {}
         self.body = body
@@ -166,6 +167,47 @@ def _rpc_pool():
     return _POOL
 
 
+def _trusted_proxies():
+    """How many reverse proxies to trust for X-Forwarded-For (``PYWEB_TRUST_PROXY``)."""
+    import os
+    raw = os.environ.get("PYWEB_TRUST_PROXY", "").strip().lower()
+    if raw in ("", "0", "false", "no"):
+        return 0
+    if raw in ("1", "true", "yes"):
+        return 1
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def client_ip(req, proxies=None):
+    """The caller's IP address.
+
+    ``X-Forwarded-For`` is set by whoever sends the request, so it only counts
+    when you say a proxy you run sets it (``PYWEB_TRUST_PROXY=1``, or the
+    number of proxies in front of the app). Then the address your proxy saw
+    is used: the entry that many places from the end.
+    """
+    proxies = _trusted_proxies() if proxies is None else proxies
+    if proxies:
+        xff = next((v for k, v in (req.headers or {}).items() if k.lower() == "x-forwarded-for"), "")
+        hops = [h.strip() for h in xff.split(",") if h.strip()]
+        if len(hops) >= proxies:
+            return hops[-proxies]
+    return req.client or "unknown"
+
+
+_SIGNATURES: dict = {}
+
+
+def _signature(fn):
+    sig = _SIGNATURES.get(fn)
+    if sig is None:
+        sig = _SIGNATURES[fn] = inspect.signature(fn)
+    return sig
+
+
 def _coerce(value, ann):
     if ann in ("int", "Integer"):
         return int(value)
@@ -268,17 +310,14 @@ class Server:
                                          token):
                     return self._err(_rpc.Code.CSRF, "invalid CSRF token")
         if self.rate_limit is not None:
-            key = req.headers.get("X-Forwarded-For",
-                                  req.cookies.get("pyweb_session", "anon"))
-            ok, retry = self.rate_limit.allow(
-                f"{fn.__name__}:{key}")
+            ok, retry = self.rate_limit.allow(f"{fn.__name__}:{client_ip(req)}")
             if not ok:
                 return self._err(_rpc.Code.RATE_LIMIT, "rate limit exceeded",
                                  retry_after=retry)
         return None
 
     def _validate(self, fn, args: dict):
-        sig = inspect.signature(fn)
+        sig = _signature(fn)
         out = {}
         for pname, param in sig.parameters.items():
             ann = getattr(param.annotation, "__name__", str(param.annotation)) if param.annotation is not inspect.Parameter.empty else "Any"
@@ -354,7 +393,11 @@ class Server:
                     result = fn(**clean)
                 if inspect.isawaitable(result):
                     import asyncio
-                    result = asyncio.run(_awaited(result))
+                    aw = asyncio.wait_for(_awaited(result), self.rpc_timeout) if self.rpc_timeout else _awaited(result)
+                    try:
+                        result = asyncio.run(aw)
+                    except asyncio.TimeoutError as exc:  # a separate class before Python 3.11
+                        raise TimeoutError() from exc
             except TimeoutError:
                 return self._err(_rpc.Code.TIMEOUT,
                                  f"{name} exceeded {self.rpc_timeout}s",

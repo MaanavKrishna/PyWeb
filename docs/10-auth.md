@@ -70,6 +70,15 @@ Sessions last 7 days (`session.max_age`).
 random salt; `verify_password(password, stored)` compares in constant
 time.
 
+## Redirecting after login
+
+If your login page takes a `?next=` address to return to, pass it
+through `auth.safe_next(...)` before redirecting. It keeps paths on
+your site (`/orders?page=2`) and turns anything else
+(`//evil.example`, `https://...`) into `/`, so a crafted link can't
+send people to another site after they sign in. `login_response`
+already does this for its `next_url`.
+
 ## One-time codes and magic links
 
 ```python
@@ -81,6 +90,10 @@ ok = auth.verify_totp(secret_bytes, "123456")        # ±1 step tolerance
 token = auth.issue_magic_token(SECRET, "ada@example.com", ttl=900)
 email = auth.verify_magic_token(SECRET, token)       # None if expired/forged
 ```
+
+Magic-link tokens are signed differently from session cookies, so one
+can never be used as the other. Links issued before 0.4.3 stop working
+after the upgrade; they last 15 minutes by default.
 
 ## Passkeys (WebAuthn)
 

@@ -200,7 +200,6 @@ class Model(metaclass=ModelMeta):
 
     @classmethod
     def _conn(cls):
-        global _db_path
         key = _db_path
         with _lock:
             if key not in _conns:

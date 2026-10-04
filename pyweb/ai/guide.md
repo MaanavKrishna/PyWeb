@@ -55,7 +55,7 @@ Static files go in `static/` next to `app.pyweb`, served at `/static/...`.
 | Code | Runs |
 |---|---|
 | imports, classes, DB connections, module objects | server only |
-| `NAME = <literal>` at module level | both (inlined into browser JS) |
+| `NAME = <literal>` at module level | both (inlined into browser JS); server only if any code changes it (`.append`, `[k] =`, `global`) |
 | `@server` functions | server; browser calls become RPC |
 | undecorated module functions | server; compiled to JS only if browser code calls them |
 | page function body (top to the markup) | server, every request |

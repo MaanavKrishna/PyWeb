@@ -179,3 +179,25 @@ def test_browser_runtime_exports_subscribe():
     src = Path("pyweb/runtime/browser/runtime.js").read_text()
     assert "export function subscribe(feed" in src
     assert "/__pyweb/events?${q}" in src and "/__pyweb/poll?${q}" in src and "feed=${" in src
+
+
+def test_bus_forgets_quiet_channels(monkeypatch):
+    from pyweb import realtime
+    now = [1000.0]
+    monkeypatch.setattr(realtime.time, "monotonic", lambda: now[0])
+    bus = realtime.Bus()
+    kept = bus.channel("room:kept")
+    unsub = kept.subscribe(lambda _m: None)
+    for i in range(300):
+        bus.publish(f"room:{i}", {"n": i})
+    bus.publish("room:kept", {"n": 1})
+    assert len(bus.since("room:5", 0)) == 1
+    for i in range(realtime.LOG_SIZE + 50):
+        bus.publish("room:busy", i)
+    assert len(bus.since("room:busy", 0, limit=1000)) == realtime.LOG_SIZE   # only the latest are kept
+    now[0] += realtime.IDLE_CHANNEL_SECONDS + 1
+    for i in range(256):
+        bus.publish("room:new", i)
+    assert bus.since("room:5", 0) == [] and "room:5" not in bus.channels
+    assert bus.since("room:kept", 0)                 # someone is still listening
+    unsub()

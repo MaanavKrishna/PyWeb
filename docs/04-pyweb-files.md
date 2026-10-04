@@ -40,7 +40,7 @@ def Home():
 | Module-level item | Where it runs |
 |---|---|
 | `import ...` / `from ... import ...` | Server only. Names imported this way are never available in browser code (except `pyweb.browser`, below). |
-| `NAME = <literal>` (numbers, strings, lists, dicts, …) | Both. Inlined into browser code when referenced. |
+| `NAME = <literal>` (numbers, strings, lists, dicts, …) | Both. Inlined into browser code when referenced, unless code changes it (`NAME.append(...)`, `NAME[k] = ...`, `global NAME`): then it's server only, and pages read its current value on each request. |
 | `NAME = <anything else>` (connections, objects) | Server only. |
 | `@server` function | Server. Calls from browser code become RPC. |
 | Undecorated function | Server; also compiled to JavaScript on demand when browser code calls it. Compile error if it can't run in a browser. |

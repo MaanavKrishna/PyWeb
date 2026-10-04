@@ -71,7 +71,10 @@ table and column identifiers.
 ## Other protections
 
 - Request bodies are capped (1 MiB by default, `413` beyond).
-- RPC calls are rate-limited (120/minute per client by default).
+- RPC calls are rate-limited (120/minute per client address by default).
+  Behind a reverse proxy, set `PYWEB_TRUST_PROXY=1` so the visitor's
+  address is used; `X-Forwarded-For` is ignored otherwise, because
+  anyone can send it.
 - Static file serving is confined to the static directory (path
   traversal returns `403`).
 - `pyweb.security.safe_next` / `is_safe_redirect` validate redirect

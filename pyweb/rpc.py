@@ -24,6 +24,7 @@ proxies, and edge caches working.
 
 from __future__ import annotations
 
+import collections
 import random
 import threading
 import time
@@ -88,28 +89,42 @@ def make_traceparent(trace_id: str, span_id: str) -> str:
 
 
 class RateLimiter:
-    """Fixed-window per-key rate limiter (memory; Redis adapter optional)."""
+    """Sliding-window per-key rate limiter, in memory.
+
+    Keys idle for a whole window are dropped, so memory stays proportional
+    to the callers seen in the last ``window`` seconds.
+    """
 
     def __init__(self, max_calls: int = 60, window: float = 60.0,
                  time_fn=None):
         self.max_calls = max_calls
         self.window = window
         self._now = time_fn or time.monotonic
-        self._hits: dict[str, list[float]] = {}
+        self._hits: dict[str, collections.deque] = {}
         self._lock = threading.Lock()
+        self._swept = self._now()
 
     def allow(self, key: str) -> tuple[bool, int]:
         """Return (allowed, retry_after_seconds)."""
         now = self._now()
         with self._lock:
-            hits = [t for t in self._hits.get(key, []) if now - t < self.window]
+            if now - self._swept >= self.window:
+                self._sweep(now)
+            hits = self._hits.get(key)
+            if hits is None:
+                hits = self._hits[key] = collections.deque()
+            while hits and now - hits[0] >= self.window:
+                hits.popleft()
             if len(hits) >= self.max_calls:
                 retry = int(self.window - (now - hits[0])) + 1
-                self._hits[key] = hits
                 return False, max(retry, 1)
             hits.append(now)
-            self._hits[key] = hits
             return True, 0
+
+    def _sweep(self, now):
+        self._swept = now
+        for key in [k for k, h in self._hits.items() if not h or now - h[-1] >= self.window]:
+            del self._hits[key]
 
 
 class RetryPolicy:

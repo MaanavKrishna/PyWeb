@@ -86,6 +86,7 @@ required. Shared state belongs in your database (and Redis, if you use
 | `PYWEB_COOKIE_SECURE` | off | add `Secure` to cookies (set when behind HTTPS) |
 | `PYWEB_CSRF_SECRET` | unset | token CSRF checks for `@auth_required` RPCs |
 | `PYWEB_CSP` | see [Security](13-security.md) | override the Content-Security-Policy |
+| `PYWEB_TRUST_PROXY` | off | behind a reverse proxy (nginx, Caddy, a load balancer): `1`, or the number of proxies, so rate limits use the visitor's address from `X-Forwarded-For` instead of the proxy's |
 | `DATABASE_URL` | — | conventional; read it in your app and pass to `pyweb.db.connect` |
 
 ## Security headers
@@ -94,6 +95,16 @@ HTML responses carry a Content-Security-Policy that only allows scripts
 from your own origin (the page-state JSON is data, not script), plus
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and
 `X-Frame-Options: SAMEORIGIN`.
+
+## Caching and compression
+
+Files with a content hash in their name (`pyweb build --production`),
+npm packages under `static/vendor/<name>@<version>/` and `?v=` URLs are
+cached by browsers for a year. Your own files in `static/` (such as
+`app.css`) are revalidated on each visit with an `ETag`, so a deploy
+shows up at once and an unchanged file costs a `304` with no body.
+Text responses (HTML, JavaScript, CSS, JSON, SVG) are gzipped for
+browsers that accept it.
 
 ## Logs and request ids
 

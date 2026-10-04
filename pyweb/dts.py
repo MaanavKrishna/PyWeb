@@ -34,33 +34,53 @@ def _ts_to_py(ts_type):
     return _TS_SCALARS.get(t, t)
 
 
+def _members(body):
+    """The members of an object type, split on newlines, `;` and top-level `,`."""
+    import re
+    body = re.sub(r"//[^\n]*", "", body)
+    out, depth, cur = [], 0, ""
+    for ch in body:
+        if ch in "<([{":
+            depth += 1
+        elif ch in ">)]}":
+            depth -= 1
+        if depth == 0 and ch in "\n;,":
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    out.append(cur.strip())
+    return [m for m in out if m]
+
+
 def from_dts(dts: str):
     """Parse `interface`/`type` declarations into typed Python dataclasses."""
     import re
     out = ["from __future__ import annotations", "from dataclasses import dataclass",
            "from typing import Optional", ""]
-    found = False
+    classes = set()
     for m in re.finditer(r"(?:interface|type)\s+(\w+)(?:\s*=\s*)?\s*\{([^}]*)\}", dts):
-        found = True
         name, body = m.group(1), m.group(2)
+        classes.add(name)
         out.append("@dataclass")
         out.append(f"class {name}:")
-        n_fields = 0
-        for line in body.splitlines():
-            line = line.split("//")[0].strip().rstrip(",;")
+        required, optional = [], []
+        for line in _members(body):
             fm = re.match(r"(?:readonly\s+)?(\w+)(\?)?:\s*(.+)", line)
             if fm:
                 fname, opt, ftype = fm.group(1), fm.group(2), fm.group(3).strip()
                 py_t = _ts_to_py(ftype)
-                out.append(f"    {fname}: {py_t} = None" if opt else f"    {fname}: {py_t}")
-                n_fields += 1
-        if not n_fields:
-            out.append("    pass")
+                # Fields with defaults must follow those without, or the dataclass won't import.
+                (optional if opt else required).append(
+                    f"    {fname}: {py_t if py_t.startswith('Optional[') else f'Optional[{py_t}]'} = None"
+                    if opt else f"    {fname}: {py_t}")
+        out.extend(required + optional or ["    pass"])
         out.append("")
-    for m in re.finditer(r"type\s+(\w+)\s*=\s*([^;]+);", dts):
-        if m.group(1) not in dts:
+    # Plain aliases (`type Id = string | number;`); object types became classes above.
+    for m in re.finditer(r"\btype\s+(\w+)\s*=\s*([^;{]+);", dts):
+        if m.group(1) not in classes:
             out.append(f"{m.group(1)} = {_ts_to_py(m.group(2))}")
-    return "\n".join(out) if found else "\n".join(out)
+    return "\n".join(out)
 
 
 @dataclass

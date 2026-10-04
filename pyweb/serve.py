@@ -103,11 +103,16 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             raw = body.encode() if isinstance(body, str) else body
             self.send_response(status)
             self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(raw)))
             merged = dict(SECURITY_HEADERS)
             if ctype.startswith("text/html"):
                 merged["Content-Security-Policy"] = csp_for(os.environ.get("PYWEB_CSP", DEFAULT_CSP), raw)
             merged.update(extra or {})
+            if status == 200:
+                from pyweb.hosting import gzip_response
+                pairs, raw = gzip_response([("Content-Type", ctype), *merged.items()], raw,
+                                           self.headers.get("Accept-Encoding"))
+                merged = dict(pairs[1:])
+            self.send_header("Content-Length", str(len(raw)))
             for k, v in merged.items():
                 for item in (v if isinstance(v, list) else [v]):
                     self.send_header(k, item)
@@ -115,25 +120,12 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             if self.command != "HEAD":
                 self.wfile.write(raw)
 
-        def _static(self, rel):
-            # Contain path traversal: rel must resolve inside static_dir.
-            base = os.path.realpath(static_dir)
-            target = os.path.realpath(os.path.join(base, rel))
-            if target != base and not target.startswith(base + os.sep):
-                return self._bytes("forbidden", 403)
-            if not os.path.isfile(target):
-                return self._bytes("not found", 404)
-            ctype = "text/javascript" if target.endswith((".js", ".mjs")) else (
-                "text/css" if target.endswith(".css") else
-                "application/json" if target.endswith(".map") else
-                "application/octet-stream")
-            extra = {}
-            if "?" in self.path or target.endswith((".js", ".mjs", ".css", ".map")):
-                # Production assets are content-hashed; dev ``?v=`` query
-                # strings version the rest. Both are safe to cache forever.
-                extra["Cache-Control"] = "public, max-age=31536000, immutable"
-            with open(target, "rb") as fh:
-                return self._bytes(fh.read(), 200, ctype, extra)
+        def _static(self, rel, query=""):
+            from pyweb.hosting import static_file
+            status, headers, body = static_file([static_dir], rel, query=query,
+                                                if_none_match=self.headers.get("If-None-Match"))
+            hdrs = dict(headers)
+            return self._bytes(body, status, hdrs.pop("Content-Type"), hdrs)
 
         def do_GET(self):  # noqa: N802
             path = self.path.split("?")[0]
@@ -144,12 +136,12 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
                                 "uptime_s": uptime}),
                     200, "application/json")
             if path.startswith("/static/"):
-                return self._static(path[len("/static/"):].split("?")[0])
+                return self._static(path[len("/static/"):], self.path.partition("?")[2])
             if server_runtime is not None:
                 from pyweb.runtime.server import Request
                 resp = server_runtime.handle(Request(
                     "GET", self.path, dict(self.headers),
-                    cookies=parse_cookies(self.headers.get("Cookie"))))
+                    cookies=parse_cookies(self.headers.get("Cookie")), client=self.client_address[0]))
                 if hasattr(resp.body, "snapshot"):  # Server-Sent Events
                     from pyweb.hosting import SECURITY_HEADERS as _sec
                     from pyweb.hosting import write_http
@@ -221,7 +213,7 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
             from pyweb.runtime.server import Request
             resp = server_runtime.handle(Request(
                 "POST", self.path.split("?")[0], dict(self.headers), body,
-                cookies=parse_cookies(self.headers.get("Cookie"))))
+                cookies=parse_cookies(self.headers.get("Cookie")), client=self.client_address[0]))
             return self._bytes(resp.body, resp.status,
                                resp.headers.get("Content-Type", "application/json"),
                                {k: v for k, v in resp.headers.items()

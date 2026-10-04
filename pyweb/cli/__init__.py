@@ -156,7 +156,8 @@ def cmd_dev(args):
             if state.error is not None or state.site is None:
                 html = _error_overlay(state.error, state.path).encode()
                 return self._send(500, [("Content-Type", "text/html; charset=utf-8")], html)
-            status, headers, raw = state.site.respond(method, self.path, dict(self.headers), body)
+            status, headers, raw = state.site.respond(method, self.path, dict(self.headers), body,
+                                                      client=self.client_address[0])
             ctype = next((v for k, v in headers if k.lower() == "content-type"), "")
             if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
                 raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
@@ -193,12 +194,17 @@ def _watch_and_reload(state, Site):
 
     app_dir = os.path.dirname(os.path.abspath(state.path))
 
+    skip = {"__pycache__", "node_modules", "dist", "build", "venv", "env", "site-packages", "vendor"}
+
     def snapshot():
         stamps = {}
         for root, dirs, files in os.walk(app_dir):
-            dirs[:] = [d for d in dirs if not d.startswith((".", "__pycache__", "node_modules", "dist"))]
+            # Virtualenvs (any folder with a pyvenv.cfg) hold thousands of files that never matter here;
+            # npm packages are covered by pyweb.lock, which changes whenever they do.
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in skip
+                       and not os.path.exists(os.path.join(root, d, "pyvenv.cfg"))]
             for fn in files:
-                if fn.endswith((".pyweb", ".py", ".css", ".js")):
+                if fn.endswith((".pyweb", ".py", ".css", ".js")) or fn == "pyweb.lock":
                     p = os.path.join(root, fn)
                     try:
                         stamps[p] = os.path.getmtime(p)

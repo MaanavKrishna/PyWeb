@@ -71,8 +71,10 @@ def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_
                 break
         headers = {}
         for k, v in scope.get("headers", []):
-            name = k.decode("latin-1").title()
-            headers[name] = v.decode("latin-1")
+            name, value = k.decode("latin-1").title(), v.decode("latin-1")
+            if name in headers:  # repeated (HTTP/2 sends cookies as several headers)
+                value = headers[name] + ("; " if name == "Cookie" else ", ") + value
+            headers[name] = value
         path = scope.get("path", "/")
         if scope.get("query_string"):
             path += "?" + scope["query_string"].decode("latin-1")
@@ -81,7 +83,8 @@ def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_
                 b'{"error": {"code": "http_413", "message": "request body too large"}}'
         else:
             status, hdrs, body = await asyncio.to_thread(
-                site.respond, scope.get("method", "GET"), path, headers, b"".join(chunks))
+                site.respond, scope.get("method", "GET"), path, headers, b"".join(chunks),
+                (scope.get("client") or [None])[0])
         raw_headers = [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in hdrs]
         if hasattr(body, "aiter"):  # Server-Sent Events, streamed RPC results
             await send({"type": "http.response.start", "status": status, "headers": raw_headers})

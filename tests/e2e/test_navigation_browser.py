@@ -224,3 +224,50 @@ def test_site_example(page):
         page.goto(url + "/plants/99")
         expect(page.locator("h1")).to_have_text("Not found")
         assert documents(page) == 0                                       # that one was a real load
+
+
+CART = '''from pyweb import App, server
+
+app = App()
+ITEMS = []
+
+
+@server
+def add_item(name: str) -> int:
+    ITEMS.append(name)
+    return len(ITEMS)
+
+
+@app.page("/")
+def Home():
+    count = 0
+
+    async def add():
+        count = await add_item("lamp")
+
+    <button id="add" onclick={add}>Add ({count})</button>
+    <a id="cart" href="/cart">Cart</a>
+
+
+@app.page("/cart")
+def Cart():
+    items = list(ITEMS)
+    clicks = 0
+
+    def click():
+        clicks += 1
+
+    <p id="items" onclick={click}>{len(items)} items</p>
+'''
+
+
+def test_a_page_prefetched_before_a_server_call_is_fetched_again(page, tmp_path):
+    with serve(app_file(tmp_path, CART)) as url:
+        page.goto(url)
+        ready(page)
+        page.hover("#cart")                                                # prefetched with 0 items
+        page.wait_for_function("performance.getEntriesByType('resource').some(e => e.name.endsWith('/cart'))")
+        page.click("#add")
+        expect(page.locator("#add")).to_have_text("Add (1)")
+        page.click("#cart")
+        expect(page.locator("#items")).to_have_text("1 items")             # not the stale prefetched copy

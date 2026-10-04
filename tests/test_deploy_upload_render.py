@@ -40,6 +40,8 @@ def test_safe_filename():
     assert uploads.safe_filename("a/b\\c?.png") != ""
     assert uploads.safe_filename("") == "file"
     assert uploads.safe_filename("...") == "file"
+    long = uploads.safe_filename("photo" * 80 + ".jpeg")
+    assert len(long) == 100 and long.endswith(".jpeg")       # fits any filesystem, keeps its type
 
 
 def test_upload_validation_ok():

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import collections
 import threading
+import time
 
 
 class Channel:
@@ -43,12 +45,39 @@ class Channel:
             return dict(self._presence)
 
 
+#: Messages kept per channel for resuming clients, and how long a quiet channel is kept.
+LOG_SIZE = 100
+IDLE_CHANNEL_SECONDS = 3600
+
+
 class Bus:
     def __init__(self):
         self.channels: dict[str, Channel] = {}
         self._lock = threading.Lock()
         self._seq = 0
-        self._log: dict[str, list[tuple[int, object]]] = {}
+        self._log: dict[str, collections.deque] = {}
+        self._active: dict[str, float] = {}     # channel -> when it last had a message
+        self._published = 0
+
+    def _remember(self, channel_name, entry):
+        """Log ``entry`` for ``since()``; now and then forget channels that went quiet. Hold the lock."""
+        log = self._log.get(channel_name)
+        if log is None:
+            log = self._log[channel_name] = collections.deque(maxlen=LOG_SIZE)
+        log.append(entry)
+        now = time.monotonic()
+        self._active[channel_name] = now
+        self._published += 1
+        if self._published % 256 == 0:
+            for name, at in list(self._active.items()):
+                if now - at < IDLE_CHANNEL_SECONDS:
+                    continue
+                chan = self.channels.get(name)
+                if chan is not None and (chan._subs or chan._presence):
+                    continue
+                self._active.pop(name, None)
+                self._log.pop(name, None)
+                self.channels.pop(name, None)
 
     def channel(self, name):
         with self._lock:
@@ -59,9 +88,7 @@ class Bus:
     def publish(self, channel_name, message):
         with self._lock:
             self._seq += 1
-            entry = (self._seq, message)
-            self._log.setdefault(channel_name, []).append(entry)
-            self._log[channel_name] = self._log[channel_name][-100:]
+            self._remember(channel_name, (self._seq, message))
         return self.channel(channel_name).publish(message)
 
     def position(self, channel_name):
@@ -161,9 +188,7 @@ class RedisBus(Bus):
             return super().publish(channel_name, message)
         with self._lock:
             self._seq = max(self._seq, seq)
-            log = self._log.setdefault(channel_name, [])
-            log.append((seq, message))
-            self._log[channel_name] = log[-100:]
+            self._remember(channel_name, (seq, message))
         return self.channel(channel_name).publish(message)
 
     def position(self, channel_name):

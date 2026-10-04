@@ -32,6 +32,24 @@ class MemoryCache(Cache):
         self._tags: dict[str, set] = {}
         self._lock = threading.Lock()
         self._now = time_fn or time.monotonic
+        self._sets = 0
+
+    def _drop(self, key):
+        """Remove ``key`` and its tag entries. Hold the lock."""
+        item = self._store.pop(key, None)
+        if item is not None:
+            for t in item[2]:
+                keys = self._tags.get(t)
+                if keys is not None:
+                    keys.discard(key)
+                    if not keys:
+                        del self._tags[t]
+
+    def _sweep(self):
+        """Forget expired entries nobody asked for again. Hold the lock."""
+        now = self._now()
+        for key in [k for k, (_v, exp, _t) in self._store.items() if exp is not None and exp <= now]:
+            self._drop(key)
 
     def get(self, key, default=None):
         """Return ``(value, hit)`` tuple, preserving the prototype API."""
@@ -41,7 +59,7 @@ class MemoryCache(Cache):
                 return None, False
             value, expires, _tags = item
             if expires is not None and expires <= self._now():
-                del self._store[key]
+                self._drop(key)
                 return None, False
             return value, True
 
@@ -55,6 +73,9 @@ class MemoryCache(Cache):
             ttl = kw["minutes"] * 60
         expires = None if ttl is None else self._now() + ttl
         with self._lock:
+            self._sets += 1
+            if self._sets % 256 == 0:
+                self._sweep()
             old = self._store.get(key)
             if isinstance(old, tuple) and len(old) == 3:
                 for t in old[2]:

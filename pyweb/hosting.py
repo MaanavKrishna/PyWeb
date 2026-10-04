@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import time
 
 from .runtime.server import Request, Server
@@ -33,6 +34,81 @@ def _ctype(path):
     if path.endswith(".css"):
         return "text/css; charset=utf-8"
     return mimetypes.guess_type(path)[0] or "application/octet-stream"
+
+
+# `name.<12 hex>.js|css|js.map` from `pyweb build --production`, and npm files under
+# `vendor/<package>@<version>/`: their URL changes when their content does.
+_VERSIONED = re.compile(r"(^|/)[^/]+\.[0-9a-f]{12}\.(js|css|js\.map)$|(^|/)vendor/(@[^/]+/)?[^/@]+@[^/]+/")
+IMMUTABLE = "public, max-age=31536000, immutable"
+
+
+def static_file(static_dirs, rel, *, query="", if_none_match=None, dev=False):
+    """``(status, headers, body)`` for a file under one of ``static_dirs``.
+
+    Content-hashed and versioned files (and ``?v=`` URLs) are cached for a
+    year. Everything else, such as your own ``static/app.css``, is revalidated
+    with an ETag, so a deploy shows up at once and an unchanged file costs a
+    304 without a body.
+    """
+    rel = rel.split("?")[0]
+    for base in static_dirs:
+        base = os.path.realpath(base)
+        target = os.path.realpath(os.path.join(base, rel))
+        if target != base and not target.startswith(base + os.sep):
+            return 403, [("Content-Type", "text/plain")], b"forbidden"
+        try:
+            st = os.stat(target)
+        except OSError:
+            continue
+        if not os.path.isfile(target):
+            continue
+        etag = f'W/"{st.st_size:x}-{st.st_mtime_ns:x}"'
+        if dev:
+            cache = "no-cache"
+        elif _VERSIONED.search(rel) or re.search(r"(^|&)v=", query or ""):
+            cache = IMMUTABLE
+        else:
+            cache = "public, max-age=0, must-revalidate"
+        headers = [("Content-Type", _ctype(target)), ("Cache-Control", cache), ("ETag", etag)]
+        if if_none_match and etag in [t.strip() for t in if_none_match.split(",")]:
+            return 304, headers, b""
+        with open(target, "rb") as fh:
+            return 200, headers, fh.read()
+    return 404, [("Content-Type", "text/plain")], b"not found"
+
+
+_COMPRESSIBLE = ("text/", "application/json", "application/javascript", "image/svg+xml", "application/xml")
+_gz_cache: dict = {}
+
+
+def gzip_response(headers, body, accept_encoding):
+    """Gzip ``body`` when the client accepts it and it's worth it; returns ``(headers, body)``.
+
+    ``headers`` is a list of ``(name, value)``. Static files (those with an ETag)
+    are compressed once and kept, so repeat requests cost a dictionary lookup.
+    """
+    if not isinstance(body, (bytes, bytearray)) or len(body) < 1024 or "gzip" not in (accept_encoding or ""):
+        return headers, body
+    names = {k.lower(): v for k, v in headers}
+    ctype = names.get("content-type", "")
+    if "content-encoding" in names or not ctype.startswith(_COMPRESSIBLE):
+        return headers, body
+    import gzip
+    etag = names.get("etag")
+    key = (etag, len(body)) if etag else None
+    packed = _gz_cache.get(key) if key else None
+    if packed is None:
+        packed = gzip.compress(bytes(body), 6, mtime=0)
+        if key:
+            if len(_gz_cache) > 512:
+                _gz_cache.clear()
+            _gz_cache[key] = packed
+    if len(packed) >= len(body):
+        return headers, body
+    vary = [v for k, v in headers if k.lower() == "vary"]
+    out = [(k, v) for k, v in headers if k.lower() not in ("content-length", "vary")]
+    out += [("Content-Encoding", "gzip"), ("Vary", ", ".join(vary + ["Accept-Encoding"]))]
+    return out, packed
 
 
 def is_stream(body):
@@ -119,8 +195,9 @@ class Site:
         self.server = Server(app=app, debug=self.debug, max_body=self.max_body, **self.server_kwargs)
 
     # ------------------------------------------------------------ static
-    def static(self, rel):
-        rel = rel.split("?")[0]
+    def static(self, rel, *, query="", if_none_match=None):
+        rel, _, q = rel.partition("?")
+        query = query or q
         if self.source_mode:
             if rel in ("runtime.js", "markdown.js"):
                 with open(os.path.join(os.path.dirname(RUNTIME_PATH), rel), "rb") as fh:
@@ -128,32 +205,24 @@ class Site:
             if rel in self.memory_js:
                 return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], \
                     self.memory_js[rel].encode()
-        for base in self.static_dirs:
-            base = os.path.realpath(base)
-            target = os.path.realpath(os.path.join(base, rel))
-            if target != base and not target.startswith(base + os.sep):
-                return 403, [("Content-Type", "text/plain")], b"forbidden"
-            if os.path.isfile(target):
-                with open(target, "rb") as fh:
-                    body = fh.read()
-                cache = "no-cache" if self.source_mode else "public, max-age=31536000, immutable"
-                return 200, [("Content-Type", _ctype(target)), ("Cache-Control", cache)], body
-        return 404, [("Content-Type", "text/plain")], b"not found"
+        return static_file(self.static_dirs, rel, query=query, if_none_match=if_none_match, dev=self.source_mode)
 
     # ----------------------------------------------------------- request
-    def respond(self, method, path, headers, body=b""):
+    def respond(self, method, path, headers, body=b"", client=None):
         bare = path.split("?")[0]
         if bare in ("/healthz", "/health", "/readyz"):
             from . import __version__
             payload = {"ok": True, "version": __version__, "uptime_s": round(time.time() - self.started, 3)}
             out = (200, [("Content-Type", "application/json")], json.dumps(payload).encode())
         elif bare.startswith("/static/") and method in ("GET", "HEAD"):
-            out = self.static(bare[len("/static/"):])
+            query = path.partition("?")[2]
+            inm = next((v for k, v in (headers or {}).items() if k.lower() == "if-none-match"), None)
+            out = self.static(bare[len("/static/"):], query=query, if_none_match=inm)
         elif len(body or b"") > self.max_body:
             out = (413, [("Content-Type", "application/json")],
                    json.dumps({"error": {"code": "http_413", "message": "request body too large"}}).encode())
         else:
-            resp = self.server.handle(Request(method, path, headers, body))
+            resp = self.server.handle(Request(method, path, headers, body, client=client))
             hdrs = []
             for k, v in resp.headers.items():
                 for item in (v if isinstance(v, list) else [v]):
@@ -171,6 +240,9 @@ class Site:
         if ctype.startswith("text/html") and not self.debug and "content-security-policy" not in names:
             from .serve import csp_for
             hdrs.append(("Content-Security-Policy", csp_for(self.csp, raw) if isinstance(raw, bytes) else self.csp))
+        if not is_stream(raw) and status == 200:
+            ae = next((v for k, v in (headers or {}).items() if k.lower() == "accept-encoding"), "")
+            hdrs, raw = gzip_response(hdrs, raw, ae)
         if method == "HEAD":
             hdrs.append(("Content-Length", str(len(raw))))
             raw = b""

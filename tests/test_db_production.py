@@ -171,3 +171,32 @@ def test_order_by_validates_and_supports_desc_prefix():
     assert sql.endswith('ORDER BY "id" DESC')
     with pytest.raises(ValueError):
         Query("posts").order_by('id" ; drop table posts; --')
+
+
+def test_a_handled_error_inside_a_transaction_keeps_earlier_writes(tmp_path):
+    import sqlite3
+
+    import pytest
+    d = _db.connect(f"sqlite:///{tmp_path / 't.db'}")
+    d.execute("create table t (id integer primary key, name text unique)")
+    with d.transaction():
+        d.execute("insert into t (name) values ('A')")
+        with pytest.raises(sqlite3.IntegrityError):
+            d.execute("insert into t (name) values ('A')")
+        d.execute("insert into t (name) values ('B')")
+    assert [r[0] for r in d.execute("select name from t order by id").fetchall()] == ["A", "B"]
+    with pytest.raises(sqlite3.IntegrityError):         # an error that escapes rolls everything back
+        with d.transaction():
+            d.execute("insert into t (name) values ('C')")
+            d.execute("insert into t (name) values ('A')")
+    assert [r[0] for r in d.execute("select name from t order by id").fetchall()] == ["A", "B"]
+
+
+def test_stream_inside_a_transaction_uses_its_connection():
+    d = _db.connect(":memory:")                          # a pool of one connection
+    d.execute("create table t (x)")
+    d.execute("insert into t values (1)")
+    with d.transaction():
+        d.execute("insert into t values (2)")
+        rows = [r for page in d.stream("select x from t order by x", chunksize=1) for r in page.fetchall()]
+    assert [r[0] for r in rows] == [1, 2]                # no wait for a second connection; sees its own write

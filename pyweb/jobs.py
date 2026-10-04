@@ -18,6 +18,13 @@ class Job:
         self.result = None
         self.progress = 0.0
         self.traceback = None
+        self.finished_at = None
+        self.done = threading.Event()
+
+    def finish(self):
+        self.pending = False
+        self.finished_at = time.monotonic()
+        self.done.set()
 
     def set_progress(self, value):
         self.progress = max(0.0, min(1.0, float(value)))
@@ -29,22 +36,36 @@ class Job:
 
 
 class Queue:
-    """In-memory queue (Redis/RabbitMQ/Kafka adapters plug in here)."""
+    """In-memory queue (Redis/RabbitMQ/Kafka adapters plug in here).
 
-    def __init__(self):
+    Jobs run on up to ``workers`` threads; more wait their turn. Finished
+    jobs are kept for ``keep_seconds`` so callers can read their result,
+    then forgotten.
+    """
+
+    def __init__(self, workers=8, keep_seconds=3600):
         self.jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
-        self._threads: list[threading.Thread] = []
+        self.workers = workers
+        self.keep_seconds = keep_seconds
+        self._pool = None
 
     def submit(self, fn, *args, retries=0, **kwargs):
+        import concurrent.futures
         job = Job(uuid.uuid4().hex[:12], getattr(fn, "__name__", "fn"))
         with self._lock:
+            self._forget_old()
             self.jobs[job.id] = job
-            self._threads = [t for t in self._threads if t.is_alive()]
-        t = threading.Thread(target=self._run, args=(job, fn, args, kwargs, retries), daemon=True)
-        self._threads.append(t)
-        t.start()
+            if self._pool is None:
+                self._pool = concurrent.futures.ThreadPoolExecutor(self.workers, thread_name_prefix="pyweb-job")
+        self._pool.submit(self._run, job, fn, args, kwargs, retries)
         return job
+
+    def _forget_old(self):
+        """Drop jobs that finished more than ``keep_seconds`` ago. Hold the lock."""
+        cutoff = time.monotonic() - self.keep_seconds
+        for jid in [j for j, job in self.jobs.items() if job.finished_at is not None and job.finished_at < cutoff]:
+            del self.jobs[jid]
 
     @staticmethod
     def _wants_job(fn):
@@ -64,16 +85,16 @@ class Queue:
         while True:
             try:
                 job.result = fn(*args, **call_kwargs)
-                job.pending = False
+                job.finish()
                 return
             except Exception as exc:  # noqa: BLE001
                 err = exc
                 tb = traceback.format_exc()
             if attempt >= retries:
-                job.pending = False
                 job.failed = True
                 job.error = f"{type(err).__name__}: {err}"
                 job.traceback = tb
+                job.finish()
                 return
             attempt += 1
             time.sleep(0.01 * attempt)
@@ -82,9 +103,8 @@ class Queue:
         return self.jobs.get(job_id)
 
     def wait(self, job, timeout=10.0):
-        end = time.time() + timeout
-        while job.pending and time.time() < end:
-            time.sleep(0.005)
+        if job.pending:
+            job.done.wait(timeout)
         return job
 
 
@@ -112,6 +132,8 @@ class Queue:
                 job.error = rec.get("error")
                 job.result = rec.get("result")
                 job.progress = float(rec.get("progress", 0.0))
+                if not job.pending:
+                    job.finish()
                 self.jobs[jid] = job
         return len(data)
 
@@ -197,9 +219,9 @@ class RedisQueue(Queue):
             with self._lock:
                 self.jobs[job_id] = job
         if fn is None:
-            job.pending = False
             job.failed = True
             job.error = "unknown function for worker"
+            job.finish()
             return job
         self._run(job, fn, payload.get("args", ()),
                   payload.get("kwargs", {}), retries)

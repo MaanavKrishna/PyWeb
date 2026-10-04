@@ -144,3 +144,41 @@ def test_markup_after_a_def_line_with_a_trailing_comment():
     src = ("from pyweb import App\napp = App()\n\n\n@app.page('/')\n"
            "def Home(q: str = 'x'):    # query parameter\n    <h1>{q}</h1>\n")
     assert "<h1>hi</h1>" in TestClient(source=src).get("/?q=hi").text
+
+
+def test_module_values_changed_by_server_code_come_from_the_server():
+    from pyweb.compiler import compile_source
+    src = """from pyweb import App, server
+
+app = App()
+ITEMS = []
+COLORS = ["red", "green"]
+VISITS = 0
+
+
+@server
+def add(name: str) -> None:
+    global VISITS
+    ITEMS.append(name)
+    VISITS += 1
+
+
+@app.page("/")
+def Home():
+    items = list(ITEMS)
+    visits = VISITS
+    picked = ""
+
+    def pick():
+        picked = COLORS[0]
+
+    <p onclick={pick}>{len(items)} {visits} {picked}</p>
+"""
+    js = compile_source(src)["pages"]["Home"]["js"]
+    assert "const ITEMS" not in js and 'const items = $s["items"]' in js        # sent, not a stale copy
+    assert "const VISITS" not in js and 'const visits = $s["visits"]' in js
+    assert 'const COLORS = ["red", "green"];' in js                           # never changed: still inlined
+    from pyweb.testing import TestClient
+    client = TestClient(source=src)
+    client.rpc("add", name="lamp")
+    assert "<p>1 1 </p>" in client.get("/").text

@@ -233,7 +233,7 @@ def hover(text, path, line, col, analysis=None):
 def _open_tag(prefix):
     """``(tag, typed_attrs)`` if the cursor is inside an unclosed ``<tag ...``."""
     m = re.search(r"<([A-Za-z][\w.]*)((?:\s+[^<>]*)?)$", prefix)
-    if not m or not m.group(2).strip() and not prefix.endswith(" "):
+    if not m or (not m.group(2).strip() and not prefix.endswith(" ")):
         return None
     attrs = re.findall(r"([A-Za-z_][\w-]*)\s*=", m.group(2))
     return m.group(1), attrs

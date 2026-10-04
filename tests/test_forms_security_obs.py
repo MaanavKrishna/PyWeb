@@ -89,6 +89,18 @@ def test_format_error_points_at_line():
 
 def test_dts_to_dataclasses():
     py = from_dts("interface ChartProps {\n data: number[]\n animated?: boolean\n name: string\n meta: Record<string, number>\n}")
-    assert "data: list[float]" in py and "animated: bool = None" in py
+    assert "data: list[float]" in py and "animated: Optional[bool] = None" in py
     assert "Record" not in py
     assert "dataclass" in py
+    exec(py, {})                                    # optional fields go last, so it imports
+
+
+def test_dts_one_line_members_and_aliases():
+    py = from_dts("type Id = string | number;\n"
+                  "interface User { id: Id; nick?: string, scores: Record<string, number>; readonly age: number }\n"
+                  "type Point = { x: number, y: number };")
+    ns = {}
+    exec(py, ns)
+    assert list(ns["User"].__dataclass_fields__) == ["id", "scores", "age", "nick"]
+    assert list(ns["Point"].__dataclass_fields__) == ["x", "y"]
+    assert "Id = str | float" in py and "Point =" not in py

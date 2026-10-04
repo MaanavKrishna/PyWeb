@@ -205,7 +205,20 @@ def require_session(req, secret: str, max_age: int = 3600):
     session = session_from_request(req, secret, max_age)
     if session is not None and "sub" in session:
         return session, None
-    return None, Response(302, "", {"Location": f"{LOGIN_URL}?next={req.path}"})
+    nxt = urllib.parse.quote(safe_next(req.path), safe="/")
+    return None, Response(302, "", {"Location": f"{LOGIN_URL}?next={nxt}"})
+
+
+def safe_next(url, default="/"):
+    """``url`` if it's a path on this site, else ``default``.
+
+    Use it on a ``?next=`` value before redirecting there after login, so a
+    link like ``/login?next=//evil.example`` can't send people elsewhere.
+    """
+    url = str(url or "")
+    if not url.startswith("/") or url.startswith(("//", "/\\")) or any(c in url for c in "\r\n\t"):
+        return default
+    return url
 
 
 def login_response(user_id, secret: str, *, extra=None, next_url="/",
@@ -222,7 +235,7 @@ def login_response(user_id, secret: str, *, extra=None, next_url="/",
     flags = (f"HttpOnly; Path=/; Max-Age={int(max_age)}; SameSite=Lax"
              + ("; Secure" if secure else ""))
     return Response(302, "", {
-        "Location": next_url,
+        "Location": safe_next(next_url),
         "Set-Cookie": f"{SESSION_COOKIE}={token}; {flags}",
     })
 
@@ -334,7 +347,8 @@ class OAuthClient:
 def issue_magic_token(secret: str, email: str, ttl: int = 900) -> str:
     payload = {"email": email, "exp": int(time.time()) + ttl}
     payload_b64 = _b64e(json.dumps(payload, separators=(",", ":")).encode())
-    return f"{payload_b64}.{_sign(payload_b64, secret)}"
+    # Signed under its own prefix, so a session cookie can never pass as a login link (or back).
+    return f"{payload_b64}.{_sign('magic:' + payload_b64, secret)}"
 
 
 def verify_magic_token(secret: str, token: str, max_age: int = 900):
@@ -342,13 +356,13 @@ def verify_magic_token(secret: str, token: str, max_age: int = 900):
         payload_b64, sig = token.rsplit(".", 1)
     except ValueError:
         return None
-    if not hmac.compare_digest(_sign(payload_b64, secret), sig):
+    if not hmac.compare_digest(_sign("magic:" + payload_b64, secret), sig):
         return None
     try:
         payload = json.loads(_b64d(payload_b64))
     except (ValueError, base64.binascii.Error, json.JSONDecodeError):
         return None
-    if time.time() > payload.get("exp", 0):
+    if not isinstance(payload, dict) or time.time() > payload.get("exp", 0):
         return None
     return payload.get("email")
 

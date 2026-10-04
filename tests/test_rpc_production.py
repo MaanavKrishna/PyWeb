@@ -132,3 +132,48 @@ def test_retry_policy_backoff_and_retryable():
     assert p.should_retry(0, 503) and p.should_retry(1, 503)
     assert not p.should_retry(2, 503) and not p.should_retry(0, 422)
     assert p.delay(0) <= p.delay(1) <= 2.0
+
+
+def test_rate_limit_is_per_client_address_and_ignores_spoofed_headers(monkeypatch):
+    monkeypatch.delenv("PYWEB_TRUST_PROXY", raising=False)
+    s = _server(rate_limit=rpc.RateLimiter(max_calls=1, window=60.0))
+    def f():
+        return 1
+    s.register_rpc(f)
+    assert _post(s, "f", client="10.0.0.1").status == 200
+    # A new X-Forwarded-For value per call no longer gets around the limit...
+    assert _post(s, "f", client="10.0.0.1", headers={"X-Forwarded-For": "1.2.3.4"}).status == 429
+    # ...and one busy visitor doesn't use up everyone else's allowance.
+    assert _post(s, "f", client="10.0.0.2").status == 200
+
+
+def test_trusted_proxy_uses_the_address_it_saw(monkeypatch):
+    from pyweb.runtime.server import client_ip
+    req = Request("POST", "/", headers={"X-Forwarded-For": "6.6.6.6, 203.0.113.9"}, client="10.0.0.5")
+    monkeypatch.delenv("PYWEB_TRUST_PROXY", raising=False)
+    assert client_ip(req) == "10.0.0.5"
+    monkeypatch.setenv("PYWEB_TRUST_PROXY", "1")
+    assert client_ip(req) == "203.0.113.9"          # added by our proxy, not the client's claim
+    monkeypatch.setenv("PYWEB_TRUST_PROXY", "2")
+    assert client_ip(req) == "6.6.6.6"
+
+
+def test_rate_limiter_forgets_idle_callers():
+    now = [0.0]
+    lim = rpc.RateLimiter(max_calls=1, window=10.0, time_fn=lambda: now[0])
+    for i in range(500):
+        lim.allow(f"caller-{i}")
+    assert not lim.allow("caller-0")[0]
+    now[0] = 11.0
+    assert lim.allow("caller-0")[0]
+    assert len(lim._hits) == 1                       # the other 499 were swept
+
+
+def test_async_functions_respect_the_timeout():
+    import asyncio
+    s = _server(rpc_timeout=0.05)
+    async def slow():
+        await asyncio.sleep(1)
+    s.register_rpc(slow)
+    res = _post(s, "slow")
+    assert res.status == 504 and json.loads(res.body)["error"]["code"] == "timeout"

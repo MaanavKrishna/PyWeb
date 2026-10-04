@@ -1534,6 +1534,7 @@ export async function rpc(name, args = {}, opts = {}) {
         signal: ctrl.signal,
         credentials: "same-origin",
       });
+      prefetched.clear(); // the call may have changed what other pages show
       const ctype = res.headers.get("Content-Type") || "";
       // Streaming RPC: application/x-ndjson, one {"chunk"} per line.
       if (res.ok && ctype.includes("x-ndjson")) {
@@ -1617,6 +1618,7 @@ export class RpcStream {
         method: "POST", headers, body: JSON.stringify({ args: this.args }),
         signal: this.ctrl.signal, credentials: "same-origin",
       });
+      prefetched.clear(); // the call may have changed what other pages show
     } catch (e) {
       if (this.cancelled) return;
       throw e;

@@ -6,6 +6,68 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.4.3]
+
+A review release: bug fixes, security hardening and speed-ups. No API
+removals; one new setting (`PYWEB_TRUST_PROXY`).
+
+### Fixed
+- Pages showed stale data when a module-level value (`ITEMS = []`) was
+  changed by an `@server` function: the compiler copied its starting
+  value into browser code, and the page re-rendered with it. Values
+  that code changes now come from the server on each request.
+- `db.transaction()`: a statement error that your code caught rolled
+  back the transaction's earlier writes while later ones still
+  committed. Errors inside a transaction now leave it to
+  `transaction()` (all or nothing).
+- `db.stream()` inside a transaction waited for a second connection
+  (a 10 second hang with SQLite in memory); it now uses the
+  transaction's.
+- `pyweb serve` sent SVG, images, fonts, JSON and WebAssembly as
+  `application/octet-stream` (browsers don't show an SVG sent that way).
+- Your own files in `static/` (such as `app.css`) were cached by
+  browsers for a year, so deploys didn't show up for returning
+  visitors. They're now revalidated with an ETag (a `304` when
+  unchanged); content-hashed files, `?v=` URLs and npm packages are
+  still cached for a year.
+- Client-side navigation could show a page prefetched before a server
+  call changed its data.
+- `async def` server functions ignored `rpc_timeout`.
+- The ASGI adapter kept only the last of repeated request headers, so
+  HTTP/2 clients sending each cookie separately lost all but one.
+- `pyweb dts`: type aliases were never written, members on one line
+  (`{ a: string; b?: number }`) produced invalid Python, and optional
+  fields before required ones made the stub fail to import.
+- Very long upload filenames are shortened (keeping the extension)
+  instead of failing to save.
+
+### Security
+- RPC rate limits used the `X-Forwarded-For` header, which any client
+  can set (so the limit was easy to get around), and put every visitor
+  without a session cookie in one shared bucket. They now use the
+  connection's address; behind a reverse proxy set `PYWEB_TRUST_PROXY=1`
+  (or the number of proxies) to use the address your proxy saw.
+- `auth.require_session` and `auth.login_response` only redirect to
+  paths on your site (`//evil.example` becomes `/`); the new
+  `auth.safe_next()` does the same for your own `?next=` handling.
+- Magic-link tokens are signed separately from session cookies, so one
+  can't be used as the other. Links issued before the upgrade stop
+  working (they last 15 minutes).
+
+### Performance
+- HTML, JavaScript, CSS, JSON and SVG are gzipped for browsers that
+  accept it (the shared runtime goes from 46 KB to 15 KB); static files
+  are compressed once and kept.
+- Memory no longer grows without bound in long-running servers: the
+  rate limiter forgets idle callers, the realtime bus forgets channels
+  quiet for an hour, the in-memory cache drops expired entries, and
+  the job queue forgets jobs an hour after they finish.
+- The job queue runs jobs on a pool of 8 threads instead of one thread
+  per job, and `wait()` returns as soon as the job finishes.
+- `pyweb dev` no longer re-scans virtualenvs in the project folder
+  every 0.4 s, and reloads when `pyweb.lock` changes (after
+  `pyweb add`).
+
 ## [0.4.2]
 
 ### Added

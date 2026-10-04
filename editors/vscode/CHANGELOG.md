@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3
+
+- Released with PyWeb 0.4.3 (fixes, security and speed; see the main
+  changelog). No changes to the extension itself.
+
 ## 0.4.2
 
 - Fixed "spawn python ENOENT" when no Python interpreter is selected: the

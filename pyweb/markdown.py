@@ -40,7 +40,7 @@ def escape(text: str) -> str:
 
 def safe_url(url: str):
     url = url.strip()
-    if not url or re.match(r"^[a-z][a-z0-9+.-]*:", url, re.I) and not re.match(r"^(https?|mailto):", url, re.I):
+    if not url or (re.match(r"^[a-z][a-z0-9+.-]*:", url, re.I) and not re.match(r"^(https?|mailto):", url, re.I)):
         return None
     return url if _SAFE_URL.match(url) else None
 

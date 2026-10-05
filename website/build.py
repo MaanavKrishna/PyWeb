@@ -415,7 +415,7 @@ def markdown(text, *, compile_pyweb=True):
 
 # ------------------------------------------------------------------ layout
 
-CSS_VERSION = "3"
+CSS_VERSION = "4"
 
 LOGO = ('<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="pwg" x1="0" y1="0" x2="1" y2="1">'
         '<stop offset="0" stop-color="#3d5afe"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#f2a10c"/>'
@@ -424,6 +424,12 @@ LOGO = ('<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="p
         'stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="16" r="3.3" fill="#fff"/></svg>')
 
 _ICON_PATHS = {
+    "play": '<path d="M7 4.5v15l12-7.5z"/>',
+    "reset": '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+    "download": '<path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 19h16"/>',
+    "phone": '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+    "tablet": '<rect x="4.5" y="2.5" width="15" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+    "desktop": '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
     "browser": '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/>',
     "server": '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
     "bolt": '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
@@ -898,33 +904,53 @@ def playground_page():
     return f"""<main class="playground">
 <div class="pg-bar">
   <h1>Playground</h1>
-  <label class="pg-pick"><span>Example</span><select id="pg-example"><option value="" hidden>Shared code</option></select></label>
-  <button id="pg-run" class="btn primary" type="button" title="Ctrl/⌘ + Enter">Run</button>
-  <button id="pg-share" class="btn" type="button">Copy link</button>
+  <label class="pg-pick"><span>Example</span><select id="pg-example"><option value="" hidden>Your code</option></select></label>
+  <div class="pg-actions">
+    <button id="pg-run" class="btn primary" type="button" title="Run (Ctrl/⌘ + Enter)">{icon("play")}Run</button>
+    <button id="pg-reset" class="btn" type="button" title="Back to the example's original code">{icon("reset")}Reset</button>
+    <button id="pg-download" class="btn" type="button" title="Save app.pyweb, then run it with: pyweb dev app.pyweb">{icon("download")}Download</button>
+    <button id="pg-share" class="btn" type="button" title="Copy a link to this code">{icon("link")}Share</button>
+  </div>
   <span id="pg-status" class="pg-status busy" role="status">Starting…</span>
 </div>
-<div class="pg-split">
+<div class="pg-switch" role="tablist" aria-label="Show">
+  <button type="button" data-pane="code" aria-selected="true">Code</button>
+  <button type="button" data-pane="output" aria-selected="false">Preview</button>
+</div>
+<div class="pg-split" id="pg-split" data-pane="code">
   <section class="pg-editor" aria-label="Editor">
-    <div class="pg-file">app.pyweb</div>
-    <div class="pg-code"><pre id="pg-gutter" aria-hidden="true"></pre><textarea id="pg-source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="app.pyweb source"></textarea></div>
+    <div class="pg-file"><span class="pg-dots"><i></i><i></i><i></i></span><span>app.pyweb</span>
+      <span id="pg-draft" class="pg-draft" hidden>edited</span><span class="pg-keys">Tab indents · ⌘/Ctrl+Enter runs</span></div>
+    <div class="pg-code"><pre id="pg-gutter" aria-hidden="true"></pre><div class="pg-edit"><pre id="pg-hl" aria-hidden="true"></pre><textarea id="pg-source" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="app.pyweb source"></textarea></div></div>
     <div id="pg-error" class="pg-error" role="alert" hidden></div>
   </section>
+  <div class="pg-resize" id="pg-resize" role="separator" aria-orientation="vertical" aria-label="Resize panels" tabindex="0"></div>
   <section class="pg-output" aria-label="Output">
     <div class="pg-tabs" role="tablist">
       <button type="button" role="tab" data-tab="preview" aria-selected="true">Preview</button>
+      <button type="button" role="tab" data-tab="console" aria-selected="false">Console <span id="pg-count" class="pg-count" hidden></span></button>
       <button type="button" role="tab" data-tab="js" aria-selected="false">JavaScript</button>
       <button type="button" role="tab" data-tab="place" aria-selected="false">What runs where</button>
     </div>
-    <div class="pg-urlbar"><select id="pg-page" aria-label="Page"></select><input id="pg-url" aria-label="Path" value="/"></div>
-    <iframe id="pg-frame" title="App preview"></iframe>
-    <pre id="pg-js" class="pg-panel" hidden></pre>
+    <div class="pg-urlbar">
+      <button id="pg-reload" class="pg-icon" type="button" title="Reload the page" aria-label="Reload">{icon("reset")}</button>
+      <select id="pg-page" aria-label="Page"></select><input id="pg-url" aria-label="Path" value="/">
+      <div class="pg-sizes" role="group" aria-label="Preview width">
+        <button type="button" data-width="390" title="Phone" aria-label="Phone width">{icon("phone")}</button>
+        <button type="button" data-width="768" title="Tablet" aria-label="Tablet width">{icon("tablet")}</button>
+        <button type="button" data-width="" title="Full width" aria-label="Full width" aria-pressed="true">{icon("desktop")}</button>
+      </div>
+    </div>
+    <div class="pg-stage" id="pg-stage"><iframe id="pg-frame" title="App preview"></iframe></div>
+    <div id="pg-console" class="pg-panel pg-log" hidden><p class="pg-empty">Output from <code>print()</code> in your Python, every call to a server function, and errors from the page show up here.</p></div>
+    <div id="pg-jswrap" class="pg-panel" hidden><div class="pg-jsinfo" id="pg-jsinfo"></div><pre id="pg-js"></pre></div>
     <div id="pg-place" class="pg-panel" hidden></div>
   </section>
 </div>
 <p class="pg-note">Everything runs in your browser: PyWeb's compiler, server rendering and your <code>@server</code>
 functions run in real Python (<a href="https://pyodide.org">Pyodide</a>, CPython compiled to WebAssembly). Nothing
-is sent anywhere. Apps that need a database file or other packages run with <code>pyweb dev</code>; see the
-<a href="quickstart.html">quickstart</a>.</p>
+is sent anywhere, and your edits are kept in this browser. To keep building, <strong>Download</strong> the file and run
+<code>pyweb dev app.pyweb</code> (see the <a href="quickstart.html">quickstart</a>).</p>
 </main>
 <script id="pg-config" type="application/json">{config}</script>
 <script src="assets/playground.js?v={CSS_VERSION}" defer></script>"""

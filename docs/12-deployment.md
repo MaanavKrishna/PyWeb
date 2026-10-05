@@ -85,6 +85,58 @@ It exits non-zero and says what to fix when:
 - the app uses `RedisCache(allow_pickle=True)`;
 - npm package files don't match `pyweb.lock`.
 
+## Behind a reverse proxy
+
+In production a reverse proxy usually sits in front of PyWeb: it handles
+HTTPS and passes requests on. PyWeb then sees every request coming from
+the proxy, so tell it to read the visitor's address from the
+`X-Forwarded-For` header the proxy adds:
+
+```bash
+PYWEB_TRUST_PROXY=1        # one proxy in front (use 2 for a CDN plus a proxy, and so on)
+PYWEB_COOKIE_SECURE=1      # the proxy serves HTTPS
+```
+
+Only set it when clients can't reach PyWeb directly; otherwise anyone
+could send a made-up `X-Forwarded-For`. Without it, rate limits treat
+all your visitors as one.
+
+**The easy way:** `pyweb deploy --target compose --domain example.com`
+writes a `compose.yaml` and `Caddyfile` with [Caddy](https://caddyserver.com)
+in front. Caddy fetches the HTTPS certificate by itself, the app is
+only reachable through it, and both settings above are already set:
+
+```bash
+pyweb deploy --target compose --domain example.com --out deploy
+cp -r app.pyweb static deploy/ && cd deploy
+PYWEB_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))") docker compose up -d
+```
+
+Point the domain's DNS at the server first. `pyweb deploy --target k8s`
+already sets `PYWEB_TRUST_PROXY=1` (traffic arrives through your
+Ingress). Platforms such as Fly.io, Render and Railway also put a proxy
+in front of your app: set `PYWEB_TRUST_PROXY=1` there.
+
+With your own proxy, pass the address on. nginx:
+
+```text
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;              # live updates (Server-Sent Events) stream immediately
+}
+```
+
+Caddy (`reverse_proxy` adds `X-Forwarded-For` by itself):
+
+```text
+example.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
 ## Health checks
 
 - `/healthz` answers `200` while the process runs (liveness).

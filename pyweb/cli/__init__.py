@@ -411,8 +411,11 @@ def cmd_deploy(args):
     files = {}
     if target in ("docker", "compose"):
         files["Dockerfile"] = D.dockerfile(port=args.port)
+        domain = getattr(args, "domain", "") or ""
         if target == "compose" or args.compose:
-            files["compose.yaml"] = D.compose(port=args.port, db_url=args.db_url or "")
+            files["compose.yaml"] = D.compose(port=args.port, db_url=args.db_url or "", domain=domain)
+            if domain:
+                files["Caddyfile"] = D.caddyfile(domain, port=args.port)
     elif target == "k8s":
         files["k8s.yaml"] = D.k8s_manifest(app=args.app, image=args.image, port=args.port)
     else:
@@ -421,6 +424,10 @@ def cmd_deploy(args):
         with open(os.path.join(outdir, name), "w") as fh:
             fh.write(body)
     print(f"deploy {target} -> {outdir}/ ({', '.join(files)})")
+    if "Caddyfile" in files:
+        print(f"next: point {args.domain}'s DNS at this server, then run\n"
+              f"  PYWEB_AUTH_SECRET=... docker compose up -d   (in {outdir}/, with your app files)\n"
+              "Caddy gets the HTTPS certificate by itself; the app is only reachable through it.")
 
 
 def cmd_dts(args):
@@ -510,6 +517,7 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--compose", action="store_true")
     p.add_argument("--db-url", default="")
+    p.add_argument("--domain", default="", help="compose: put Caddy in front with automatic HTTPS for this domain")
     p.add_argument("--app", default="pyweb")
     p.add_argument("--image", default="pyweb:latest")
     p.set_defaults(fn=cmd_deploy)

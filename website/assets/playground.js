@@ -6,15 +6,22 @@
   const cfg = JSON.parse(document.getElementById("pg-config").textContent);
   const $ = (id) => document.getElementById(id);
   const editor = $("pg-source");
+  const hl = $("pg-hl");
   const gutter = $("pg-gutter");
   const statusEl = $("pg-status");
   const errorEl = $("pg-error");
   const frame = $("pg-frame");
+  const stage = $("pg-stage");
   const urlBox = $("pg-url");
   const pageSel = $("pg-page");
   const exampleSel = $("pg-example");
   const jsOut = $("pg-js");
+  const jsInfo = $("pg-jsinfo");
   const placeOut = $("pg-place");
+  const consoleOut = $("pg-console");
+  const countEl = $("pg-count");
+  const draftEl = $("pg-draft");
+  const DRAFT_KEY = "pyweb-playground-draft";
 
   let host = null;          // Python functions: load, request
   let runtimeUrl = null;    // blob: URL of the PyWeb browser runtime
@@ -22,44 +29,121 @@
   let path = "/";
   let timer = null;
   let errorLine = null;
+  let example = "counter";  // the example the code started from ("" for shared code)
+  let unseen = 0;
   const blobs = [];
 
   const status = (text, busy = false) => {
     statusEl.textContent = text;
     statusEl.classList.toggle("busy", busy);
   };
+  const store = {
+    get() { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; } },
+    set(v) { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(v)); } catch { /* private mode */ } },
+    clear() { try { localStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ } },
+  };
+
+  // ------------------------------------------------------ highlighting
+  const PY_KW = new Set(("False None True and as assert async await break class continue def del elif else except " +
+    "finally for from global if import in is lambda nonlocal not or pass raise return try while with yield").split(" "));
+  const PY_BUILTIN = new Set(("len str int float bool list dict set tuple range print enumerate zip sorted min max " +
+    "sum any all isinstance abs round").split(" "));
+  const TOKEN = new RegExp([
+    /(?<comment>#[^\n]*)/,
+    /(?<string>[rbfRBF]?(?:"""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$)|"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?))/,
+    /(?<tag><\/?[A-Za-z][\w.-]*|\/?>)/,
+    /(?<deco>@[\w.]+)/,
+    /(?<number>\b\d[\d_]*(?:\.\d+)?\b)/,
+    /(?<name>[A-Za-z_][\w]*)/,
+    /(?<brace>[{}])/,
+  ].map((r) => r.source).join("|"), "g");
+  const escHtml = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  function highlight(code) {
+    let out = "", last = 0;
+    TOKEN.lastIndex = 0;
+    for (let m; (m = TOKEN.exec(code));) {
+      if (m[0] === "") { TOKEN.lastIndex++; continue; }
+      out += escHtml(code.slice(last, m.index));
+      const g = m.groups, text = escHtml(m[0]);
+      const has = (k) => g[k] !== undefined;
+      let cls = has("comment") ? "c" : has("string") ? "s" : has("tag") ? "t" : has("deco") ? "d"
+        : has("number") ? "n" : has("brace") ? "p" : "";
+      if (has("name")) cls = PY_KW.has(m[0]) ? "k" : PY_BUILTIN.has(m[0]) ? "b" : "";
+      out += cls ? `<span class="${cls}">${text}</span>` : text;
+      last = m.index + m[0].length;
+    }
+    out += escHtml(code.slice(last));
+    if (errorLine) {
+      const lines = out.split("\n");
+      if (lines[errorLine - 1] !== undefined) lines[errorLine - 1] = `<mark class="err">${lines[errorLine - 1] || " "}</mark>`;
+      out = lines.join("\n");
+    }
+    return out + "\n";   // keeps the last line's height when it's empty
+  }
 
   // ----------------------------------------------------------- editor
-  function renderGutter() {
+  function paint() {
     const n = editor.value.split("\n").length;
-    let out = "";
-    for (let i = 1; i <= n; i++) out += (i === errorLine ? `<b>${i}</b>` : i) + "\n";
-    gutter.innerHTML = out;
-    gutter.scrollTop = editor.scrollTop;
+    let nums = "";
+    for (let i = 1; i <= n; i++) nums += (i === errorLine ? `<b>${i}</b>` : i) + "\n";
+    gutter.innerHTML = nums;
+    hl.innerHTML = highlight(editor.value);
+    sync();
   }
-  editor.addEventListener("scroll", () => { gutter.scrollTop = editor.scrollTop; });
+  function sync() {
+    gutter.scrollTop = editor.scrollTop;
+    hl.scrollTop = editor.scrollTop;
+    hl.scrollLeft = editor.scrollLeft;
+  }
+  editor.addEventListener("scroll", sync);
   editor.addEventListener("input", () => {
-    renderGutter();
+    paint();
+    saveDraft();
     clearTimeout(timer);
-    timer = setTimeout(run, 700);
+    timer = setTimeout(run, 650);
   });
   editor.addEventListener("keydown", (e) => {
     const { selectionStart: s, selectionEnd: end, value } = editor;
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); return; }
-    if (e.key === "Tab" && !e.shiftKey) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); download(); return; }
+    if (e.key === "Tab") {
       e.preventDefault();
-      editor.setRangeText("    ", s, end, "end");
+      const lineStart = value.lastIndexOf("\n", s - 1) + 1;
+      if (e.shiftKey) {
+        const line = value.slice(lineStart);
+        const drop = line.match(/^ {1,4}/);
+        if (drop) {
+          editor.setRangeText("", lineStart, lineStart + drop[0].length, "preserve");
+          editor.setSelectionRange(Math.max(lineStart, s - drop[0].length), Math.max(lineStart, end - drop[0].length));
+        }
+      } else if (s !== end && value.slice(s, end).includes("\n")) {
+        const block = value.slice(lineStart, end).replace(/^/gm, "    ");
+        editor.setRangeText(block, lineStart, end, "select");
+      } else {
+        editor.setRangeText("    ", s, end, "end");
+      }
       editor.dispatchEvent(new Event("input"));
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && !e.isComposing) {
       const lineStart = value.lastIndexOf("\n", s - 1) + 1;
       const line = value.slice(lineStart, s);
       let indent = line.match(/^\s*/)[0];
-      if (/:\s*$/.test(line)) indent += "    ";
+      if (/:\s*(#.*)?$/.test(line)) indent += "    ";
       e.preventDefault();
       editor.setRangeText("\n" + indent, s, end, "end");
       editor.dispatchEvent(new Event("input"));
     }
   });
+
+  function edited() {
+    const original = example && cfg.examples[example] ? cfg.examples[example].source : null;
+    return editor.value !== original;
+  }
+  function saveDraft() {
+    draftEl.hidden = !edited();
+    if (edited()) store.set({ example, source: editor.value });
+    else store.clear();
+  }
 
   function showError(err) {
     errorLine = err && err.line ? err.line : null;
@@ -68,8 +152,9 @@
     } else {
       errorEl.hidden = false;
       errorEl.innerHTML = "";
-      const head = document.createElement("strong");
+      const head = document.createElement(err.line ? "button" : "strong");
       head.textContent = err.line ? `Line ${err.line}` : "Error";
+      if (err.line) { head.type = "button"; head.title = "Go to the line"; head.addEventListener("click", () => goToLine(err.line)); }
       const msg = document.createElement("span");
       msg.textContent = err.message;
       errorEl.append(head, msg);
@@ -79,14 +164,59 @@
         errorEl.append(hint);
       }
     }
-    renderGutter();
+    paint();
+  }
+
+  function goToLine(n) {
+    const lines = editor.value.split("\n");
+    const at = lines.slice(0, n - 1).reduce((sum, l) => sum + l.length + 1, 0);
+    editor.focus();
+    editor.setSelectionRange(at, at + (lines[n - 1] || "").length);
+    const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 21;
+    editor.scrollTop = Math.max(0, (n - 4) * lineHeight);
+    sync();
+  }
+
+  // ---------------------------------------------------------- console
+  function log(kind, text, detail = "") {
+    const empty = consoleOut.querySelector(".pg-empty");
+    if (empty) empty.remove();
+    const row = document.createElement("div");
+    row.className = "pg-row " + kind;
+    const tag = document.createElement("span");
+    tag.className = "pg-kind";
+    tag.textContent = { print: "print", call: "server", error: "error", browser: "browser", warn: "warning" }[kind] || kind;
+    const body = document.createElement("span");
+    body.className = "pg-text";
+    body.textContent = text;
+    row.append(tag, body);
+    if (detail) {
+      const d = document.createElement("span");
+      d.className = "pg-detail";
+      d.textContent = detail;
+      row.append(d);
+    }
+    consoleOut.append(row);
+    while (consoleOut.children.length > 300) consoleOut.firstChild.remove();
+    consoleOut.scrollTop = consoleOut.scrollHeight;
+    if (document.querySelector('.pg-tabs [data-tab="console"]').getAttribute("aria-selected") !== "true") {
+      unseen++;
+      countEl.hidden = false;
+      countEl.textContent = unseen > 99 ? "99+" : String(unseen);
+      countEl.classList.toggle("bad", kind === "error" || countEl.classList.contains("bad"));
+    }
+  }
+  function printed(output) {
+    for (const line of (output || "").replace(/\n$/, "").split("\n")) if (line) log("print", line);
   }
 
   // ------------------------------------------------------------ python
   function call(fn, ...args) { return JSON.parse(host[fn](...args)); }
 
   function request(method, url, body = "", type = "") {
-    return call("request", method, url, body || "", type || "");
+    const r = call("request", method, url, body || "", type || "");
+    printed(r.output);
+    return r;
   }
 
   async function boot() {
@@ -125,6 +255,7 @@
       showError({ message: String(err.message || err) });
       return;
     }
+    printed(res.output);
     if (!res.ok) {
       showError(res.error);
       status("Fix the error to update the preview");
@@ -163,6 +294,7 @@
       target = r.headers.location || "/";
       r = request("GET", target);
     }
+    if (r.status >= 500) log("error", `GET ${target} answered ${r.status}`);
     path = target;
     urlBox.value = target;
     const page = pageFor(target);
@@ -187,7 +319,8 @@
   }
 
   // Page HTML with /static/ files turned into blob: URLs and a bridge
-  // that sends the app's own requests (/__pyweb/...) to Python.
+  // that sends the app's own requests (/__pyweb/...) to Python and its
+  // console messages and errors to the playground's Console.
   function preview(html) {
     html = html.replace(/(src|href)="(\/static\/[^"]+)"/g, (m, attr, url) => {
       const res = request("GET", url.replace(/&amp;/g, "&"));
@@ -205,6 +338,13 @@
         const url = typeof input === "string" ? input : input.url;
         return url.startsWith("/__pyweb/") ? host.fetch(url, init || {}) : realFetch(input, init);
       };
+      const show = (v) => { try { return typeof v === "string" ? v : JSON.stringify(v); } catch { return String(v); } };
+      for (const [name, kind] of [["log", "browser"], ["info", "browser"], ["warn", "warn"], ["error", "error"]]) {
+        const original = console[name].bind(console);
+        console[name] = (...args) => { host.log(kind, args.map(show).join(" ")); original(...args); };
+      }
+      addEventListener("error", (e) => host.log("error", e.message || "error"));
+      addEventListener("unhandledrejection", (e) => host.log("error", (e.reason && e.reason.message) || String(e.reason)));
       // Links and window.location changes go to the app, not the docs site.
       if (window.navigation) {
         navigation.addEventListener("navigate", (e) => {
@@ -229,18 +369,41 @@
   window.__pywebPlayground = {
     fetch: async (url, init) => {
       const headers = new Headers(init.headers || {});
-      const r = request(init.method || "GET", url, typeof init.body === "string" ? init.body : "",
-        headers.get("content-type") || "");
+      const method = init.method || "GET";
+      const r = request(method, url, typeof init.body === "string" ? init.body : "", headers.get("content-type") || "");
+      const m = url.match(/^\/__pyweb\/rpc\/(\w+)/);
+      if (m) {
+        let args = "";
+        try { args = JSON.stringify(JSON.parse(init.body || "{}").args || {}); } catch { /* not JSON */ }
+        let outcome = `${r.status}`;
+        if (r.status >= 400) {
+          try { outcome += " " + JSON.parse(r.body).error.message; } catch { /* plain body */ }
+        }
+        log(r.status >= 400 ? "error" : "call", `${m[1]}(${args.length > 120 ? args.slice(0, 117) + "…" : args})`,
+          `${outcome} · ${r.ms} ms`);
+      }
       const empty = r.status === 204 || r.status === 304;
       return new Response(empty ? null : r.body, { status: r.status, headers: r.headers });
     },
     navigate: (href) => setTimeout(() => navigate(href)), // after the click/handler finishes
+    log: (kind, text) => log(kind, text),
   };
 
   // ------------------------------------------------------------ panels
+  async function gzipSize(text) {
+    if (typeof CompressionStream === "undefined") return null;
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    return (await new Response(stream).arrayBuffer()).byteLength;
+  }
+  const kb = (n) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`);
+
   function showCompiled(page) {
-    jsOut.textContent = page && page.js ? page.js
-      : "// This page is static: it ships no JavaScript, only server-rendered HTML.";
+    jsOut.innerHTML = page && page.js ? highlightJs(page.js)
+      : '<span class="c">// This page is static: it ships no JavaScript, only server-rendered HTML.</span>';
+    jsInfo.textContent = page && page.js ? `${page.name}.js · ${kb(page.js.length)}` : "No JavaScript for this page";
+    if (page && page.js) {
+      gzipSize(page.js).then((n) => { if (n) jsInfo.textContent = `${page.name}.js · ${kb(page.js.length)} · ${kb(n)} gzipped (plus the shared runtime, cached once)`; });
+    }
     placeOut.innerHTML = "";
     if (!page) return;
     const table = document.createElement("table");
@@ -260,17 +423,80 @@
     placeOut.append(table);
   }
 
+  const JS_KW = new Set(("const let var function return if else for of in while async await import from export new try " +
+    "catch finally throw true false null undefined break continue typeof").split(" "));
+  function highlightJs(code) {
+    return escHtml(code).replace(/(\/\/[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\b(\d+(?:\.\d+)?)\b|(?<![\w$])([A-Za-z_$][\w$]*)/g,
+      (m, comment, str, num, word) => comment ? `<span class="c">${m}</span>` : str ? `<span class="s">${m}</span>`
+        : num ? `<span class="n">${m}</span>` : JS_KW.has(word) ? `<span class="k">${m}</span>`
+          : word.startsWith("$") ? `<span class="t">${m}</span>` : m);
+  }
+
+  function selectTab(name) {
+    for (const t of document.querySelectorAll(".pg-tabs [role=tab]")) t.setAttribute("aria-selected", String(t.dataset.tab === name));
+    stage.hidden = name !== "preview";
+    document.querySelector(".pg-urlbar").classList.toggle("dim", name !== "preview");
+    consoleOut.hidden = name !== "console";
+    $("pg-jswrap").hidden = name !== "js";
+    placeOut.hidden = name !== "place";
+    if (name === "console") {
+      unseen = 0;
+      countEl.hidden = true;
+      countEl.classList.remove("bad");
+    }
+  }
   for (const tab of document.querySelectorAll(".pg-tabs [role=tab]")) {
-    tab.addEventListener("click", () => {
-      for (const t of document.querySelectorAll(".pg-tabs [role=tab]")) t.setAttribute("aria-selected", String(t === tab));
-      frame.hidden = tab.dataset.tab !== "preview";
-      jsOut.hidden = tab.dataset.tab !== "js";
-      placeOut.hidden = tab.dataset.tab !== "place";
-    });
+    tab.addEventListener("click", () => selectTab(tab.dataset.tab));
   }
   pageSel.addEventListener("change", () => navigate(sample(pageSel.value)));
   urlBox.addEventListener("keydown", (e) => { if (e.key === "Enter") navigate(urlBox.value.trim() || "/"); });
+  $("pg-reload").addEventListener("click", () => host && navigate(path));
   $("pg-run").addEventListener("click", run);
+
+  for (const b of document.querySelectorAll(".pg-sizes button")) {
+    b.addEventListener("click", () => {
+      for (const o of document.querySelectorAll(".pg-sizes button")) o.setAttribute("aria-pressed", String(o === b));
+      frame.style.maxWidth = b.dataset.width ? b.dataset.width + "px" : "";
+      stage.classList.toggle("framed", Boolean(b.dataset.width));
+    });
+  }
+
+  // Phones: one pane at a time.
+  for (const b of document.querySelectorAll(".pg-switch button")) {
+    b.addEventListener("click", () => {
+      for (const o of document.querySelectorAll(".pg-switch button")) o.setAttribute("aria-selected", String(o === b));
+      $("pg-split").dataset.pane = b.dataset.pane;
+    });
+  }
+
+  // Drag the divider to resize the panes (remembered).
+  const split = $("pg-split");
+  const resizer = $("pg-resize");
+  const setSplit = (fraction) => {
+    const f = Math.min(0.75, Math.max(0.25, fraction));
+    split.style.gridTemplateColumns = `minmax(0, ${f}fr) 10px minmax(0, ${1 - f}fr)`;
+    try { localStorage.setItem("pyweb-playground-split", String(f)); } catch { /* private mode */ }
+  };
+  try { const f = parseFloat(localStorage.getItem("pyweb-playground-split")); if (f) setSplit(f); } catch { /* private mode */ }
+  resizer.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    resizer.setPointerCapture(e.pointerId);
+    frame.style.pointerEvents = "none";   // the iframe would swallow the drag
+    const box = split.getBoundingClientRect();
+    const move = (ev) => setSplit((ev.clientX - box.left) / box.width);
+    const up = () => {
+      frame.style.pointerEvents = "";
+      resizer.removeEventListener("pointermove", move);
+      resizer.removeEventListener("pointerup", up);
+    };
+    resizer.addEventListener("pointermove", move);
+    resizer.addEventListener("pointerup", up);
+  });
+  resizer.addEventListener("keydown", (e) => {
+    const now = parseFloat(localStorage.getItem("pyweb-playground-split") || "0.5");
+    if (e.key === "ArrowLeft") setSplit(now - 0.05);
+    if (e.key === "ArrowRight") setSplit(now + 0.05);
+  });
 
   // ---------------------------------------------- examples and sharing
   async function pack(text) {
@@ -300,10 +526,34 @@
     }
   });
 
-  function loadExample(name) {
-    editor.value = cfg.examples[name].source;
+  function download() {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([editor.value], { type: "text/plain" }));
+    a.download = "app.pyweb";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    status("Saved app.pyweb: run it with  pyweb dev app.pyweb");
+  }
+  $("pg-download").addEventListener("click", download);
+
+  $("pg-reset").addEventListener("click", () => {
+    const name = example || "counter";
+    store.clear();
+    exampleSel.value = name;
+    history.replaceState(null, "", location.pathname + "#" + name);
+    loadExample(name);
+    status("Back to the original example");
+  });
+
+  function loadExample(name, source) {
+    example = name;
+    editor.value = source ?? cfg.examples[name].source;
     path = "/";
-    renderGutter();
+    editor.scrollTop = 0;
+    saveDraft();
+    paint();
     run();
   }
   for (const [name, ex] of Object.entries(cfg.examples)) {
@@ -313,21 +563,38 @@
     exampleSel.append(opt);
   }
   exampleSel.addEventListener("change", () => {
+    if (edited() && !confirm("Switch examples? Your edits to this one will be lost (Download or Share them first to keep them).")) {
+      exampleSel.value = example;
+      return;
+    }
     history.replaceState(null, "", location.pathname + "#" + exampleSel.value);
+    store.clear();
     loadExample(exampleSel.value);
   });
 
   (async () => {
     const hash = location.hash.slice(1);
+    const draft = store.get();
+    let restored = false;
     if (hash.startsWith("code=")) {
-      try { editor.value = await unpack(hash.slice(5)); } catch { editor.value = cfg.examples.counter.source; }
-      exampleSel.value = "";
+      example = "";
+      try { editor.value = await unpack(hash.slice(5)); } catch { example = "counter"; editor.value = cfg.examples.counter.source; }
+      exampleSel.value = example;
     } else {
-      const name = cfg.examples[hash] ? hash : "counter";
-      exampleSel.value = name;
-      editor.value = cfg.examples[name].source;
+      const named = cfg.examples[hash] ? hash : "";
+      if (draft && draft.source && (!named || draft.example === named)) {
+        example = draft.example && cfg.examples[draft.example] ? draft.example : "";
+        editor.value = draft.source;
+        restored = true;
+      } else {
+        example = named || "counter";
+        editor.value = cfg.examples[example].source;
+      }
+      exampleSel.value = example;
     }
-    renderGutter();
-    boot();
+    draftEl.hidden = !edited();   // a draft for another example stays saved until you edit this one
+    paint();
+    await boot();
+    if (restored && host) status("Restored your last edits (Reset goes back to the example)");
   })();
 })();

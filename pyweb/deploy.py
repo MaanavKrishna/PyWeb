@@ -27,8 +27,39 @@ def dockerfile(python="3.12-slim", port=8000, app_file="app.pyweb"):
     )
 
 
-def compose(service="pyweb", port=8000, db_url=""):
+def compose(service="pyweb", port=8000, db_url="", domain=""):
+    """docker compose file. With ``domain``, Caddy sits in front: HTTPS certificates
+    are fetched automatically, the app is only reachable through Caddy, and PyWeb is
+    told to trust it (PYWEB_TRUST_PROXY=1) and to send Secure cookies."""
     db = f'\n      - DATABASE_URL={db_url}' if db_url else ""
+    if domain:
+        return (
+            "services:\n"
+            f"  {service}:\n"
+            "    build: .\n"
+            "    expose:\n"
+            f'      - "{port}"\n'
+            "    environment:\n"
+            f"      - PORT={port}\n"
+            "      - PYWEB_TRUST_PROXY=1\n"
+            "      - PYWEB_COOKIE_SECURE=1\n"
+            "      - PYWEB_AUTH_SECRET=${PYWEB_AUTH_SECRET:?set PYWEB_AUTH_SECRET (python -c \"import secrets; print(secrets.token_hex(32))\")}"
+            f"{db}\n"
+            "    restart: unless-stopped\n"
+            "  caddy:\n"
+            "    image: caddy:2\n"
+            "    ports:\n"
+            '      - "80:80"\n'
+            '      - "443:443"\n'
+            "    volumes:\n"
+            "      - ./Caddyfile:/etc/caddy/Caddyfile:ro\n"
+            "      - caddy_data:/data\n"
+            "    depends_on:\n"
+            f"      - {service}\n"
+            "    restart: unless-stopped\n"
+            "volumes:\n"
+            "  caddy_data:\n"
+        )
     return (
         "services:\n"
         f"  {service}:\n"
@@ -39,6 +70,14 @@ def compose(service="pyweb", port=8000, db_url=""):
         f"      - PORT={port}{db}\n"
         "    restart: unless-stopped\n"
     )
+
+
+def caddyfile(domain, service="pyweb", port=8000):
+    """Caddy config: HTTPS for ``domain`` (certificates are automatic), proxied to the app."""
+    return (f"{domain} {{\n"
+            "    encode zstd gzip\n"
+            f"    reverse_proxy {service}:{port}\n"
+            "}\n")
 
 
 def k8s_manifest(app="pyweb", image="pyweb:latest", port=8000, replicas=2):
@@ -66,12 +105,16 @@ def k8s_manifest(app="pyweb", image="pyweb:latest", port=8000, replicas=2):
         "          periodSeconds: 30\n"
         "        readinessProbe:\n"
         "          httpGet:\n"
-        "            path: /healthz\n"
+        "            path: /readyz\n"
         f"            port: {port}\n"
         "          periodSeconds: 5\n"
         "        env:\n"
         "        - name: PORT\n"
         f'          value: "{port}"\n'
+        "        # Traffic reaches the pods through your Ingress (one proxy), so trust its\n"
+        "        # X-Forwarded-For for rate limits; use the number of proxies if there are more.\n"
+        "        - name: PYWEB_TRUST_PROXY\n"
+        '          value: "1"\n'
         "---\n"
         "apiVersion: v1\nkind: Service\nmetadata:\n"
         f"  name: {app}\n"

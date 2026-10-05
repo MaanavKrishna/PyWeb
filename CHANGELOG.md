@@ -31,12 +31,25 @@ is signed out by the upgrade.
   when one doesn't); `/healthz` stays a liveness check.
 - **Graceful shutdown:** on SIGTERM and ASGI shutdown, live connections
   end and background jobs get up to 10 seconds to finish.
+- **`pyweb deploy --target compose --domain example.com`** puts Caddy in
+  front of the app with automatic HTTPS, keeps the app reachable only
+  through it, and sets `PYWEB_TRUST_PROXY=1` and Secure cookies. The k8s
+  target trusts its Ingress and uses `/readyz` for readiness. The
+  deployment docs explain reverse proxies, with nginx and Caddy examples.
 - **`pyweb check --production`** lists settings that would leave a gap
   (secret, HTTPS cookies, proxy, Redis with several workers, ...).
 - **npm supply chain:** `pyweb.lock` records a SHA-256 per vendored file
   and `pyweb build` refuses files that changed.
 - **CI:** dependency vulnerability audit (pip-audit), CodeQL code
   scanning, Dependabot, and signed build provenance for release files.
+- **A much better playground** on the website: syntax highlighting with
+  the error line marked (click the line number to jump to it), a Console
+  that shows `print()` output, every server call with its arguments,
+  status and time, and errors from the page; a draggable divider;
+  phone/tablet/desktop preview widths and a reload button; highlighted
+  JavaScript with its gzipped size; Reset, Download (`app.pyweb`, ready
+  for `pyweb dev`) and autosave, so edits survive a reload; and a
+  Code/Preview switch on phones.
 - Docs: a threat model, key rotation, session lifetime, a production
   checklist, and the new settings.
 

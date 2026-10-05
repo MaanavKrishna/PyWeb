@@ -117,3 +117,42 @@ def test_ai_chat_with_the_demo_model(page, site):
     app.locator("#prompt").press("Enter")
     expect(app.locator(".bubble.assistant strong").first).to_have_text("Hi there", timeout=20000)
     expect(app.locator("#send")).to_be_visible()
+
+
+def test_editor_highlighting_console_and_tools(page, site):
+    app = open_playground(page, site)
+    expect(page.locator("#pg-hl .k", has_text="def").first).to_be_visible()      # syntax highlighting
+    editor = page.locator("#pg-source")
+    editor.fill(editor.input_value().replace("        count += step", "        print('clicked', count)\n        count += step"))
+    expect(page.locator("#pg-draft")).to_be_visible()                           # marked as edited
+    page.click("#pg-run")
+    expect(app.locator("[data-pw-root]")).to_have_attribute("data-pw-mode", "hydrated")
+    app.locator("#inc").click()
+    expect(page.locator("#pg-count")).to_be_visible()                           # unseen console output
+    page.click(".pg-tabs >> text=Console")
+    expect(page.locator(".pg-row.browser .pg-text")).to_have_text("clicked 0")  # print() in a handler runs in the browser
+    page.reload()                                                               # edits survive a reload
+    expect(page.locator("#pg-status")).to_contain_text("Restored", timeout=90000)
+    assert "print('clicked', count)" in page.locator("#pg-source").input_value()
+    with page.expect_download() as dl:
+        page.click("#pg-download")
+    assert dl.value.suggested_filename == "app.pyweb"
+    page.click("#pg-reset")
+    expect(page.locator("#pg-draft")).to_be_hidden()
+    assert "print(" not in page.locator("#pg-source").input_value()
+
+
+def test_server_calls_and_errors_are_logged(page, site):
+    app = open_playground(page, site, "#chat")
+    app.locator("a", has_text="#python").click()
+    app.locator("#draft").fill("hello console")
+    app.locator("#draft").press("Enter")
+    expect(app.locator(".msg")).to_have_count(1, timeout=8000)
+    page.click(".pg-tabs >> text=Console")
+    expect(page.locator(".pg-row.call .pg-text", has_text="send(")).to_be_visible()
+    expect(page.locator(".pg-row.call .pg-detail").first).to_contain_text("200")
+    page.click(".pg-tabs >> text=JavaScript")
+    expect(page.locator("#pg-jsinfo")).to_contain_text("gzipped")
+    page.click(".pg-tabs >> text=Preview")
+    page.click(".pg-sizes button[data-width='390']")
+    assert page.locator("#pg-frame").evaluate("f => f.getBoundingClientRect().width") <= 392

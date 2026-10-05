@@ -6,6 +6,8 @@ way ``pyweb dev`` does (pyweb.testing.TestClient wraps the same Site), and
 and @server calls. Results go back to JavaScript as JSON strings.
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -47,6 +49,14 @@ def install_static(name, text):
         fh.write(text)
 
 
+@contextlib.contextmanager
+def _captured():
+    """Collect what the app prints (shown in the playground's Console)."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        yield out
+
+
 def load(source):
     """Compile and start ``source``; JSON with pages or the first error."""
     global _client
@@ -54,13 +64,14 @@ def load(source):
     with open(APP, "w") as fh:
         fh.write(source)
     _forget_app_modules()
-    try:
-        client = TestClient(APP)
-    except (SyntaxError, ValueError) as exc:  # compile errors
-        return json.dumps({"ok": False, "error": _error_record(exc, "app.pyweb")})
-    except Exception as exc:  # noqa: BLE001 - the app's own module code failed
-        return json.dumps({"ok": False, "error": {"line": _app_line(exc),
-                                                  "message": f"{type(exc).__name__}: {exc}"}})
+    with _captured() as printed:
+        try:
+            client = TestClient(APP)
+        except (SyntaxError, ValueError) as exc:  # compile errors
+            return json.dumps({"ok": False, "error": _error_record(exc, "app.pyweb"), "output": printed.getvalue()})
+        except Exception as exc:  # noqa: BLE001 - the app's own module code failed
+            return json.dumps({"ok": False, "output": printed.getvalue(),
+                               "error": {"line": _app_line(exc), "message": f"{type(exc).__name__}: {exc}"}})
     if _client is not None:
         client.cookies = dict(_client.cookies)  # stay logged in across edits
     _client = client
@@ -70,14 +81,17 @@ def load(source):
             continue
         pages.append({"name": name, "route": page["route"], "js": page["js"],
                       "placement": {k: list(v) for k, v in page["placement"].items() if not k.startswith("__")}})
-    return json.dumps({"ok": True, "pages": pages})
+    return json.dumps({"ok": True, "pages": pages, "output": printed.getvalue()})
 
 
 def request(method, path, body="", content_type=""):
     """One HTTP request to the running app; JSON with status, headers, body."""
     headers = {"Content-Type": content_type} if content_type else None
-    r = _client.request(method, path, body.encode() if body else b"", headers)
+    start = time.perf_counter()
+    with _captured() as printed:
+        r = _client.request(method, path, body.encode() if body else b"", headers)
     hdrs = {}
     for k, v in r.headers:
         hdrs[k.lower()] = v
-    return json.dumps({"status": r.status, "headers": hdrs, "body": r.text})
+    return json.dumps({"status": r.status, "headers": hdrs, "body": r.text, "output": printed.getvalue(),
+                       "ms": round((time.perf_counter() - start) * 1000, 1)})

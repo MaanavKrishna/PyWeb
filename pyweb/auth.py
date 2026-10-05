@@ -275,13 +275,92 @@ def issue_session(data: dict, secret: str, max_age: int = 3600) -> str:
     return f"{payload_b64}.{_sign(payload_b64, secret)}"
 
 
-def verify_session(cookie: str, secret: str, max_age: int = 3600):
-    """Verify a stateless session cookie; return payload dict or ``None``."""
+class SessionVersions:
+    """Per-user session versions, for signing a user out everywhere (in memory: one process).
+
+    Sessions carry the version current when they were made; :func:`revoke_user`
+    bumps it, so every older session stops working.
+    """
+
+    def __init__(self):
+        self._v: dict = {}
+        self._lock = __import__("threading").Lock()
+
+    def get(self, user_id) -> int:
+        with self._lock:
+            return self._v.get(str(user_id), 0)
+
+    def bump(self, user_id) -> int:
+        with self._lock:
+            self._v[str(user_id)] = self._v.get(str(user_id), 0) + 1
+            return self._v[str(user_id)]
+
+
+class RedisSessionVersions(SessionVersions):
+    """Session versions in Redis, shared by every server process."""
+
+    def __init__(self, url="redis://localhost:6379/0", client=None, prefix="pyweb:sessver:"):
+        super().__init__()
+        if client is None:
+            import redis  # noqa: PLC0415 - optional dependency
+            client = redis.Redis.from_url(url)
+        self._r, self._prefix = client, prefix
+
+    def get(self, user_id) -> int:
+        return int(self._r.get(self._prefix + str(user_id)) or 0)
+
+    def bump(self, user_id) -> int:
+        return int(self._r.incr(self._prefix + str(user_id)))
+
+
+_versions: SessionVersions | None = None
+
+
+def use_session_versions(store):
+    """Turn on revocation with ``store`` (a :class:`SessionVersions`); returns it."""
+    global _versions
+    _versions = store
+    return store
+
+
+def session_versions():
+    return _versions
+
+
+def revoke_user(user_id):
+    """Sign ``user_id`` out of every session (every device). Turns revocation on if needed."""
+    store = _versions if _versions is not None else use_session_versions(SessionVersions())
+    return store.bump(user_id)
+
+
+#: Sessions end this long after sign-in, however active the user is.
+ABSOLUTE_AGE = 30 * 24 * 3600
+
+
+def session_valid(payload, *, absolute_age=ABSOLUTE_AGE, now=None) -> bool:
+    """Checks beyond the signature: the absolute lifetime and revocation."""
+    now = time.time() if now is None else now
+    started = payload.get("auth_time", payload.get("iat", 0))
+    if not isinstance(started, (int, float)) or now - started > absolute_age:
+        return False
+    if _versions is not None and "sub" in payload:
+        if int(payload.get("ver", 0) or 0) < _versions.get(payload["sub"]):
+            return False
+    return True
+
+
+def verify_session(cookie: str, secret, max_age: int = 3600):
+    """Verify a stateless session cookie; return payload dict or ``None``.
+
+    ``secret`` may be a list of keys (key rotation): any of them may have signed it.
+    """
+    from .keys import any_valid
     try:
         payload_b64, sig = cookie.rsplit(".", 1)
-    except ValueError:
+    except (ValueError, AttributeError):
         return None
-    if not hmac.compare_digest(_sign(payload_b64, secret), sig):
+    candidates = secret if isinstance(secret, (list, tuple)) else [secret]
+    if not any_valid(candidates, lambda k: hmac.compare_digest(_sign(payload_b64, k), sig)):
         return None
     try:
         payload = json.loads(_b64d(payload_b64))

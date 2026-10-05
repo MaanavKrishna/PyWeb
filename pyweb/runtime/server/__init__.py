@@ -297,7 +297,11 @@ class Server:
             if not secret:
                 return None  # no secret configured: decorators are advisory
             from pyweb import auth as _auth
-            session = _auth.session_from_request(req, secret)
+            from pyweb import keys as _keys
+            from pyweb.context import session as _session
+            session = _auth.session_from_request(req, _keys.verify_keys(secret, "session"), _session.max_age)
+            if session is not None and not _auth.session_valid(session, absolute_age=_session.absolute_age):
+                session = None
             if session is None or "sub" not in session:
                 return self._err(_rpc.Code.AUTH, "authentication required")
             if need and not _auth.can(session.get("roles", []), fn):
@@ -601,14 +605,14 @@ class Server:
         token = (qs.get("feed") or [""])[0]
         if not token:
             return self._err(400, "missing ?feed= (create one with channel(name) while rendering)")
-        feed = _rt.read_feed(token, _ctx._secret(_ctx.current()))
+        feed = _rt.read_feed(token, _ctx.verify_keys("feed"))
         if feed is None:
             return self._err(403, "invalid or expired feed; reload the page")
         name, start = feed
         spec = (qs.get("live") or [""])[0]
         if spec and name.startswith("pyweb.live:"):
             from pyweb import livedata
-            livedata.adopt_spec(spec, _ctx._secret(_ctx.current()))   # keep re-running it here too
+            livedata.adopt_spec(spec, _ctx.verify_keys("live"))   # keep re-running it here too
         return getattr(self, "bus", None) or _rt.current_bus(), name, start, qs
 
     def handle_events(self, req: Request):

@@ -61,7 +61,9 @@ def test_channel_signs_with_the_request_secret_and_remembers_position():
     finally:
         ctx.deactivate(token)
     try:
-        assert rt.read_feed(feed, SECRET) == ("chat", bus._seq)
+        from pyweb import keys
+        assert rt.read_feed(feed, keys.derive(SECRET, "feed")) == ("chat", bus._seq)   # its own key
+        assert rt.read_feed(feed, SECRET) is None                                      # not the root
         bus.publish("chat", {"text": "after render"})
         srv = Server(compile_source(APP), auth_secret=SECRET)
         body = srv.handle(Request("GET", f"/__pyweb/events?feed={feed}")).body.snapshot().decode()

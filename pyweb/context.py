@@ -171,29 +171,61 @@ def _secret(ctx):
     return _dev_secret
 
 
+def sign_key(purpose, ctx=None):
+    """The key that signs new ``purpose`` tokens (see :mod:`pyweb.keys`)."""
+    from . import keys
+    return keys.signing_key(_secret(ctx or current()), purpose)
+
+
+def verify_keys(purpose, ctx=None):
+    """Every key a ``purpose`` token may carry: current, previous secrets, pre-0.4.4."""
+    from . import keys
+    return keys.verify_keys(_secret(ctx or current()), purpose)
+
+
 class _SessionProxy:
     """``pyweb.session``: signed-cookie login sessions."""
 
+    #: Logged out after this long without a visit (seconds).
     max_age = 7 * 24 * 3600
+    #: Logged out this long after signing in, however active (seconds).
+    absolute_age = 30 * 24 * 3600
+    #: A visit after this long renews the idle timer (the cookie is reissued).
+    renew_after = 24 * 3600
 
     def user(self):
         """The session payload (``{"sub": user_id, ...}``) or ``None``."""
         ctx = current()
         if not ctx._session_loaded:
             from pyweb import auth
-            ctx._session = auth.session_from_request(ctx.request, _secret(ctx), self.max_age)
+            payload = auth.session_from_request(ctx.request, verify_keys("session", ctx), self.max_age)
+            if payload is not None and not auth.session_valid(payload, absolute_age=self.absolute_age):
+                payload = None
+            ctx._session = payload
             ctx._session_loaded = True
+            if payload is not None and auth.time.time() - payload.get("iat", 0) > self.renew_after:
+                self._issue(ctx, {k: v for k, v in payload.items() if k != "iat"})
+        return ctx._session
+
+    def _issue(self, ctx, payload):
+        from pyweb import auth
+        token = auth.issue_session(payload, sign_key("session", ctx), self.max_age)
+        request.set_cookie(auth.SESSION_COOKIE, token, max_age=self.max_age)
+        ctx._session = auth.verify_session(token, sign_key("session", ctx), self.max_age)
+        ctx._session_loaded = True
         return ctx._session
 
     def login(self, user_id, **claims):
+        """Sign ``user_id`` in. Each login starts a new session (a fresh ``sid``)."""
+        import secrets as _secrets
+        import time as _time
         from pyweb import auth
         ctx = current()
-        payload = {"sub": user_id, **claims}
-        token = auth.issue_session(payload, _secret(ctx), self.max_age)
-        request.set_cookie(auth.SESSION_COOKIE, token, max_age=self.max_age)
-        ctx._session = auth.verify_session(token, _secret(ctx), self.max_age)
-        ctx._session_loaded = True
-        return ctx._session
+        payload = {**claims, "sub": user_id, "sid": _secrets.token_urlsafe(16), "auth_time": int(_time.time())}
+        versions = auth.session_versions()
+        if versions is not None:
+            payload["ver"] = versions.get(user_id)
+        return self._issue(ctx, payload)
 
     def logout(self):
         from pyweb import auth

@@ -270,9 +270,11 @@ def make_spec(secret, dbid, sql, params, tables):
 def adopt_spec(token, secret):
     """Register the query a signed spec describes (a page rendered elsewhere is listening). Returns its key."""
     import hmac
+    from .keys import any_valid
     from .realtime import _unb64
     payload, _, sig = (token or "").partition(".")
-    if not payload or not hmac.compare_digest(sig, _sign(secret, payload)):
+    candidates = secret if isinstance(secret, (list, tuple)) else [secret]
+    if not payload or not any_valid(candidates, lambda k: hmac.compare_digest(sig, _sign(k, payload))):
         return None
     try:
         dbid, sql, params, tables = json.loads(_unb64(payload))
@@ -292,7 +294,7 @@ def live(db, sql, params=(), *, tables=None):
     ``tables`` lists the tables to watch; by default the ones after
     ``FROM``/``JOIN`` in the query. Call it in a page or layout body.
     """
-    from .context import _secret, current
+    from .context import sign_key
     from .realtime import current_bus, make_feed
     params = tuple(params)
     watch = sorted({t.lower() for t in tables}) if tables else read_tables(sql)
@@ -303,10 +305,9 @@ def live(db, sql, params=(), *, tables=None):
     from .realtime import Bus
     shared = type(current_bus()) is Bus and not entry.dirty and entry.rows is not None
     rows = entry.rows if shared else entry.run()   # one process: viewers share the last run
-    secret = _secret(current())
     chan = LIVE_CHANNEL + entry.key
-    meta = {"feed": make_feed(chan, secret, since=current_bus().position(chan)),
-            "spec": make_spec(secret, entry.dbid, sql, params, watch), "version": entry.version}
+    meta = {"feed": make_feed(chan, sign_key("feed"), since=current_bus().position(chan)),
+            "spec": make_spec(sign_key("live"), entry.dbid, sql, params, watch), "version": entry.version}
     return LiveRows(rows, meta)
 
 

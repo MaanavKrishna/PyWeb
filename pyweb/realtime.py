@@ -281,8 +281,10 @@ def read_feed(token, secret, *, now=None):
     import hmac
     import json as _json
     import time as _time
+    from .keys import any_valid
     payload, _, sig = (token or "").partition(".")
-    if not payload or not hmac.compare_digest(sig, _signature(secret, payload)):
+    candidates = secret if isinstance(secret, (list, tuple)) else [secret]
+    if not payload or not any_valid(candidates, lambda k: hmac.compare_digest(sig, _signature(k, payload))):
         return None
     try:
         name, expires, since = _json.loads(_unb64(payload))
@@ -306,8 +308,8 @@ def channel(name: str) -> str:
     The feed remembers the channel's position, so messages published after
     the page rendered (even before the browser connects) are delivered.
     """
-    from .context import _secret, current
-    return make_feed(name, _secret(current()), since=_default_bus.position(name))
+    from .context import sign_key
+    return make_feed(name, sign_key("feed"), since=_default_bus.position(name))
 
 
 def publish(name: str, data=None) -> int:

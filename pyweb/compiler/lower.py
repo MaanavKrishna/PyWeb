@@ -29,7 +29,7 @@ import os
 import re
 
 from . import pyjs
-from .ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode, SlotNode
+from .ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode, SlotNode, TextNode
 from .errors import CompileError
 from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
                    ModuleContext, Translator, jsname)
@@ -40,11 +40,16 @@ RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when a
                   "from \"./runtime.js\";")
 
 MARKDOWN_IMPORT = 'import { markdown as $markdown } from "./markdown.js";'
+FORMS_IMPORT = 'import "./forms.js";'
 SECRET_NAME = re.compile(r"(?i)(secret|password|passwd|api_?key|token|private_?key|credential)")
 
 PAGE_DECORATOR_ATTRS = ("page",)
 LAYOUT_DECORATOR = "layout"
-BUILTIN_COMPONENTS = ("Markdown",)
+FORM_TAGS = ("Form", "Submit", "FormError", "Input", "Textarea", "Select", "Checkbox", "FileInput")
+FIELD_TAGS = ("Input", "Textarea", "Select", "Checkbox", "FileInput")
+BUILTIN_COMPONENTS = ("Markdown",) + FORM_TAGS
+FORMS_VAR = "__pw_forms__"
+FORMS_FN = "__pw_form_specs__"
 ERROR_DECORATOR = "error"
 PAGE_OPTIONS = ("title", "description", "image", "canonical", "noindex", "layout")
 SERVER_DECORATORS = ("server", "worker", "edge", "task")
@@ -337,7 +342,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
     for info in pages + components:
         info.ui = _ui_of(info.node, ui_all)
     for info in pages + components + layouts:
-        info.ui = _builtins(info.ui, ctx, filename)
+        info.ui = _builtins(info.ui, ctx, filename, info)
+        inject_forms(info, ctx)
     for info in pages:
         info.layouts = _layouts_for(info, layouts, filename)
     ctx.layouts = {info.name: info for info in layouts}
@@ -375,30 +381,211 @@ def _ui_of(node, ui_all):
     return [n for n in ui_all if span[0] <= getattr(n, "line", 0) <= span[1]]
 
 
-def _builtins(nodes, ctx, filename):
-    """Replace ``<Markdown .../>`` (imported from pyweb, not shadowed by a component) with its node."""
+def _builtins(nodes, ctx, filename, info=None, form=None):
+    """Replace built-in components imported from pyweb (``<Markdown>``, ``<Form>`` and its
+    fields), unless shadowed by a component of the same name, with what they render."""
     out = []
     for n in nodes:
         if isinstance(n, Element) and n.tag in ctx.builtin_components and n.tag not in ctx.components:
-            if n.children:
-                raise CompileError(f"<{n.tag}> takes its text as text={{...}}, not as children", n.line, filename)
-            if "text" not in n.attrs or n.attrs["text"] is True:
-                raise CompileError(f"<{n.tag}> needs text=, e.g. <{n.tag} text={{reply}} />", n.line, filename)
-            bad = [k for k in n.attrs if k.startswith("on") or k in ("bind", "ref")]
-            if bad:
-                raise CompileError(f"<{n.tag}> doesn't take {bad[0]}=; wrap it in an element that does",
-                                   n.line, filename)
-            out.append(MarkdownNode(dict(n.attrs), n.line))
+            kind = ctx.builtin_components[n.tag]
+            if kind == "Markdown":
+                out.append(_markdown_node(n, filename))
+            else:
+                out.extend(_form_builtin(kind, n, ctx, filename, info, form))
             continue
         if isinstance(n, Element):
-            n.children = _builtins(n.children, ctx, filename)
+            n.children = _builtins(n.children, ctx, filename, info, form)
         elif isinstance(n, ControlFor):
-            n.body = _builtins(n.body, ctx, filename)
+            n.body = _builtins(n.body, ctx, filename, info, form)
         elif isinstance(n, ControlIf):
-            n.body = _builtins(n.body, ctx, filename)
-            n.orelse = _builtins(n.orelse, ctx, filename)
+            n.body = _builtins(n.body, ctx, filename, info, form)
+            n.orelse = _builtins(n.orelse, ctx, filename, info, form)
         out.append(n)
     return out
+
+
+def _markdown_node(n, filename):
+    tag = n.tag
+    if n.children:
+        raise CompileError(f"<{tag}> takes its text as text={{...}}, not as children", n.line, filename)
+    if "text" not in n.attrs or n.attrs["text"] is True:
+        raise CompileError(f"<{tag}> needs text=, e.g. <{tag} text={{reply}} />", n.line, filename)
+    bad = [k for k in n.attrs if k.startswith("on") or k in ("bind", "ref")]
+    if bad:
+        raise CompileError(f"<{tag}> doesn't take {bad[0]}=; wrap it in an element that does",
+                           n.line, filename)
+    return MarkdownNode(dict(n.attrs), n.line)
+
+
+def _lit(value, line):
+    return ("lit", value, line)
+
+
+def _x(code, line):
+    return ("expr", code, line)
+
+
+def _form_builtin(kind, n, ctx, filename, info, form):
+    """``<Form>``/``<Input>``/... as plain elements reading ``__pw_forms__`` (made on the server)."""
+    line = n.line
+    bad = [k for k in n.attrs if k.startswith("on") or k in ("bind", "ref")]
+    if bad:
+        raise CompileError(f"<{n.tag}> doesn't take {bad[0]}=; forms submit to their action=",
+                           line, filename)
+    if info is None or info.kind == "component":
+        raise CompileError(f"<{n.tag}> works in pages and layouts; pass data into components as props "
+                           "and keep the <Form> in the page", line, filename)
+    if kind == "Form":
+        if form is not None:
+            raise CompileError("a <Form> can't be inside another <Form>", line, filename)
+        action = n.attrs.get("action")
+        if not isinstance(action, tuple) or action[0] != "expr" or not re.fullmatch(r"[A-Za-z_]\w*", action[1].strip()):
+            raise CompileError("<Form> needs action={a_server_function}, e.g. <Form action={save_post}>",
+                               line, filename)
+        name = action[1].strip()
+        if name not in ctx.server_fns and (name in ctx.components or name in ctx.helpers
+                                           or name in ctx.browser_globals):
+            raise CompileError(f"<Form action={{{name}}}>: {name} must be an @server function",
+                               line, filename)
+        fid = n.attrs.get("id")
+        if isinstance(fid, tuple) and fid[0] != "lit":
+            raise CompileError("<Form id=...> must be plain text", line, filename)
+        fid = fid[1] if isinstance(fid, tuple) else name
+        if not re.fullmatch(r"[A-Za-z_][\w-]*", fid):
+            raise CompileError(f"<Form id={fid!r}>: use letters, digits, _ and -", line, filename)
+        forms = info.__dict__.setdefault("forms", {})
+        if fid in forms:
+            raise CompileError(f"two <Form>s on this page use {fid!r}: give each an id=\"...\"", line, filename)
+        values = n.attrs.get("values")
+        redirect = n.attrs.get("redirect")
+        forms[fid] = {"action": name, "line": line, "fields": [],
+                      "values": values[1] if isinstance(values, tuple) and values[0] == "expr" else None,
+                      "redirect": redirect if isinstance(redirect, tuple) else None, "has_error": False}
+        F = f"{FORMS_VAR}[{fid!r}]"
+        attrs = {k: v for k, v in n.attrs.items() if k not in ("action", "values", "redirect", "id")}
+        attrs.update({"method": _lit("post", line), "action": _x(f"{F}['url']", line),
+                      "enctype": _x(f"{F}['enctype']", line), "data-pw-form": _lit(fid, line),
+                      "data-pw-rules": _x(f"{F}['rules']", line)})
+        hidden = ControlFor("__pw_h", f"{F}['hidden']", [Element("input", {
+            "type": _lit("hidden", line), "name": _x("__pw_h['name']", line),
+            "value": _x("__pw_h['value']", line)}, [], line)], line)
+        children = _builtins(n.children, ctx, filename, info, fid)
+        lead = [hidden]
+        if not forms[fid]["has_error"]:
+            lead.append(_form_error(F, {}, line))
+        return [Element("form", attrs, lead + children, line)]
+    if form is None:
+        raise CompileError(f"<{n.tag}> must be inside a <Form>", line, filename)
+    F = f"{FORMS_VAR}[{form!r}]"
+    entry = info.forms[form]
+    if kind == "Submit":
+        attrs = dict(n.attrs)
+        attrs.setdefault("type", _lit("submit", line))
+        attrs["data-pw-submit"] = True
+        return [Element("button", attrs, _builtins(n.children, ctx, filename, info, form), line)]
+    if kind == "FormError":
+        entry["has_error"] = True
+        return [_form_error(F, n.attrs, line)]
+    name = n.attrs.get("name")
+    if not isinstance(name, tuple) or name[0] != "lit" or not re.fullmatch(r"[A-Za-z_]\w*", name[1]):
+        raise CompileError(f"<{n.tag}> needs name=\"field\" (plain text naming a field of the action)", line, filename)
+    fname = name[1]
+    if any(f == fname for f, _ in entry["fields"]):
+        raise CompileError(f"field {fname!r} appears twice in <Form {form}>", line, filename)
+    entry["fields"].append((fname, kind))
+    if n.children and kind != "Select":
+        raise CompileError(f"<{n.tag}> takes no children; set label=\"...\" for its label", line, filename)
+    D = f"{F}['fields'][{fname!r}]"
+    user = {k: v for k, v in n.attrs.items() if k not in ("name", "label", "class", "class_")}
+    wrapper_class = n.attrs.get("class") or n.attrs.get("class_")
+    label_attr = n.attrs.get("label")
+    if isinstance(label_attr, tuple):
+        label_kids = [TextNode(label_attr[1], line)] if label_attr[0] == "lit" else [ExprNode(label_attr[1], line)]
+    else:
+        label_kids = [ExprNode(f"{D}['label']", line)]
+    common = {"id": _x(f"{D}['id']", line), "name": _lit(fname, line),
+              "required": _x(f"{D}['required']", line), "aria-invalid": _x(f"{D}['invalid']", line),
+              "aria-describedby": _x(f"{D}['describedby']", line)}
+    marker = Element("input", {"type": _lit("hidden", line), "name": _lit(f"__pw_has_{fname}", line),
+                               "value": _lit("1", line)}, [], line)
+    if kind == "Checkbox":
+        control = Element("input", {**common, "type": _lit("checkbox", line), "value": _lit("true", line),
+                                    "checked": _x(f"{D}['checked']", line), **user}, [], line)
+        control.attrs.pop("required", None)
+        body = [marker, Element("label", {}, [control, TextNode(" ", line)] + label_kids, line)]
+    else:
+        label = Element("label", {"for": _x(f"{D}['id']", line)}, label_kids, line)
+        if kind == "Textarea":
+            control = Element("textarea", {**common, "minlength": _x(f"{D}['minlength']", line),
+                                           "maxlength": _x(f"{D}['maxlength']", line), **user},
+                              [ExprNode(f"{D}['value']", line)], line)
+        elif kind == "Select":
+            options = list(n.children) or [ControlFor("__pw_o", f"{D}['options']", [Element("option", {
+                "value": _x("__pw_o['value']", line), "selected": _x("__pw_o['selected']", line)},
+                [ExprNode("__pw_o['label']", line)], line)], line)]
+            control = Element("select", {**common, "multiple": _x(f"{D}['multiple']", line), **user},
+                              _builtins(options, ctx, filename, info, form), line)
+        elif kind == "FileInput":
+            control = Element("input", {**common, "type": _lit("file", line), "accept": _x(f"{D}['accept']", line),
+                                        "multiple": _x(f"{D}['multiple']", line), **user}, [], line)
+        else:
+            control = Element("input", {**common, "type": _x(f"{D}['type']", line),
+                                        "value": _x(f"{D}['value']", line),
+                                        "checked": _x(f"{D}['checked'] if {D}['type'] == 'checkbox' else None", line),
+                                        "minlength": _x(f"{D}['minlength']", line),
+                                        "maxlength": _x(f"{D}['maxlength']", line),
+                                        "min": _x(f"{D}['min']", line), "max": _x(f"{D}['max']", line),
+                                        "step": _x(f"{D}['step']", line), **user}, [], line)
+        body = ([marker] if kind == "Select" else []) + [label, control]
+    help_p = ControlIf(f"{D}['help']", [Element("p", {"class": _lit("pw-help", line)},
+                                                      [ExprNode(f"{D}['help']", line)], line)], [], line)
+    error_p = Element("p", {"class": _lit("pw-error", line), "id": _x(f"{D}['describedby']", line),
+                            "hidden": _x(f"not {D}['error']", line)}, [ExprNode(f"{D}['error']", line)], line)
+    cls = f"pw-field pw-{kind.lower()}"
+    if wrapper_class is None:
+        wrap_cls = _lit(cls, line)
+    elif wrapper_class is True or wrapper_class[0] == "lit":
+        wrap_cls = _lit(cls + ("" if wrapper_class is True else " " + wrapper_class[1]), line)
+    else:
+        wrap_cls = _x(f"[{cls!r}, ({wrapper_class[1]})]", line)
+    return [Element("div", {"class": wrap_cls, "data-pw-field": _lit(fname, line)},
+                    body + [help_p, error_p], line)]
+
+
+def _form_error(F, attrs, line):
+    out = {k: v for k, v in attrs.items() if k not in ("class", "class_")}
+    out.update({"class": _lit("pw-form-error", line), "role": _lit("alert", line), "data-pw-form-error": True,
+                "hidden": _x(f"not {F}['error']", line)})
+    return Element("p", out, [ExprNode(f"{F}['error']", line)], line)
+
+
+def inject_forms(info, ctx):
+    """Add ``__pw_forms__ = __pw_form_specs__({...})`` at the end of a page that has forms:
+    it runs on the server while the page renders, and the markup reads from it."""
+    forms = getattr(info, "forms", None)
+    if not forms:
+        return
+    parts = []
+    for fid, entry in forms.items():
+        redirect = entry["redirect"]
+        if redirect is None:
+            redir = "None"
+        elif redirect[0] == "lit":
+            redir = repr(redirect[1])
+        else:
+            redir = f"({redirect[1]})"
+        values = f"({entry['values']})" if entry["values"] else "None"
+        fields = repr([(f, k) for f, k in entry["fields"]])
+        parts.append(f"{fid!r}: {{'action': {entry['action']}, 'values': {values}, 'redirect': {redir}, "
+                     f"'fields': {fields}}}")
+    stmt = ast.parse(f"{FORMS_VAR} = {FORMS_FN}({{{', '.join(parts)}}})").body[0]
+    line = info.node.body[-1].end_lineno if info.node.body else info.node.lineno
+    for sub in ast.walk(stmt):
+        if hasattr(sub, "lineno"):
+            sub.lineno = sub.end_lineno = line
+            sub.col_offset = sub.end_col_offset = 0
+    info.node.body.append(stmt)
+    ctx.server_only.setdefault(FORMS_FN, "builds the forms of a page on the server")
 
 
 def _layout_info(node, prefix, ui_all, filename):
@@ -714,7 +901,7 @@ def classify(info, ctx):
                     changed = True
     info.refs = refs
     info.needs_js = bool(info.handlers) or any(k == SIGNAL for k in info.kinds.values()) \
-        or _has_events(info.ui)
+        or _has_events(info.ui) or bool(getattr(info, "forms", None))   # forms check and submit in the browser
 
     sent = []
     if info.kind in ("page", "layout") and info.needs_js:
@@ -783,6 +970,8 @@ class Emitter:
         imports = [RUNTIME_IMPORT]
         if "$markdown(" in body:
             imports.append(MARKDOWN_IMPORT)
+        if getattr(info, "forms", None):
+            imports.append(FORMS_IMPORT)
         info.npm = []
         for alias in sorted(set(re.findall(r"\$npm_[A-Za-z0-9_]+", body))):
             spec, export = self.ctx.npm_aliases[alias]

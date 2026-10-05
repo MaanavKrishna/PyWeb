@@ -20,6 +20,7 @@ Variable                       Default      Meaning
 ``PYWEB_SOCKET_TIMEOUT``       30           seconds before a stalled client is dropped
 ``PYWEB_MAX_STREAMS_PER_CLIENT`` 20         open live connections per client address
 ``PYWEB_RENDER_TIMEOUT``       30           seconds a page may take to render (504 after)
+``PYWEB_MAX_UPLOAD``           10MB         largest form submit with files (413 beyond it)
 =============================  ===========  =====================================================
 """
 
@@ -54,6 +55,20 @@ def _int(name, env, default, minimum=1):
     return value
 
 
+def _size(name, env, default):
+    raw = env.get(name)
+    if raw in (None, ""):
+        return default
+    from .storage import parse_size
+    try:
+        value = parse_size(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be a size like 10MB, got {raw!r}") from None
+    if value < 1024:
+        raise ValueError(f"{name} must be at least 1KB")
+    return value
+
+
 def _proxies(env):
     raw = env.get("PYWEB_TRUST_PROXY", "").strip().lower()
     if raw in _FALSE:
@@ -77,6 +92,7 @@ class Settings:
     socket_timeout: int = 30
     max_streams_per_client: int = 20
     render_timeout: int = 30
+    max_upload: int = 10 * 1024 * 1024
 
     @property
     def production(self):
@@ -99,6 +115,7 @@ class Settings:
             socket_timeout=_int("PYWEB_SOCKET_TIMEOUT", env, 30),
             max_streams_per_client=_int("PYWEB_MAX_STREAMS_PER_CLIENT", env, 20),
             render_timeout=_int("PYWEB_RENDER_TIMEOUT", env, 30),
+            max_upload=_size("PYWEB_MAX_UPLOAD", env, 10 * 1024 * 1024),
         )
 
 

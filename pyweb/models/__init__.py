@@ -44,7 +44,7 @@ from typing import ClassVar
 
 from pyweb.rules import ValidationError
 
-from .fields import (JSON, MISSING, URL, BlobField, Email, Field, Index, IntegerField, RealField, Slug, Text,
+from .fields import (JSON, MISSING, URL, BlobField, Email, Field, File, Index, IntegerField, RealField, Slug, Text,
                      TextField, kind_for, unwrap_optional)
 from .query import Avg, Count, Max, Min, Order, Page, QuerySet, Sum
 from .relations import (ForeignKey, ManyToMany, ManyToManyReverse, NotIncluded, OneToOne, RelatedList, Relation,
@@ -52,7 +52,7 @@ from .relations import (ForeignKey, ManyToMany, ManyToManyReverse, NotIncluded, 
 
 log = logging.getLogger("pyweb.models")
 
-__all__ = ["Model", "Field", "Index", "ForeignKey", "OneToOne", "ManyToMany", "NotIncluded", "RelatedList",
+__all__ = ["Model", "Field", "File", "Index", "ForeignKey", "OneToOne", "ManyToMany", "NotIncluded", "RelatedList",
            "QuerySet", "Page", "Count", "Sum", "Avg", "Min", "Max", "Email", "URL", "Slug", "Text", "JSON",
            "ValidationError", "validates", "use_database", "database", "ensure_tables", "all_models",
            "IntegerField", "TextField", "RealField", "BlobField"]

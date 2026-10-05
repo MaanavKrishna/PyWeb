@@ -6,6 +6,7 @@ import html as _html
 import inspect
 import json
 import re
+import time
 import uuid
 
 from pyweb.db import in_scope as _in_scope
@@ -403,7 +404,7 @@ class Server:
             headers["Retry-After"] = str(retry_after)
         return Response(status, json.dumps(body), headers)
 
-    def _check_rpc_access(self, req: Request, fn):
+    def _check_rpc_access(self, req: Request, fn, *, form=False):
         """Auth + CSRF + rate-limit gate. Returns None (allow) or Response."""
         from pyweb import rpc as _rpc
         need_auth = getattr(fn, "__pyweb_auth__", False)
@@ -424,7 +425,7 @@ class Server:
             if need and not _auth.can(session.get("roles", []), fn):
                 return self._err(_rpc.Code.FORBIDDEN,
                                  f"missing permission: {need}")
-            if self.csrf_secret and not csrf_exempt:
+            if self.csrf_secret and not csrf_exempt and not form:     # forms carry their own token
                 token = req.headers.get("X-CSRF-Token", "")
                 if not _auth.verify_csrf(self.csrf_secret,
                                          session.get("sid", session.get("sub", "")),
@@ -606,6 +607,12 @@ class Server:
             return self.handle_events(req)
         if req.path == "/__pyweb/poll" or req.path.startswith("/__pyweb/poll?"):
             return self.handle_poll(req)
+        if req.path.startswith("/__pyweb/form/"):
+            if req.method != "POST":
+                return Response(405, "forms accept POST only", {"Allow": "POST", "Content-Type": "text/plain"})
+            return self.handle_form(req)
+        if req.path.startswith("/__pyweb/files/"):
+            return self.handle_file(req)
         path = req.path.split("?")[0]
         for pat, name in self.routes:
             m = pat.match(path)
@@ -620,6 +627,168 @@ class Server:
                                                     "X-Request-Id": req.id})
             return self._render_page(req, name, m.groupdict())
         return self.error_page(404, req)
+
+    # ------------------------------------------------------------- forms
+    def _page_for(self, path):
+        for pat, name in self.routes:
+            m = pat.match(path)
+            if m:
+                return name, m.groupdict()
+        return None, None
+
+    def handle_form(self, req: Request):
+        """A ``<Form>`` submit: from the browser runtime (JSON answer) or a plain POST."""
+        from pyweb import forms as F
+        from pyweb import rpc as _rpc
+        from pyweb.ssr import to_jsonable
+        m = re.match(r"^/__pyweb/form/(\w+)$", req.path.split("?")[0])
+        fn = self.rpc_impls.get(m.group(1)) if m else None
+        hdr = {k.lower(): v for k, v in (req.headers or {}).items()}
+        wants_json = "application/json" in hdr.get("accept", "")
+
+        def fail(status, message, errors=None, fields=None, fid=None):
+            if wants_json:
+                body = {"ok": False, "error": message, "errors": errors or {}}
+                return Response(status, json.dumps(body), {"Content-Type": "application/json",
+                                                           "X-Request-Id": req.id, "Cache-Control": "no-store"})
+            if fields is not None and fid is not None:
+                page = (fields.get("__pw_page") or [""])[-1]
+                if page.startswith("/") and not page.startswith("//"):
+                    rendered = self._form_page(req, page, fid, fields, errors or {}, message)
+                    if rendered is not None:
+                        rendered.status = status
+                        return rendered
+            return self.error_page(status, req, message=message)
+
+        if fn is None:
+            return fail(404, "this form's action doesn't exist")
+        if hdr.get("sec-fetch-site") == "cross-site":
+            return fail(403, "forms can't be sent from other sites")
+        origin = hdr.get("origin")
+        host = hdr.get("x-forwarded-host") or hdr.get("host")
+        if origin and host and origin != "null":
+            from urllib.parse import urlparse as _urlparse
+            if _urlparse(origin).netloc != host:
+                return fail(403, "forms can't be sent from other sites")
+        gate = self._check_rpc_access(req, fn, form=True)
+        if gate is not None:
+            status = gate.status
+            try:
+                message = json.loads(gate.body)["error"]["message"]
+            except (ValueError, KeyError, TypeError):
+                message = "not allowed"
+            return fail(status, message)
+        from pyweb.config import settings
+        limit = settings().max_upload
+        if len(req.body or b"") > limit:
+            return fail(413, f"the form is too large (at most {F._size_words(limit)})")
+        try:
+            fields, files = F.parse_body(req)
+        except ValueError as exc:
+            return fail(400, str(exc))
+        fid = (fields.get("__pw_form") or [m.group(1)])[-1]
+        if not F.check_csrf(req.cookies.get(F.CSRF_COOKIE), (fields.get("__pw_csrf") or [""])[-1]):
+            return fail(403, "This form has expired. Reload the page and try again.", fields=fields, fid=fid)
+        key = (fields.get("__pw_key") or [""])[-1]
+        once = f"{fn.__name__}:{key}" if key else None
+        if once:
+            state, outcome = F.ONCE.claim(once)
+            waited = 0.0
+            while state == "busy" and waited < 10:
+                time.sleep(0.05)
+                waited += 0.05
+                state, outcome = F.ONCE.claim(once)
+                if state == "new":
+                    break
+            if state == "done":
+                return self._form_success(req, outcome, wants_json, fields)
+            if state == "busy":
+                return fail(409, "this form is still being sent")
+        try:
+            args = F.build_args(fn, fid, fields, files)
+            if self.rpc_timeout:
+                result = self._call_with_timeout(fn, args)
+            else:
+                result = _in_scope(fn, args)
+            if inspect.isawaitable(result):
+                import asyncio
+                result = asyncio.run(_awaited(result))
+        except ValidationError as exc:
+            F.ONCE.forget(once) if once else None
+            general = exc.errors.get("__all__", "")
+            return fail(422, general or "Please fix the errors below.", errors=exc.errors, fields=fields, fid=fid)
+        except TimeoutError:
+            F.ONCE.forget(once) if once else None
+            return fail(504, "This took too long. Please try again.", fields=fields, fid=fid)
+        except _rpc.RPCError as exc:
+            F.ONCE.forget(once) if once else None
+            return fail(_rpc.status_for(exc.code), str(exc), fields=fields, fid=fid)
+        except Exception as exc:  # noqa: BLE001
+            F.ONCE.forget(once) if once else None
+            if self.logger is not None:
+                self.logger.error(f"form {fn.__name__} failed: {exc}", request_id=req.id, rpc=fn.__name__)
+            if self.debug:
+                raise
+            return fail(500, "Something went wrong. Please try again.", fields=fields, fid=fid)
+        try:
+            data = to_jsonable(result)
+        except TypeError:
+            data = None
+        outcome = {"result": data, "redirect": F.fill_redirect((fields.get("__pw_redirect") or [""])[-1], result)}
+        if once:
+            F.ONCE.finish(once, outcome)
+        return self._form_success(req, outcome, wants_json, fields)
+
+    def _form_success(self, req, outcome, wants_json, fields):
+        import secrets as _secrets
+        if wants_json:
+            body = dict(outcome, ok=True, next_key=_secrets.token_urlsafe(16))
+            return Response(200, json.dumps(body), {"Content-Type": "application/json", "X-Request-Id": req.id,
+                                                    "Cache-Control": "no-store"})
+        target = outcome.get("redirect")
+        if not target:
+            page = (fields.get("__pw_page") or ["/"])[-1]
+            target = page if page.startswith("/") and not page.startswith("//") else "/"
+        return Response(303, "", {"Location": target, "X-Request-Id": req.id})
+
+    def _form_page(self, req, page, fid, fields, errors, message):
+        """The page the form was on, with what was typed and the errors (no JavaScript)."""
+        from pyweb import forms as F
+        if self.app is None:
+            return None
+        name, params = self._page_for(page.split("?")[0])
+        if name is None:
+            return None
+        values = {k: (v if len(v) > 1 else v[-1]) for k, v in fields.items() if not k.startswith("__pw_")}
+        for k, v in fields.items():
+            if k.startswith("__pw_has_") and k[9:] not in values:
+                values[k[9:]] = []
+        token = F.FORM_STATE.set({fid: {"values": values, "errors": errors, "error": message}})
+        try:
+            page_req = Request("GET", page, req.headers, b"", cookies=req.cookies, client=req.client)
+            page_req.id = req.id
+            return self._render_page(page_req, name, params)
+        finally:
+            F.FORM_STATE.reset(token)
+
+    def handle_file(self, req: Request):
+        """Files saved with the local storage (``PYWEB_STORAGE=file://...``)."""
+        from urllib.parse import unquote
+        from pyweb import storage as S
+        if req.method not in ("GET", "HEAD"):
+            return Response(405, "", {"Allow": "GET, HEAD"})
+        store = S.storage()
+        key = unquote(req.path.split("?")[0][len("/__pyweb/files/"):])
+        if not isinstance(store, S.LocalStorage) or not S.valid_key(key) or not store.exists(key):
+            return self.error_page(404, req)
+        data = store.open(key)
+        kind = S.sniff(data)
+        inline = kind.startswith(("image/", "video/", "audio/")) or kind in ("application/pdf", "text/plain")
+        headers = {"Content-Type": kind if kind != "text/plain" else "text/plain; charset=utf-8",
+                   "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400",
+                   "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; sandbox",
+                   "Content-Disposition": ("inline" if inline else "attachment") + f'; filename="{key.split("/", 1)[1]}"'}
+        return Response(200, data if req.method == "GET" else b"", headers)
 
     def _render_page(self, req, name, params):
         from pyweb.context import BadRequest, NotFound, Redirect

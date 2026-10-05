@@ -457,3 +457,23 @@ class RealField(Field):
 
 class BlobField(Field):
     legacy_kind = "bytes"
+
+
+class File(Field):
+    """An uploaded file. The column keeps its storage key (see :mod:`pyweb.storage`)::
+
+        avatar: str | None = File(types=["image/*"], max_size="2MB")
+
+    ``<FileInput name="avatar" />`` in a ``<Form>`` uploads it: the size is
+    checked while reading, the type by the file's bytes (not its name).
+    ``storage.url(user.avatar)`` is a link to it.
+    """
+
+    def __init__(self, default=MISSING, *, max_size="10MB", types=(), **kw):
+        from pyweb.storage import parse_size
+        kw.setdefault("kind", "str")
+        kw.setdefault("max", 200)
+        super().__init__(default, **kw)
+        self.max_size = parse_size(max_size)
+        self.types = list(types)
+        self.is_file = True

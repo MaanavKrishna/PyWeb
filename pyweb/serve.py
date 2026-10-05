@@ -238,12 +238,14 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
                 n = 0
             if n < 0:
                 n = 0
-            if n > max_body:
+            from pyweb.hosting import body_limit
+            limit = body_limit(self.path, max_body)
+            if n > limit:
                 clean = self._drain(n)
                 extra = {} if clean else {"Connection": "close"}
                 self._bytes(json.dumps(
                     {"ok": False, "error": "body-too-large",
-                     "message": f"request body exceeds {max_body} bytes"}),
+                     "message": f"request body exceeds {limit} bytes"}),
                     413, "application/json", extra)
                 if not clean:
                     try:

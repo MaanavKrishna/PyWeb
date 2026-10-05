@@ -43,6 +43,22 @@ Work towards 0.5.0: production apps in one Python file.
   `pyweb serve --migrate` safe with many servers. SQLite schema changes
   rebuild tables with foreign keys paused. `pyweb dev` applies pending
   migrations, and apps without migrations create tables on first use.
+- **Forms.** `<Form action={save_post}>` with `<Input>`, `<Textarea>`,
+  `<Select>`, `<Checkbox>`, `<FileInput>`, `<Submit>` and `<FormError>`
+  builds labelled, accessible fields from the action's Model (or plain
+  typed parameters). Rules are checked in the browser while typing, with
+  the same messages as the server; the form submits without a page load and
+  shows server errors next to each input, and still works as a plain POST
+  without JavaScript (422 re-render with values, 303 on success). CSRF
+  token, cross-site refusal, a one-time key per submit (double clicks run
+  once), only the action's own fields are read, `values={row}` edits a row
+  through a signed id, and `forms.carry()`/`restore()` for multi-step forms.
+  The browser code (`forms.js`) only loads on pages with a form.
+- **Uploads and storage.** `File(types=["image/*"], max_size="2MB")` fields
+  and `UploadedFile` parameters; types checked from the file's bytes;
+  `PYWEB_MAX_UPLOAD` (default 10MB); `PYWEB_STORAGE` is a local folder
+  (served with a sandboxing CSP) or S3-compatible storage with presigned
+  URLs and no SDK.
 - **Read replicas** with `DATABASE_REPLICA_URL` (read-your-writes inside a
   request), slow query logging with query plans (`PYWEB_SLOW_QUERY_MS`),
   `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and
@@ -55,6 +71,10 @@ Work towards 0.5.0: production apps in one Python file.
   dicts: `row["name"]`).
 - In production, a Model with no database is an error instead of an
   in-memory SQLite file.
+
+### Fixed
+- `Site(..., rate_limit=False)` (used by `pyweb.testing.serve`) passed
+  `False` to the server instead of turning rate limits off.
 
 ## [0.4.4]
 

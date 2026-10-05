@@ -185,6 +185,13 @@ def Item(item_id: int):
   `@validates("field")`; `ValidationError` reaches the browser as field errors.
   Each `@server` call is one transaction. Schema changes: `pyweb db diff`
   then `pyweb db upgrade` (`--contract` later for removals).
+- Forms: `@server def save_post(post: Post): post.save(); return post`, then
+  `<Form action={save_post} redirect="/posts/{id}"><Input name="title" />`
+  `<Textarea name="body" /><Select name="tags" /><Checkbox name="draft" />`
+  `<Submit>Save</Submit></Form>` (import the tags from `pyweb`). Rules come
+  from the Model; don't add your own JS validation. `values={post}` edits a
+  row. Raise `ValidationError({"field": "message"})` for your own checks.
+  Uploads: `photo: str | None = File(types=["image/*"])` + `<FileInput name="photo" />`.
 - Raw SQL when needed: `from pyweb.db import connect; db = connect(url)`;
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
   parameters; `with db.transaction(): ...`.

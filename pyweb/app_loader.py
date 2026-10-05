@@ -152,6 +152,8 @@ class LoadedApp:
         mod = types.ModuleType(module_name or f"pyweb_app_{stem}")
         mod.__file__ = os.path.abspath(filename) if self.path else filename
         mod.__dict__["__pyweb_ui__"] = lambda *_a: None
+        from .forms import specs as _form_specs
+        mod.__dict__["__pw_form_specs__"] = _form_specs
         app_dir = os.path.dirname(os.path.abspath(self.path)) if self.path else None
         if app_dir and app_dir not in sys.path:
             sys.path.insert(0, app_dir)

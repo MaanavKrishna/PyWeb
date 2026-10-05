@@ -195,23 +195,26 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
     with open(f"{out}/static/{rt_name}", "w", encoding="utf-8") as fh:
         fh.write(runtime_js)
 
-    md_name = ""
+    # Add-on modules, shipped only with apps that use them.
+    addon_names = {}
     units = [*compiled["pages"].values(), *(compiled.get("layouts") or {}).values()]
-    if any('from "./markdown.js"' in (u.get("js") or "") for u in units):   # only apps that use <Markdown>
-        with open(os.path.join(os.path.dirname(rt_path), "markdown.js"), encoding="utf-8") as fh:
-            md_js = fh.read().replace('from "./runtime.js"', f'from "./{rt_name}"')
+    for addon in ("markdown.js", "forms.js"):
+        if not any(f'"./{addon}"' in (u.get("js") or "") for u in units):
+            continue
+        with open(os.path.join(os.path.dirname(rt_path), addon), encoding="utf-8") as fh:
+            addon_js = fh.read().replace('from "./runtime.js"', f'from "./{rt_name}"')
         if production:
-            md_js = minify_js(md_js, minifier=minifier)
-            md_name = f"markdown.{content_hash(md_js)}.js"
+            addon_js = minify_js(addon_js, minifier=minifier)
+            addon_names[addon] = f"{addon[:-3]}.{content_hash(addon_js)}.js"
         else:
-            md_name = "markdown.js"
-        with open(f"{out}/static/{md_name}", "w", encoding="utf-8") as fh:
-            fh.write(md_js)
+            addon_names[addon] = addon
+        with open(f"{out}/static/{addon_names[addon]}", "w", encoding="utf-8") as fh:
+            fh.write(addon_js)
 
     def write_module(name, js, mappings):
         body = js.replace('from "./runtime.js"', f'from "./{rt_name}"')
-        if md_name:
-            body = body.replace('from "./markdown.js"', f'from "./{md_name}"')
+        for addon, published in addon_names.items():
+            body = body.replace(f'"./{addon}"', f'"./{published}"')
         if production:
             body = minify_js(body, minifier=minifier)
             js_name = f"{name}.{content_hash(body)}.js"

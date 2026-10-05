@@ -59,13 +59,15 @@ def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_
         if scope["type"] != "http":
             return
         chunks, size, too_big = [], 0, False
+        from .hosting import body_limit
+        limit = body_limit(scope.get("path", ""), max_body)
         while True:
             msg = await receive()
             if msg["type"] == "http.disconnect":
                 return
             part = msg.get("body", b"")
             size += len(part)
-            if size > max_body:
+            if size > limit:
                 too_big = True
             elif part:
                 chunks.append(part)

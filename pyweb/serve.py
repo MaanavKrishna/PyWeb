@@ -35,10 +35,9 @@ VERSION = _version()
 
 
 def _env_int(name, default):
-    try:
-        return max(1, int(os.environ.get(name, default)))
-    except ValueError:
-        return default
+    from pyweb.config import settings
+    field = {"PYWEB_MAX_CONNECTIONS": "max_connections", "PYWEB_SOCKET_TIMEOUT": "socket_timeout"}[name]
+    return getattr(settings(), field)
 
 
 class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -190,11 +189,9 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
         def do_GET(self):  # noqa: N802
             path = self.path.split("?")[0]
             if path in ("/healthz", "/health", "/readyz"):
-                uptime = round(time.time() - started, 3)
-                return self._bytes(
-                    json.dumps({"ok": True, "version": VERSION,
-                                "uptime_s": uptime}),
-                    200, "application/json")
+                from pyweb.hosting import health
+                code, payload = health(path == "/readyz", started)
+                return self._bytes(json.dumps(payload), code, "application/json", {"Cache-Control": "no-store"})
             if path.startswith("/static/"):
                 return self._static(path[len("/static/"):], self.path.partition("?")[2])
             if server_runtime is not None:
@@ -323,13 +320,15 @@ def serve(dist, *, host="0.0.0.0", port=8000, app_factory=None, logger=None,
     stay advisory (sessions cannot verify). ``max_body`` caps request
     bodies (413 beyond it).
     """
+    from pyweb import config as _config
     from pyweb import rpc as _rpc
     from pyweb.runtime.server import Server
+    _config.startup()
     manifest, static_dir, _ = load_dist(dist)
     if rate_limit is False:
         rate_limit = None
     elif rate_limit is None:
-        rate_limit = _rpc.RateLimiter(max_calls=120, window=60.0)
+        rate_limit = _rpc.default_rate_limiter()
     if auth_secret is None:
         auth_secret = os.environ.get("PYWEB_AUTH_SECRET")
     if csrf_secret is None:
@@ -381,9 +380,11 @@ def install_shutdown_handlers(httpd, *, logger=None, timeout=25.0):
     prev = {}
 
     def _drain(signum, _frame):
+        from pyweb.hosting import shutdown
         name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
         if logger is not None:
             logger.info(f"received {name}: draining in-flight requests")
+        shutdown(min(timeout, 10.0), logger=logger)
         t = threading.Thread(target=httpd.shutdown, daemon=True,
                              name="pyweb-shutdown")
         t.start()

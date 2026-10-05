@@ -127,6 +127,59 @@ class RateLimiter:
             del self._hits[key]
 
 
+class RedisRateLimiter(RateLimiter):
+    """Sliding-window rate limiter in Redis, shared by every server process.
+
+    Same ``allow()`` as :class:`RateLimiter`. Each key is a sorted set of call
+    times that expires on its own. If Redis can't be reached, it falls back to
+    limiting in this process rather than failing requests.
+    """
+
+    def __init__(self, url="redis://localhost:6379/0", client=None, max_calls: int = 60,
+                 window: float = 60.0, prefix="pyweb:rl:"):
+        super().__init__(max_calls=max_calls, window=window)
+        if client is None:
+            import redis  # noqa: PLC0415 - optional dependency
+            client = redis.Redis.from_url(url)
+        self._r, self._prefix = client, prefix
+        self._broken = None
+
+    def allow(self, key: str) -> tuple[bool, int]:
+        if self._broken is not None:
+            return super().allow(key)
+        now = time.time()
+        k = self._prefix + key
+        try:
+            pipe = self._r.pipeline()
+            pipe.zremrangebyscore(k, 0, now - self.window)
+            pipe.zcard(k)
+            pipe.zrange(k, 0, 0, withscores=True)
+            _, count, oldest = pipe.execute()
+            if count >= self.max_calls:
+                first = oldest[0][1] if oldest else now
+                return False, max(int(self.window - (now - first)) + 1, 1)
+            pipe = self._r.pipeline()
+            pipe.zadd(k, {f"{now}:{uuid.uuid4().hex[:8]}": now})
+            pipe.pexpire(k, int(self.window * 1000) + 1000)
+            pipe.execute()
+            return True, 0
+        except Exception as exc:  # noqa: BLE001 - degrade to per-process limits, never fail the request
+            self._broken = exc
+            return super().allow(key)
+
+
+def default_rate_limiter(max_calls=120, window=60.0):
+    """The limiter servers use: shared through Redis when ``PYWEB_REDIS_URL`` is set."""
+    from .config import settings
+    url = settings().redis_url
+    if url:
+        try:
+            return RedisRateLimiter(url, max_calls=max_calls, window=window)
+        except ImportError:
+            pass
+    return RateLimiter(max_calls=max_calls, window=window)
+
+
 class RetryPolicy:
     """Client retry policy: which statuses are safe to retry + backoff."""
 

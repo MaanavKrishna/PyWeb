@@ -108,23 +108,38 @@ class MemoryCache(Cache):
             self._tags.clear()
 
 
-def _dumps(value) -> bytes:
+def _dumps(value, allow_pickle=False) -> bytes:
     try:
         return b"j:" + json.dumps(value).encode("utf-8")
     except (TypeError, ValueError):
+        if not allow_pickle:
+            raise TypeError(f"RedisCache stores JSON values; {type(value).__name__} isn't one "
+                            "(convert it, or pass allow_pickle=True if only you can write to Redis)") from None
         return b"p:" + pickle.dumps(value)
 
 
-def _loads(raw: bytes):
+_MISS = object()
+
+
+def _loads(raw: bytes, allow_pickle=False):
     if raw.startswith(b"j:"):
         return json.loads(raw[2:].decode("utf-8"))
     if raw.startswith(b"p:"):
-        return pickle.loads(raw[2:])
+        # Unpickling runs code chosen by whoever wrote the bytes: only with explicit trust.
+        return pickle.loads(raw[2:]) if allow_pickle else _MISS  # noqa: S301
     return raw
 
 
 class RedisCache(Cache):
-    def __init__(self, url="redis://localhost:6379/0", client=None, prefix="pyweb:"):
+    """A cache in Redis, shared by every server process.
+
+    Values are stored as JSON. ``allow_pickle=True`` also stores other Python
+    objects with pickle; only use it when nobody else can write to your Redis,
+    because reading a pickle can run arbitrary code.
+    """
+
+    def __init__(self, url="redis://localhost:6379/0", client=None, prefix="pyweb:", allow_pickle=False):
+        self.allow_pickle = allow_pickle
         if client is not None:
             self._r = client
         else:
@@ -145,7 +160,7 @@ class RedisCache(Cache):
         return f"{self._prefix}tag:{tag}"
 
     def set(self, key, value, ttl=None, tags=()):
-        self._r.set(self._k(key), _dumps(value), ex=ttl)
+        self._r.set(self._k(key), _dumps(value, self.allow_pickle), ex=ttl)
         for t in tags:
             self._r.sadd(self._t(t), self._k(key))
 
@@ -153,7 +168,8 @@ class RedisCache(Cache):
         raw = self._r.get(self._k(key))
         if raw is None:
             return default
-        return _loads(bytes(raw))
+        value = _loads(bytes(raw), self.allow_pickle)
+        return default if value is _MISS else value
 
     def delete(self, key):
         return bool(self._r.delete(self._k(key)))

@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import threading
 import time
+import weakref
 
 
 class Channel:
@@ -323,6 +324,18 @@ def subscribe(feed, handler):  # noqa: ARG001 - the browser implementation takes
     raise RuntimeError("subscribe() runs in the browser: call it from on_mount() or an event handler")
 
 
+#: Event streams currently open, so shutdown can end them cleanly.
+OPEN_STREAMS: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def close_streams():
+    """End every open event stream (on shutdown); browsers reconnect to another server."""
+    streams = list(OPEN_STREAMS)
+    for stream in streams:
+        stream.close()
+    return len(streams)
+
+
 class EventStream:
     """A Server-Sent Events response body for one channel.
 
@@ -337,6 +350,7 @@ class EventStream:
         self.bus, self.name, self.last_id = bus, name, int(last_id or 0)
         self.heartbeat, self.max_age, self.tick = heartbeat, max_age, tick
         self._stop = threading.Event()
+        OPEN_STREAMS.add(self)
 
     def _poll(self):
         import json as _json

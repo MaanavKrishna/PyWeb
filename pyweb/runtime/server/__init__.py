@@ -159,6 +159,20 @@ async def _awaited(aw):
     return await aw
 
 
+_RENDER_POOL = None
+
+
+def _render_pool():
+    """Threads for page renders: as many as the server accepts connections."""
+    global _RENDER_POOL
+    if _RENDER_POOL is None:
+        import concurrent.futures as _fut
+        from pyweb.config import settings
+        _RENDER_POOL = _fut.ThreadPoolExecutor(max_workers=settings().max_connections,
+                                               thread_name_prefix="pyweb-render")
+    return _RENDER_POOL
+
+
 def _rpc_pool():
     global _POOL
     if _POOL is None:
@@ -169,14 +183,9 @@ def _rpc_pool():
 
 def _trusted_proxies():
     """How many reverse proxies to trust for X-Forwarded-For (``PYWEB_TRUST_PROXY``)."""
-    import os
-    raw = os.environ.get("PYWEB_TRUST_PROXY", "").strip().lower()
-    if raw in ("", "0", "false", "no"):
-        return 0
-    if raw in ("1", "true", "yes"):
-        return 1
+    from pyweb.config import settings
     try:
-        return max(0, int(raw))
+        return settings().trust_proxy
     except ValueError:
         return 0
 
@@ -299,11 +308,8 @@ class _Counted:
 
 
 def _max_streams():
-    import os
-    try:
-        return max(1, int(os.environ.get("PYWEB_MAX_STREAMS_PER_CLIENT", "20")))
-    except ValueError:
-        return 20
+    from pyweb.config import settings
+    return settings().max_streams_per_client
 
 
 _SIGNATURES: dict = {}
@@ -614,8 +620,13 @@ class Server:
         from urllib.parse import parse_qs, unquote
         path, _, qs = req.path.partition("?")
         try:
-            result = self.app.render(name, {k: unquote(v) for k, v in params.items()},
-                                     query=parse_qs(qs, keep_blank_values=True), path=path)
+            result = self._render_with_timeout(name, {k: unquote(v) for k, v in params.items()},
+                                               parse_qs(qs, keep_blank_values=True), path)
+        except TimeoutError:
+            if self.logger is not None:
+                self.logger.error(f"page {name} took too long to render", request_id=req.id, page=name)
+            return self.error_page(504, req, title="Gateway timeout",
+                                   message="The page took too long to load. Please try again.")
         except NotFound:
             return self.error_page(404, req)
         except BadRequest as exc:
@@ -638,6 +649,25 @@ class Server:
         return Response(200, result, {"Content-Type": "text/html; charset=utf-8",
                                       "X-Request-Id": req.id,
                                       "Cache-Control": "no-store"})
+
+    def _render_with_timeout(self, name, params, query, path):
+        """Render page ``name``; give up waiting after ``PYWEB_RENDER_TIMEOUT`` seconds.
+
+        Like RPC timeouts, Python can't stop the thread: the render finishes in
+        the background, but the visitor gets a 504 instead of waiting forever.
+        """
+        import concurrent.futures as _fut
+        import contextvars
+        from pyweb.config import settings
+        limit = 0 if self.debug else settings().render_timeout
+        if not limit:
+            return self.app.render(name, params, query=query, path=path)
+        ctx = contextvars.copy_context()
+        fut = _render_pool().submit(ctx.run, self.app.render, name, params, query=query, path=path)
+        try:
+            return fut.result(timeout=limit)
+        except _fut.TimeoutError as exc:
+            raise TimeoutError() from exc
 
     def error_page(self, status, req=None, *, title=None, message=None):
         """Branded HTML error shell. Apps override via ``error_pages`` on

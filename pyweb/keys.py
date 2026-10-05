@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 
 PURPOSES = ("session", "feed", "live")
 
@@ -28,8 +27,8 @@ def derive(root, purpose: str) -> str:
 
 def previous_secrets() -> list[str]:
     """Secrets from ``PYWEB_AUTH_SECRET_PREVIOUS`` (still accepted, never used to sign)."""
-    raw = os.environ.get("PYWEB_AUTH_SECRET_PREVIOUS", "")
-    return [s.strip() for s in raw.split(",") if s.strip()]
+    from .config import settings
+    return list(settings().previous_secrets)
 
 
 def signing_key(root, purpose: str) -> str:

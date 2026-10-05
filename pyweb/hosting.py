@@ -40,7 +40,8 @@ def security_headers(secure=False):
 
 
 def secure_from_env():
-    return os.environ.get("PYWEB_COOKIE_SECURE", "").lower() in ("1", "true")
+    from .config import settings
+    return settings().cookie_secure
 
 
 SECURITY_HEADERS = security_headers()
@@ -131,6 +132,39 @@ def gzip_response(headers, body, accept_encoding):
     return out, packed
 
 
+def shutdown(timeout=10.0, logger=None):
+    """Wind down cleanly: end live connections, then let background jobs finish."""
+    from . import jobs, realtime
+    closed = realtime.close_streams()
+    unfinished = jobs._default_queue.shutdown(timeout)
+    if logger is not None:
+        logger.info(f"shutdown: closed {closed} live connection(s); {unfinished} job(s) unfinished")
+    return closed, unfinished
+
+
+def health(ready=False, started=None):
+    """``(status, payload)`` for ``/healthz`` (the process is up) or ``/readyz`` (it can serve:
+    every database the app opened answers)."""
+    from . import __version__
+    payload = {"ok": True, "version": __version__}
+    if started is not None:
+        payload["uptime_s"] = round(time.time() - started, 3)
+    if not ready:
+        return 200, payload
+    from .db import OPEN
+    checks = {}
+    for i, db in enumerate(list(OPEN)):
+        name = f"{type(db).__name__}#{i}"
+        try:
+            db.ping()
+            checks[name] = "ok"
+        except Exception as exc:  # noqa: BLE001 - reported, not raised
+            checks[name] = f"error: {type(exc).__name__}"
+            payload["ok"] = False
+    payload["checks"] = checks
+    return (200 if payload["ok"] else 503), payload
+
+
 def is_stream(body):
     return not isinstance(body, (bytes, bytearray, str))
 
@@ -168,8 +202,10 @@ class Site:
     """Serve an app from source (``app.pyweb``) or from a built ``dist/``."""
 
     def __init__(self, target, *, debug=False, max_body=1_048_576, **server_kwargs):
+        from . import config
         from .app_loader import LoadedApp
         from .serve import DEFAULT_CSP, load_dist
+        config.startup()
         self.debug = debug
         self.max_body = max_body
         self.started = time.time()
@@ -177,8 +213,8 @@ class Site:
         self.server_kwargs = dict(server_kwargs)
         # Same production defaults as `pyweb serve`.
         if "rate_limit" not in self.server_kwargs and not debug:
-            from .rpc import RateLimiter
-            self.server_kwargs["rate_limit"] = RateLimiter(max_calls=120, window=60.0)
+            from .rpc import default_rate_limiter
+            self.server_kwargs["rate_limit"] = default_rate_limiter()
         elif self.server_kwargs.get("rate_limit") is False:
             self.server_kwargs["rate_limit"] = None
         self.server_kwargs.setdefault("auth_secret", os.environ.get("PYWEB_AUTH_SECRET"))
@@ -231,9 +267,9 @@ class Site:
     def respond(self, method, path, headers, body=b"", client=None):
         bare = path.split("?")[0]
         if bare in ("/healthz", "/health", "/readyz"):
-            from . import __version__
-            payload = {"ok": True, "version": __version__, "uptime_s": round(time.time() - self.started, 3)}
-            out = (200, [("Content-Type", "application/json")], json.dumps(payload).encode())
+            code, payload = health(bare == "/readyz", self.started)
+            out = (code, [("Content-Type", "application/json"), ("Cache-Control", "no-store")],
+                   json.dumps(payload).encode())
         elif bare.startswith("/static/") and method in ("GET", "HEAD"):
             query = path.partition("?")[2]
             inm = next((v for k, v in (headers or {}).items() if k.lower() == "if-none-match"), None)

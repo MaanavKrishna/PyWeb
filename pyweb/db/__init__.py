@@ -7,6 +7,7 @@ import os
 import queue
 import re
 import threading
+import weakref
 from contextlib import contextmanager
 
 _OPS = {
@@ -253,6 +254,10 @@ class TransientDBError(Exception):
     """Retriable error (deadlock, serialization failure, conn reset)."""
 
 
+#: Every database opened with connect(), for readiness checks (/readyz).
+OPEN: "weakref.WeakSet" = weakref.WeakSet()
+
+
 class _PooledDB:
     """Shared DB-API pool: thread-local transactions, prepared statements,
     streaming cursors, prepared-statement cache, retriable-error mapping.
@@ -283,6 +288,11 @@ class _PooledDB:
         self._local = threading.local()
         self._stmt_cache_size = statement_cache
         self._stmt_cache: dict[str, str] = {}
+        OPEN.add(self)
+
+    def ping(self):
+        """Raise if the database can't answer a trivial query (readiness checks)."""
+        self.execute("SELECT 1")
 
     def _current(self):
         return getattr(self._local, "conn", None)

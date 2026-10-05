@@ -52,6 +52,8 @@ def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_
                 if msg["type"] == "lifespan.startup":
                     await send({"type": "lifespan.startup.complete"})
                 elif msg["type"] == "lifespan.shutdown":
+                    from .hosting import shutdown
+                    await asyncio.to_thread(shutdown)
                     await send({"type": "lifespan.shutdown.complete"})
                     return
         if scope["type"] != "http":

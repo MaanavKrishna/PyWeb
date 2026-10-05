@@ -61,6 +61,22 @@ class Queue:
         self._pool.submit(self._run, job, fn, args, kwargs, retries)
         return job
 
+    def shutdown(self, timeout=10.0):
+        """Stop taking jobs and wait up to ``timeout`` seconds for running ones to finish.
+
+        Returns how many were still running when time ran out.
+        """
+        import time as _time
+        end = _time.monotonic() + timeout
+        with self._lock:
+            pending = [j for j in self.jobs.values() if j.pending]
+        for job in pending:
+            job.done.wait(max(0.0, end - _time.monotonic()))
+        if self._pool is not None:
+            self._pool.shutdown(wait=False)
+            self._pool = None
+        return sum(1 for j in pending if j.pending)
+
     def _forget_old(self):
         """Drop jobs that finished more than ``keep_seconds`` ago. Hold the lock."""
         cutoff = time.monotonic() - self.keep_seconds

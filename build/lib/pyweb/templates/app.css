@@ -1,0 +1,50 @@
+:root { --ink: #14151c; --muted: #6b6e7c; --line: #e4e3dc; --accent: #3d5afe; --accent-soft: #e9edff; --bg: #fafaf7; --surface: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #eceef5; --muted: #868b9f; --line: #262a3b; --accent: #7b8cff; --accent-soft: #1b2050; --bg: #0b0c12; --surface: #11131b; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+main, .card { max-width: 640px; margin: 48px auto; padding: 0 20px; }
+h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 18px; }
+form, .row { display: flex; gap: 8px; margin: 12px 0; }
+input, textarea, button { font: inherit; color: inherit; }
+input:not([type=checkbox]), textarea { flex: 1; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+input:not([type=checkbox]):focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+textarea { min-height: 90px; width: 100%; }
+button { padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; font-weight: 500; transition: border-color .15s, background .15s; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary, form > button { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+li.done span { text-decoration: line-through; color: var(--muted); }
+li .remove { margin-left: auto; border: 0; color: var(--muted); background: transparent; font-size: 18px; padding: 2px 8px; }
+footer { display: flex; gap: 6px; align-items: center; margin-top: 18px; color: var(--muted); flex-wrap: wrap; }
+footer button { padding: 5px 12px; font-size: 14px; }
+footer .active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.empty, .muted { color: var(--muted); }
+.error { color: #dc2626; min-height: 1.5em; }
+article { padding: 18px 0; border-bottom: 1px solid var(--line); }
+article h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.01em; }
+a { color: var(--accent); }
+.msg { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.msg b { margin-right: 8px; }
+.markdown > :first-child { margin-top: 0; } .markdown > :last-child { margin-bottom: 0; }
+.markdown ul, .markdown ol { list-style: revert; padding-left: 1.4em; margin: 8px 0; }
+.markdown li { display: list-item; padding: 2px 0; border: 0; }
+.markdown code { font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; }
+.markdown pre { background: #0f111a; color: #e6e8f0; padding: 12px 14px; border-radius: 10px; overflow-x: auto; }
+.markdown pre code { background: none; padding: 0; color: inherit; }
+.markdown blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.markdown table { border-collapse: collapse; margin: 8px 0; } .markdown th, .markdown td { border: 1px solid var(--line); padding: 4px 10px; }
+.chat { display: flex; flex-direction: column; gap: 12px; margin: 18px 0; }
+.bubble { padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); max-width: 90%; }
+.bubble.user { align-self: flex-end; background: var(--accent-soft); border-color: transparent; }
+.typing { color: var(--muted); font-size: 14px; }
+.site-nav { display: flex; gap: 6px; align-items: center; max-width: 640px; margin: 20px auto 0; padding: 0 20px; flex-wrap: wrap; }
+.site-nav a { padding: 6px 12px; border-radius: 999px; text-decoration: none; color: var(--ink); }
+.site-nav a[aria-current] { background: var(--accent-soft); color: var(--accent); }
+.site-nav a[aria-current="page"] { font-weight: 600; }
+.site-nav .spacer { flex: 1; }
+.site-footer { max-width: 640px; margin: 40px auto; padding: 0 20px; color: var(--muted); font-size: 14px; }

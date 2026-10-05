@@ -100,12 +100,17 @@ def test_postgres_guard():
         PostgresDB("postgres://localhost/x")
 
 
-def test_model_unbound_errors():
+def test_model_unbound_errors(monkeypatch):
+    """In production a Model with no database is an error, never a silent in-memory one."""
+    from pyweb import models
     class Orphan(Model):
         __table__ = "orphan"
         id = IntegerField(primary_key=True)
 
     Orphan._db = None
+    monkeypatch.setattr(models._state, "db", None)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("PYWEB_ENV", "production")
     with pytest.raises(RuntimeError, match="not bound"):
         Orphan.all()
 

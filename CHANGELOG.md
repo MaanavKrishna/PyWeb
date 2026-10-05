@@ -6,6 +6,56 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+Work towards 0.5.0: production apps in one Python file.
+
+### Added
+- **Models on `pyweb.db`.** `class Post(Model): title: str = Field(max=120)`
+  works on SQLite, Postgres and MySQL with the same code. Types include
+  `Decimal`, timezone-aware `datetime`, `date`, `time`, JSON (`dict`/`list`),
+  `bytes`, `UUID`, `Text`, `Email`, `URL` and `Slug`. `Field(...)` holds the
+  column's schema and its validation rules (`min`, `max`, `pattern`,
+  `choices`, `format`, `unique`, `index`, `private`, `auto_now_add`, ...);
+  `@validates("field")` adds custom checks. Saving writes only changed
+  columns; unique violations become field errors.
+- **Relations.** `author: User` is a foreign key, `tags: list[Tag]` is
+  many-to-many, `OneToOne(...)`, with reverse accessors (`user.posts`).
+  `include("author", "tags", "author.profile")` loads related rows with one
+  query per relation; reading a relation that wasn't included is an error
+  while developing (so pages can't do N+1 queries) and a logged warning in
+  production. Relation filters (`Post.author.has(...)`, `User.posts.any(...)`)
+  use subqueries.
+- **Query builder.** Immutable, lazy queries with `Post.views > 10`, `&`,
+  `|`, `~`, keyword lookups (`title__icontains=`, `id__in=`, ...),
+  `order`, slicing, `first/last/get/get_or_404`, `count/exists`,
+  `values/pluck`, `aggregate` and `group_by` with `Count/Sum/Avg/Min/Max`,
+  bulk `update/delete`, cursor pagination with `page()`, `get_or_create`,
+  `upsert`, `bulk_create`, and `.live()`.
+- **Transactions per request.** Every `@server` call is one transaction,
+  started at its first write; `@atomic` / `@atomic(False)`. Nested
+  `db.transaction()` blocks are savepoints. `ValidationError` from an RPC
+  answers 422 with the errors per field.
+- **Migrations.** `pyweb db diff` compares Models with the live database
+  and writes Python migrations; `upgrade`, `downgrade`, `status`, `adopt`,
+  `squash`, `seed`. Changes are split into *expand* steps (safe during a
+  rolling deploy) and *contract* steps (`upgrade --contract`), including
+  renames with `--rename table.old=new`. A lock shared by every server
+  (Postgres advisory lock, MySQL `GET_LOCK`, or a lock row) makes
+  `pyweb serve --migrate` safe with many servers. SQLite schema changes
+  rebuild tables with foreign keys paused. `pyweb dev` applies pending
+  migrations, and apps without migrations create tables on first use.
+- **Read replicas** with `DATABASE_REPLICA_URL` (read-your-writes inside a
+  request), slow query logging with query plans (`PYWEB_SLOW_QUERY_MS`),
+  `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and
+  `pyweb.testing.Factory`.
+
+### Changed
+- SQLite connections enforce foreign keys and use write-ahead logging.
+- `Model.configure()` is deprecated in favour of `App(database=...)` /
+  `DATABASE_URL`; 0.4-style Models keep working (rows still read like
+  dicts: `row["name"]`).
+- In production, a Model with no database is an error instead of an
+  in-memory SQLite file.
+
 ## [0.4.4]
 
 Security and running in production. No app changes needed, and nobody

@@ -1,0 +1,180 @@
+"""AI chat: a streaming server function, a Stop button and Markdown answers.
+
+Pick a model with environment variables (the key never reaches the browser):
+
+    ANTHROPIC_API_KEY=...                      Anthropic (AI_MODEL defaults to claude-sonnet-5-5)
+    OPENAI_API_KEY=... AI_MODEL=...            OpenAI, or any OpenAI-compatible server
+    OPENAI_BASE_URL=http://localhost:11434/v1  (Ollama, vLLM, LM Studio, ...; key optional there)
+
+With none of them set, a small demo model answers so the app works offline.
+"""
+
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+from pyweb import App, Markdown, RPCError, server
+
+app = App(title="AI chat", stylesheets=["/static/app.css"])
+
+SYSTEM = "You are a helpful assistant. Answer in Markdown."
+MAX_MESSAGES = 20
+MAX_CHARS = 4000
+
+
+def provider():
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_BASE_URL"):
+        return "openai"
+    return "demo"
+
+
+def describe():
+    name = provider()
+    if name == "demo":
+        return "Demo model (set ANTHROPIC_API_KEY or OPENAI_API_KEY for a real one)"
+    model = os.environ.get("AI_MODEL") or ("claude-sonnet-5-5" if name == "anthropic" else "?")
+    return f"{name}: {model}"
+
+
+def clean(messages):
+    """The conversation as the model APIs want it, checked and trimmed."""
+    out = []
+    for m in messages[-MAX_MESSAGES:]:
+        if not isinstance(m, dict) or m.get("role") not in ("user", "assistant"):
+            raise RPCError("validation_error", "messages must be {role, content} objects")
+        out.append({"role": m["role"], "content": str(m.get("content") or "")[:MAX_CHARS]})
+    if not out or out[-1]["role"] != "user":
+        raise RPCError("validation_error", "the last message must be from the user")
+    return out
+
+
+def post_lines(url, headers, body):
+    """POST JSON and yield the response's lines as they arrive (closing the connection stops the model)."""
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            for raw in resp:
+                yield raw.decode("utf-8", "replace").strip()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        raise RPCError("unavailable", f"the model API answered {exc.code}: {detail}") from None
+    except OSError as exc:
+        raise RPCError("unavailable", f"couldn't reach the model API: {exc}") from None
+
+
+def anthropic(messages):
+    body = {"model": os.environ.get("AI_MODEL", "claude-sonnet-5-5"), "max_tokens": 2048,
+            "system": SYSTEM, "messages": messages, "stream": True}
+    headers = {"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01"}
+    for line in post_lines("https://api.anthropic.com/v1/messages", headers, body):
+        if not line.startswith("data:"):
+            continue
+        event = json.loads(line[5:])
+        if event.get("type") == "content_block_delta" and event["delta"].get("type") == "text_delta":
+            yield event["delta"]["text"]
+        elif event.get("type") == "error":
+            raise RPCError("unavailable", event["error"].get("message", "model error"))
+
+
+def openai(messages):
+    model = os.environ.get("AI_MODEL")
+    if not model:
+        raise RPCError("unavailable", "set AI_MODEL to the model name to use")
+    base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    key = os.environ.get("OPENAI_API_KEY")
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    body = {"model": model, "stream": True, "messages": [{"role": "system", "content": SYSTEM}] + messages}
+    for line in post_lines(base + "/chat/completions", headers, body):
+        if not line.startswith("data:") or line == "data: [DONE]":
+            continue
+        choices = json.loads(line[5:]).get("choices") or [{}]
+        text = (choices[0].get("delta") or {}).get("content")
+        if text:
+            yield text
+
+
+def demo(messages):
+    question = messages[-1]["content"]
+    answer = (f"You asked: **{question.strip()[:200]}**\n\n"
+              "I'm the built-in demo model, so I can't really answer, but this reply shows what the app does:\n\n"
+              "- it **streams**: each word arrives as the server `yield`s it;\n"
+              "- **Stop** cancels the request, which closes the generator on the server;\n"
+              "- replies are *Markdown*, rendered safely as they arrive.\n\n"
+              "Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` and restart to talk to a real model.")
+    for word in answer.split(" "):
+        time.sleep(0.03)
+        yield word + " "
+
+
+@server
+def reply(messages: list):
+    """Stream the assistant's next message, a piece at a time."""
+    history = clean(messages)
+    model = {"anthropic": anthropic, "openai": openai}.get(provider(), demo)
+    yield from model(history)
+
+
+@app.page("/", title="AI chat")
+def Chat():
+    model_name = describe()
+    messages = []
+    draft = ""
+    busy = False
+    stream = None
+    error = ""
+
+    async def send():
+        text = draft.strip()
+        if not text or busy:
+            return
+        draft = ""
+        error = ""
+        messages.append({"role": "user", "content": text})
+        messages.append({"role": "assistant", "content": ""})
+        busy = True
+        stream = reply(messages[:-1])
+        try:
+            async for piece in stream:
+                messages[-1]["content"] += piece
+        except RPCError as e:
+            error = str(e)
+        busy = False
+
+    def stop():
+        if stream:
+            stream.cancel()
+
+    def on_unmount():
+        stop()
+
+    <main>
+        <h1>Chat</h1>
+        <p class="muted">{model_name}</p>
+        <div class="chat">
+            for m in messages:
+                <div class={"bubble " + m["role"]}>
+                    if m["role"] == "assistant":
+                        if m["content"]:
+                            <Markdown text={m["content"]} />
+                        else:
+                            <span class="typing">Thinking…</span>
+                    else:
+                        {m["content"]}
+                </div>
+            if not messages:
+                <p class="empty">Ask something to start.</p>
+        </div>
+        <p class="error">{error}</p>
+        <form onsubmit={send}>
+            <input id="prompt" bind={draft} placeholder="Message" autocomplete="off" />
+            if busy:
+                <button id="stop" type="button" onclick={stop}>Stop</button>
+            else:
+                <button id="send">Send</button>
+        </form>
+    </main>

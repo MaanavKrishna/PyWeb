@@ -41,7 +41,7 @@ redis = ["redis>=5"]
 crypto = ["cryptography>=42"]
 asgi = ["uvicorn>=0.30"]
 all = ["psycopg[binary]>=3.1", "PyMySQL>=1.1", "redis>=5", "cryptography>=42", "uvicorn>=0.30"]
-test = ["pytest>=8", "playwright>=1.45", "mcp>=1.2"]
+test = ["pytest>=8", "playwright>=1.45", "mcp>=1.2", "hypothesis>=6.100"]
 
 [project.urls]
 Homepage = "https://maanavkrishna.github.io/PyWeb/"

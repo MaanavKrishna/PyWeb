@@ -1,0 +1,26 @@
+from pyweb import App
+
+app = App(title="Counter")
+
+
+@app.page("/")
+def Home():
+    count = 0
+    step = 1
+    doubled = count * 2
+
+    def increment():
+        count += step
+
+    def reset():
+        count = 0
+
+    <main>
+        <h1>Counter</h1>
+        <button id="inc" onclick={increment}>Count: {count}</button>
+        <button id="reset" onclick={reset} disabled={count == 0}>Reset</button>
+        <label>
+            Step <input id="step" type="number" bind={step} />
+        </label>
+        <p id="doubled">Doubled: {doubled}</p>
+    </main>

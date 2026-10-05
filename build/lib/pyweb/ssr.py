@@ -1,0 +1,377 @@
+"""Server-side rendering: UI tree + Python values → HTML.
+
+The same UI tree the compiler turns into browser JS is rendered here with
+real Python semantics, so the first paint is complete, crawlable HTML.
+Rendering rules match the browser runtime:
+
+* ``{expr}`` renders ``str(value)``; ``None`` renders nothing.
+* text and attribute values are HTML-escaped; ``javascript:`` URLs in
+  ``href``/``src``/``action`` are neutralised.
+* ``attr={True}`` renders a bare attribute, ``False``/``None`` omit it.
+* ``class={{"done": flag}}`` and ``style={{"color": c}}`` accept dicts.
+* ``on*`` handlers are dropped; ``bind={x}`` renders ``x`` as the value.
+"""
+
+from __future__ import annotations
+
+import ast
+import builtins
+import functools
+import hashlib
+import html as _html
+import json
+import posixpath
+import re
+
+from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode, SlotNode, TextNode
+
+VOID = {"input", "img", "br", "hr", "meta", "link", "source", "wbr",
+        "col", "base", "area", "embed", "track", "param"}
+URL_ATTRS = {"href", "src", "action", "formaction", "xlink:href"}
+BOOL_PROPS = {"checked", "selected", "disabled", "readonly", "required", "multiple", "hidden"}
+_BAD_URL = re.compile(r"^\s*(javascript|vbscript|data:text/html)", re.I)
+
+
+class Markup(str):
+    """Pre-rendered HTML (component children). Not escaped again."""
+
+
+class RenderError(Exception):
+    def __init__(self, msg, lineno=None):
+        super().__init__(f"line {lineno}: {msg}" if lineno else msg)
+        self.lineno = lineno
+
+
+def safe_url(v):
+    s = str(v)
+    return "#" if _BAD_URL.match(re.sub(r"[\x00-\x1f]", "", s)) else s
+
+
+def text_of(v):
+    if v is None:
+        return ""
+    if isinstance(v, Markup):
+        return v
+    return _html.escape(str(v), quote=False)
+
+
+def clsx(v):
+    if v is None or v is False:
+        return ""
+    if isinstance(v, dict):
+        return " ".join(k for k, on in v.items() if on)
+    if isinstance(v, (list, tuple)):
+        return " ".join(c for c in (clsx(x) for x in v) if c)
+    return str(v)
+
+
+def _kebab(k):
+    return re.sub(r"[A-Z]", lambda m: "-" + m.group(0).lower(), k).replace("_", "-")
+
+
+def style_of(v):
+    if isinstance(v, dict):
+        return "; ".join(f"{_kebab(k)}: {val}" for k, val in v.items() if val is not None and val is not False)
+    return str(v)
+
+
+def to_jsonable(v):
+    """Convert server values to JSON for the page state payload."""
+    import dataclasses
+    import datetime
+    import decimal
+    if v is None or isinstance(v, (bool, int, float, str)):
+        return v
+    if isinstance(v, (list, tuple, set, frozenset)):
+        return [to_jsonable(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): to_jsonable(x) for k, x in v.items()}
+    if dataclasses.is_dataclass(v) and not isinstance(v, type):
+        return to_jsonable(dataclasses.asdict(v))
+    if isinstance(v, (datetime.datetime, datetime.date, datetime.time)):
+        return v.isoformat()
+    if isinstance(v, decimal.Decimal):
+        return float(v)
+    for attr in ("to_dict", "dict", "model_dump"):
+        fn = getattr(v, attr, None)
+        if callable(fn):
+            return to_jsonable(fn())
+    if hasattr(v, "__dict__"):
+        return {k: to_jsonable(x) for k, x in vars(v).items() if not k.startswith("_")}
+    raise TypeError(f"value of type {type(v).__name__} cannot be sent to the browser")
+
+
+def state_json(state):
+    """JSON for ``<script id="pw-state">`` — safe inside HTML."""
+    raw = json.dumps(to_jsonable(state), separators=(",", ":"))
+    return raw.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+@functools.lru_cache(maxsize=4096)
+def _compiled(code):
+    """Template expressions repeat on every request; compile each once."""
+    return compile(code, "<pyweb-ssr>", "eval")
+
+
+@functools.lru_cache(maxsize=1024)
+def _loop_target(target):
+    return ast.parse(target, mode="eval").body
+
+
+#: Key in a component's render env naming the .pyweb file it came from, so
+#: components it uses are looked up in that file (``None``: the app itself).
+NS_KEY = "__pyweb_ns__"
+#: Stands in for the page inside a rendered layout until :func:`page_html` nests them.
+SLOT_MARK = "\x00pyweb-slot\x00"
+
+
+def link_current(href, path):
+    """``aria-current`` for a link to ``href`` on the page at ``path``: "page", "true" (a parent
+    section) or None."""
+    if not path or not isinstance(href, str) or not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+        return None
+    from urllib.parse import urlsplit
+    parts = urlsplit(href)
+    if parts.scheme or parts.netloc:
+        return None
+    target = parts.path
+    if not target:
+        return None
+    if not target.startswith("/"):
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
+    if target == path:
+        return "page"
+    if target != "/" and path.startswith(target.rstrip("/") + "/"):
+        return "true"
+    return None
+
+
+class Renderer:
+    """Render UI nodes.
+
+    ``component_state(name, props, ns) -> (ui_nodes, env)`` is supplied by
+    the caller: the compiler uses static evaluation, the server calls the
+    real component function. ``ns`` is the file whose markup uses the
+    component (see :data:`NS_KEY`).
+    """
+
+    def __init__(self, globals_=None, component_state=None, strict=True, path=None):
+        self.path = path   # the request path, for marking links to the current page
+        self.globals = dict(globals_ or {})
+        self.globals.setdefault("__builtins__", builtins)
+        self.component_state = component_state
+        self.strict = strict
+
+    def eval(self, code, env, lineno=None):
+        scope = dict(self.globals)
+        scope.update(env)
+        try:
+            return eval(_compiled(code), scope)  # noqa: S307 - app's own code
+        except Exception as exc:  # noqa: BLE001
+            if self.strict:
+                raise RenderError(f"{{{code}}} raised {type(exc).__name__}: {exc}", lineno) from exc
+            return None
+
+    def render(self, nodes, env):
+        return "".join(self.node(n, env) for n in nodes)
+
+    def node(self, n, env):
+        if isinstance(n, TextNode):
+            return _html.escape(n.text, quote=False)
+        if isinstance(n, ExprNode):
+            return text_of(self.eval(n.code, env, n.line))
+        if isinstance(n, MarkdownNode):
+            from .markdown import render as markdown
+            kind, code, line = n.attrs["text"]
+            text = code if kind == "lit" else self.eval(code, env, line)
+            attrs = {k: v for k, v in n.attrs.items() if k != "text"}
+            user = attrs.pop("class", None) or attrs.pop("class_", None)
+            if user is None:
+                attrs["class"] = ("lit", "markdown", n.line)
+            elif user is True or user[0] == "lit":
+                attrs["class"] = ("lit", "markdown" + ("" if user is True else " " + user[1]), n.line)
+            else:
+                attrs["class"] = ("expr", f"['markdown', ({user[1]})]", user[2])
+            return f"<div{self.attrs_html(Element('div', attrs, [], n.line), env)}>{markdown(text)}</div>"
+        if isinstance(n, SlotNode):
+            return f'<div data-pw-slot="{_html.escape(n.layout)}" style="display:contents">{SLOT_MARK}</div>'
+        if isinstance(n, ControlFor):
+            items = self.eval(n.iterable, env, n.line)
+            if items is None:
+                return ""
+            target = _loop_target(n.target)
+            out = []
+            for item in items:
+                scope = dict(env)
+                _bind(target, item, scope)
+                out.append(self.render(n.body, scope))
+            return "".join(out)
+        if isinstance(n, ControlIf):
+            if self.eval(n.test, env, n.line):
+                return self.render(n.body, env)
+            return self.render(n.orelse, env)
+        if isinstance(n, Element):
+            if n.is_component:
+                return self.component(n, env)
+            return self.element(n, env)
+        return ""
+
+    def attrs_html(self, n, env):
+        parts = []
+        for key, val in n.attrs.items():
+            if key.startswith("on") or key == "ref":
+                continue
+            if key == "bind":
+                if not isinstance(val, tuple):
+                    continue
+                v = self.eval(val[1], env, val[2])
+                typ = n.attrs.get("type")
+                typ = typ[1] if isinstance(typ, tuple) else None
+                if typ == "checkbox":
+                    if v:
+                        parts.append(" checked")
+                elif typ == "radio":
+                    own = n.attrs.get("value")
+                    if isinstance(own, tuple) and str(v) == own[1]:
+                        parts.append(" checked")
+                elif n.tag.lower() not in ("select", "textarea"):
+                    parts.append(f' value="{_html.escape("" if v is None else str(v))}"')
+                continue
+            name = "class" if key in ("class_", "className") else key
+            if val is True:
+                parts.append(f" {name}")
+                continue
+            kind, body, line = val
+            v = body if kind == "lit" else self.eval(body, env, line)
+            if name == "class":
+                v = clsx(v)
+                if not v:
+                    continue
+            elif name == "style" and isinstance(v, dict):
+                v = style_of(v)
+            if v is None or v is False:
+                continue
+            if v is True:
+                parts.append(f" {name}")
+                continue
+            if name in URL_ATTRS:
+                v = safe_url(v)
+            if name == "href" and n.tag == "a" and "aria-current" not in n.attrs:
+                current = link_current(v, self.path)
+                if current:
+                    parts.append(f' aria-current="{current}"')
+            parts.append(f' {name}="{_html.escape(str(v))}"')
+        return "".join(parts)
+
+    def element(self, n, env):
+        tag = n.tag
+        attrs = self.attrs_html(n, env)
+        if tag.lower() in VOID:
+            return f"<{tag}{attrs}>"
+        inner = self.render(n.children, env)
+        if tag.lower() == "textarea" and "bind" in n.attrs and isinstance(n.attrs["bind"], tuple):
+            v = self.eval(n.attrs["bind"][1], env, n.line)
+            inner = _html.escape("" if v is None else str(v), quote=False)
+        if tag.lower() == "select" and "bind" in n.attrs and isinstance(n.attrs["bind"], tuple):
+            v = self.eval(n.attrs["bind"][1], env, n.line)
+            inner = re.sub(r'<option value="([^"]*)"',
+                           lambda m: m.group(0) + (" selected" if _html.unescape(m.group(1)) == str(v) else ""),
+                           inner)
+        return f"<{tag}{attrs}>{inner}</{tag}>"
+
+    def component(self, n, env):
+        if self.component_state is None:
+            raise RenderError(f"unknown component <{n.tag}>", n.line)
+        props = {}
+        for key, val in n.attrs.items():
+            if val is True:
+                props[key] = True
+            elif val[0] == "lit":
+                props[key] = val[1]
+            else:
+                props[key] = self.eval(val[1], env, val[2])
+        if n.children:
+            props["children"] = Markup(self.render(n.children, env))
+        ui, cenv = self.component_state(n.tag, props, env.get(NS_KEY))
+        return self.render(ui, cenv)
+
+
+def _bind(target, value, scope):
+    if isinstance(target, ast.Name):
+        scope[target.id] = value
+        return
+    if isinstance(target, (ast.Tuple, ast.List)):
+        vals = list(value)
+        if len(vals) != len(target.elts):
+            raise RenderError(f"cannot unpack {len(vals)} values into {len(target.elts)} names")
+        for t, v in zip(target.elts, vals):
+            _bind(t, v, scope)
+        return
+    raise RenderError("unsupported loop target")
+
+
+def head_tags(title, head):
+    """``<meta>``/``<link>`` tags for a page's description, social cards and canonical URL."""
+    head = head or {}
+    esc = _html.escape
+    out = []
+    description, image, canonical = head.get("description"), head.get("image"), head.get("canonical")
+    if description:
+        out.append(f'<meta name="description" content="{esc(str(description))}">')
+    if canonical:
+        out.append(f'<link rel="canonical" href="{esc(safe_url(str(canonical)))}">')
+    if head.get("noindex"):
+        out.append('<meta name="robots" content="noindex">')
+    if description or image or canonical:
+        out.append(f'<meta property="og:title" content="{esc(str(title))}">')
+        out.append('<meta property="og:type" content="website">')
+        if description:
+            out.append(f'<meta property="og:description" content="{esc(str(description))}">')
+        if canonical:
+            out.append(f'<meta property="og:url" content="{esc(safe_url(str(canonical)))}">')
+        if image:
+            out.append(f'<meta property="og:image" content="{esc(safe_url(str(image)))}">')
+        out.append(f'<meta name="twitter:card" content="{"summary_large_image" if image else "summary"}">')
+    return "".join(t.replace("<meta ", "<meta data-pw-head ", 1).replace("<link ", "<link data-pw-head ", 1)
+                   for t in out)
+
+
+def page_html(*, name, title, body, state, js_url=None, css_urls=(), head_extra="", lang="en", importmap=None,
+              layouts=(), head=None, nav=True):
+    """The full HTML document for one page.
+
+    ``importmap`` maps npm specifiers to vendored files. ``layouts`` wrap
+    the page, outermost first: dicts with ``name``, ``body`` (containing
+    :data:`SLOT_MARK`), ``state``, ``js_url`` and ``version``. ``head`` adds
+    description/social/canonical tags. ``nav=False`` turns off client-side
+    navigation.
+    """
+    esc = _html.escape
+    css = "".join(f'<link rel="stylesheet" href="{esc(u)}">' for u in css_urls)
+    inner = f'<div data-pw-root="{esc(name)}">{body}</div>'
+    for lay in reversed(list(layouts)):
+        lname = esc(lay["name"])
+        # Client-side navigation keeps a layout only while its code, server data and markup
+        # (current-link marks aside) are unchanged.
+        seen = re.sub(r' aria-current="[^"]*"', "", lay["body"])
+        print_ = hashlib.sha256(f'{lay.get("version")}|{seen}|{state_json(lay.get("state") or {})}'.encode())
+        inner = (f'<div data-pw-root="{lname}" data-pw-layout="{lname}:{print_.hexdigest()[:12]}">'
+                 + lay["body"].replace(SLOT_MARK, inner, 1) + "</div>")
+    script = ""
+    for lay in layouts:
+        if lay.get("js_url"):
+            script += (f'<script id="pw-state-{esc(lay["name"])}" type="application/json">'
+                       f'{state_json(lay.get("state") or {})}</script>'
+                       f'<script type="module" src="{esc(lay["js_url"])}"></script>')
+    if js_url:
+        script += (f'<script id="pw-state" type="application/json">{state_json(state)}</script>'
+                   f'<script type="module" src="{esc(js_url)}"></script>')
+    if importmap and script:
+        from .packages import importmap_json
+        head_extra = f'<script type="importmap">{importmap_json(importmap)}</script>' + head_extra
+    if not nav:
+        head_extra = '<meta name="pw-nav" content="off">' + head_extra
+    return (f"<!doctype html>\n<html lang=\"{esc(lang)}\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            f"<title>{esc(title)}</title>{head_tags(title, head)}{css}{head_extra}</head>"
+            f"<body>{inner}{script}</body></html>\n")

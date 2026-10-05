@@ -59,6 +59,35 @@ Work towards 0.5.0: production apps in one Python file.
   `PYWEB_MAX_UPLOAD` (default 10MB); `PYWEB_STORAGE` is a local folder
   (served with a sandboxing CSP) or S3-compatible storage with presigned
   URLs and no SDK.
+- **Auth kit.** `auth = app.use_auth()` adds `/signup`, `/login`,
+  `/logout`, `/reset`, `/account` and `/admin`, rendered on the server and
+  working without JavaScript. Sign in with a password, an emailed link, a
+  passkey (also offered in the email field's autofill) or GitHub / Google /
+  Microsoft (PKCE + `state`), with optional authenticator-app codes and
+  recovery codes. Define a page at the same route to replace one;
+  `auth.user()`, `auth.authenticate()`, `auth.login()`, `auth.set_roles()`,
+  `auth.revoke()` ... for custom flows. Tables `users`, `auth_identities`,
+  `auth_credentials`, `auth_tokens` and `auth_events` are ordinary Models.
+- **Guards.** `login=True`, `roles=[...]` and `fresh=seconds` on
+  `@app.page`, `@app.layout` and `@server`.
+- **Row policies.** `Note.policy(read=..., write=...)` limits the rows each
+  user can see and change, on every query and save in a request
+  (`with system():` skips them on purpose).
+- **Admin.** `/admin` lists, searches, edits and deletes rows of every
+  Model for users with the `admin` role; private fields never appear; every
+  change is in the audit log.
+- **Account security.** scrypt (or argon2id with `pyweb-stack[auth]`)
+  hashes upgraded at sign-in; breached-password check in production;
+  guessing slowed down per account and per IP (shared through Redis) with no
+  lockout; the same answer and timing for unknown emails; emailed links
+  hashed, single-use (also under concurrent clicks) and short-lived;
+  passkey challenges single-use on every server; password resets, password
+  and role changes sign out other sessions, durably in the `users` table
+  (and fail closed if the database can't be checked); emailed links are
+  built from `PYWEB_ORIGIN`, never from the `Host` header, in production.
+- **`pyweb.mail`.** `PYWEB_MAIL_URL` (SMTP/SMTPS) and `PYWEB_MAIL_FROM`;
+  while developing, emails are printed and kept in `pyweb.mail.OUTBOX`.
+- `pyweb check --production` reports `use_auth()` without `PYWEB_ORIGIN`.
 - **Read replicas** with `DATABASE_REPLICA_URL` (read-your-writes inside a
   request), slow query logging with query plans (`PYWEB_SLOW_QUERY_MS`),
   `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and

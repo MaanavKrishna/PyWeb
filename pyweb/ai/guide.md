@@ -192,6 +192,17 @@ def Item(item_id: int):
   from the Model; don't add your own JS validation. `values={post}` edits a
   row. Raise `ValidationError({"field": "message"})` for your own checks.
   Uploads: `photo: str | None = File(types=["image/*"])` + `<FileInput name="photo" />`.
+- Accounts: `auth = app.use_auth()` (after `App(database=...)`) gives
+  `/signup`, `/login`, `/logout`, `/reset`, `/account` and `/admin`; don't
+  write your own login pages, password hashing or reset emails. Guard with
+  `@app.page("/x", login=True, roles=["admin"], fresh=600)`, the same on
+  `@app.layout` and `@server(login=True)`. In code: `user = auth.user()`
+  (a `User` row or None), `auth.require("admin")`, `auth.set_roles(user, [...])`.
+  Scope rows per user with `Note.policy(read=lambda user: Note.owner_id == user.id,
+  write=lambda user, note: note.owner_id == user.id)` instead of checking
+  ownership by hand in every function. OAuth: `use_auth(providers=["github"])`
+  plus `PYWEB_OAUTH_GITHUB_ID/SECRET`. Production needs `PYWEB_ORIGIN` and
+  `PYWEB_MAIL_URL`; while developing, emailed links are printed in the terminal.
 - Raw SQL when needed: `from pyweb.db import connect; db = connect(url)`;
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
   parameters; `with db.transaction(): ...`.

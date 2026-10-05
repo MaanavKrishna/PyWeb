@@ -407,6 +407,10 @@ class Server:
     def _check_rpc_access(self, req: Request, fn, *, form=False):
         """Auth + CSRF + rate-limit gate. Returns None (allow) or Response."""
         from pyweb import rpc as _rpc
+        blocked = self._guard_failure(req, [getattr(fn, "__pyweb_guard__", None)] if getattr(
+            fn, "__pyweb_guard__", None) else None, page=False)
+        if blocked is not None:
+            return blocked
         need_auth = getattr(fn, "__pyweb_auth__", False)
         need = getattr(fn, "__pyweb_permissions__", [])
         csrf_exempt = getattr(fn, "__pyweb_csrf_exempt__", False)
@@ -626,7 +630,49 @@ class Server:
                 return Response(200, page["html"], {"Content-Type": "text/html; charset=utf-8",
                                                     "X-Request-Id": req.id})
             return self._render_page(req, name, m.groupdict())
+        kit = self._auth_kit()
+        if kit is not None:
+            resp = kit.handle(self, req)
+            if resp is not None:
+                return resp
         return self.error_page(404, req)
+
+    def _auth_kit(self):
+        found = getattr(getattr(self.app, "app", None), "auth", None)
+        return found if type(found).__name__ == "AuthKit" else None
+
+    def _guard_failure(self, req, guards, *, page):
+        """None if every guard passes; else the response (redirect to sign in, 401 or 403)."""
+        if not guards:
+            return None
+        import time as _time
+        from urllib.parse import urlencode
+        from pyweb import rpc as _rpc
+        from pyweb.context import session
+        kit = self._auth_kit()
+        payload = session.user()
+        user = kit.user() if kit is not None else payload
+        if kit is not None and payload is not None and user is None:
+            payload = None                            # a closed account
+        roles = set((user.roles or []) if kit is not None and user is not None else (payload or {}).get("roles") or [])
+        for g in guards:
+            if payload is None:
+                if page:
+                    return Response(303, "", {"Location": "/login?" + urlencode({"next": req.path}),
+                                              "Cache-Control": "no-store"})
+                return self._err(_rpc.Code.AUTH, "sign in first")
+            if g.get("fresh") and _time.time() - payload.get("auth_time", 0) > g["fresh"]:
+                if page:
+                    return Response(303, "", {"Location": "/login?" + urlencode({"next": req.path, "fresh": "1"}),
+                                              "Cache-Control": "no-store"})
+                return self._err(_rpc.Code.AUTH, "please sign in again to continue")
+            missing = [r for r in g.get("roles") or () if r not in roles]
+            if missing:
+                if page:
+                    return self.error_page(403, req, title="Not allowed",
+                                           message="You don't have access to this page.")
+                return self._err(_rpc.Code.FORBIDDEN, "you don't have access to this")
+        return None
 
     # ------------------------------------------------------------- forms
     def _page_for(self, path):
@@ -793,6 +839,9 @@ class Server:
     def _render_page(self, req, name, params):
         from pyweb.context import BadRequest, NotFound, Redirect
         from urllib.parse import parse_qs, unquote
+        blocked = self._guard_failure(req, self.compiled["pages"].get(name, {}).get("guards"), page=True)
+        if blocked is not None:
+            return blocked
         path, _, qs = req.path.partition("?")
         try:
             result = self._render_with_timeout(name, {k: unquote(v) for k, v in params.items()},

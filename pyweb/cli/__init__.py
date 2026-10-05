@@ -91,6 +91,9 @@ def production_problems(source="", app_dir="."):
     if workers > 1 and not s.redis_url:
         out.append(f"WEB_CONCURRENCY={workers} without PYWEB_REDIS_URL: each worker would keep its own rate "
                    "limits and live updates (connect Redis to share them)")
+    if "use_auth(" in (source or "") and not os.environ.get("PYWEB_ORIGIN") and "origin=" not in source:
+        out.append("app.use_auth() without PYWEB_ORIGIN: password-reset and sign-in emails need the site's "
+                   "public address (set PYWEB_ORIGIN=https://example.com)")
     if "allow_pickle=True" in (source or ""):
         out.append("RedisCache(allow_pickle=True): anyone who can write to Redis could run code; store JSON")
     if os.path.isfile(os.path.join(app_dir, "pyweb.lock")):

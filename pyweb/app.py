@@ -46,9 +46,14 @@ class App:
             self.use(plugin)
 
     def page(self, route, *, title=None, render="server", description=None, image=None, canonical=None,
-             noindex=False, layout=...):
+             noindex=False, layout=..., login=False, roles=(), fresh=None):
         """Register a page at ``route``. ``{name}`` segments and other parameters of the
-        function (from the query string) become its arguments."""
+        function (from the query string) become its arguments.
+
+        ``login=True`` sends visitors who aren't signed in to ``/login`` first;
+        ``roles=["admin"]`` also requires those roles (403 otherwise);
+        ``fresh=600`` requires a sign-in in the last 600 seconds.
+        """
         def deco(fn):
             self.pages.append((route, fn.__name__, {"render": render, "title": title}))
             fn.__pyweb_route__ = route
@@ -58,10 +63,11 @@ class App:
 
         return deco
 
-    def layout(self, prefix="/"):
+    def layout(self, prefix="/", *, login=False, roles=(), fresh=None):
         """Wrap every page under ``prefix`` in this function's markup (``{children}`` is the page).
 
-        Use as ``@app.layout`` or ``@app.layout("/admin")``.
+        Use as ``@app.layout`` or ``@app.layout("/admin")``. ``login=``, ``roles=``
+        and ``fresh=`` (as on :meth:`page`) then guard every page under ``prefix``.
         """
         if callable(prefix):
             self.layouts.append(("/", prefix.__name__))
@@ -80,6 +86,11 @@ class App:
             return fn
 
         return deco
+
+    def use_auth(self, db=None, **options):
+        """Accounts and sign-in: see :mod:`pyweb.authkit`. Returns the kit (``auth.user()`` ...)."""
+        from pyweb.authkit import use_auth
+        return use_auth(self, db, **options)
 
     def use(self, plugin):
         """Attach a :class:`pyweb.plugins.Plugin`; merges its routes."""

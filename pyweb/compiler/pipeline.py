@@ -232,6 +232,7 @@ def _compile(source, filename, route, title, libs, stack):
             "params": info.params, "sourcemap": sourcemap,
             "route": None if info.error_status else (info.route or route), "error_status": info.error_status,
             "layouts": [lay.name for lay in info.layouts], "head": dict(info.head),
+            "guards": [g for g in [lay.guard for lay in info.layouts] + [info.guard] if g],
             "handlers": {h: {"line": n.lineno} for h, n in info.handlers.items()},
             "source": ast.get_source_segment(source, info.node) or "",
             "dynamic": bool(info.params) or any(info.origin[n] == "server" for n in info.order)

@@ -4,6 +4,7 @@ from .app import App
 from .models import Email, Field, Model
 from .rules import ValidationError
 from .db import atomic
+from .auth import current_user
 from . import auth, cache, jobs, realtime, security, observability, forms, testing
 from . import sync, deploy, uploads, lsp, livetable
 from . import browser as browser_api
@@ -50,6 +51,7 @@ __all__ = [
     "Model",
     "ValidationError",
     "atomic",
+    "current_user",
     "task",
     "auth",
     "cache",

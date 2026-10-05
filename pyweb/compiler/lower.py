@@ -51,7 +51,7 @@ BUILTIN_COMPONENTS = ("Markdown",) + FORM_TAGS
 FORMS_VAR = "__pw_forms__"
 FORMS_FN = "__pw_form_specs__"
 ERROR_DECORATOR = "error"
-PAGE_OPTIONS = ("title", "description", "image", "canonical", "noindex", "layout")
+PAGE_OPTIONS = ("title", "description", "image", "canonical", "noindex", "layout", "login", "roles", "fresh")
 SERVER_DECORATORS = ("server", "worker", "edge", "task")
 
 
@@ -81,9 +81,17 @@ def _literal_kwargs(call):
 
 def _page_kwargs(fn):
     for d in fn.decorator_list:
-        if isinstance(d, ast.Call) and _deco_name(d) in (*PAGE_DECORATOR_ATTRS, ERROR_DECORATOR):
+        if isinstance(d, ast.Call) and _deco_name(d) in (*PAGE_DECORATOR_ATTRS, ERROR_DECORATOR, LAYOUT_DECORATOR):
             return _literal_kwargs(d)
     return {}
+
+
+def _guard(options):
+    """``login=`` / ``roles=`` / ``fresh=`` from a page or layout decorator, or None."""
+    login, roles, fresh = options.get("login"), options.get("roles"), options.get("fresh")
+    if not (login or roles or fresh):
+        return None
+    return {"login": True, "roles": list(roles or ()), "fresh": fresh}
 
 
 def _decorator_arg(fn, name):
@@ -142,7 +150,10 @@ class PageInfo:
         self.name = node.name
         self.kind = kind            # "page" | "component" | "layout"
         self.route = route          # pages: the route; layouts: the path prefix they wrap
-        options = _page_kwargs(node) if kind == "page" else {}
+        options = _page_kwargs(node) if kind in ("page", "layout") else {}
+        self.guard = _guard(options)
+        if kind == "layout":
+            options = {}
         self.title = options.get("title")
         self.head = {k: options[k] for k in ("description", "image", "canonical", "noindex") if k in options}
         self.layout_choice = options.get("layout", ...)   # ...: by route; None: no layout; "Name"

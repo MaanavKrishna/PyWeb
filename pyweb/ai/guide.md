@@ -166,7 +166,12 @@ def Item(item_id: int):
 ```
 
 - `session.login(user_id, **claims)`, `session.user()`, `session.logout()`,
-  `session.require("admin")`.
+  `session.require("admin")`. `pyweb.auth.revoke_user(user_id)` signs a user
+  out on every device (e.g. after a password change).
+- Give every `@server` parameter a type hint (`str`, `int`, `list[int]`,
+  a dataclass or Model, `Literal[...]`): arguments are checked against
+  them, and wrong types or unknown arguments get a 422 before your code
+  runs. Still check permissions and business rules yourself.
 - `pyweb.auth.hash_password` / `verify_password` for passwords.
 - Database: `from pyweb.db import connect; db = connect("sqlite:///app.db")`;
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`

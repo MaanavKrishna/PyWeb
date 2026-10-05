@@ -1,5 +1,37 @@
 # Security model
 
+## Threat model
+
+**PyWeb defends against** (on by default, no code needed):
+
+- other sites making a visitor's browser call your server functions
+  (CSRF: JSON-only RPCs, `Origin` and `Sec-Fetch-Site` checks,
+  `SameSite` cookies);
+- injecting HTML or script through data you display (escaping, URL
+  filtering, a strict Content-Security-Policy);
+- forged or tampered sessions, live-update feeds and live queries
+  (HMAC-signed with separate keys);
+- server-only code, imports and secrets leaking into browser code
+  (compile errors);
+- malformed or hostile requests: wrong argument types, oversized or
+  deeply nested bodies, huge headers, slow clients, connection floods,
+  too many live connections from one address;
+- tampered npm package files (`pyweb.lock` hashes);
+- path traversal in static files and unsafe redirects after login.
+
+**Your app is responsible for:**
+
+- authorization: checking *who* may do *what* in `@server` functions and
+  page bodies (`session.require(...)`), never in browser code;
+- keeping `PYWEB_AUTH_SECRET` secret and serving over HTTPS
+  (`PYWEB_COOKIE_SECURE=1`);
+- validating business rules beyond types (amounts, ownership, limits);
+- what you do with uploads, raw SQL you build yourself, and third-party
+  services you call.
+
+Run `pyweb check --production app.pyweb` before deploying: it lists
+settings that would leave a gap (see [Deployment](12-deployment.md)).
+
 ## What reaches the browser
 
 Only three things are sent to a browser:
@@ -59,9 +91,33 @@ reads, credential-like literals) and exits non-zero on findings.
 
 RPC endpoints only accept `POST` with a JSON content type (cross-site
 form posts are rejected with `415`) and reject requests whose `Origin`
-header names another site (`403 csrf_failed`). Session cookies are
+header names another site, or that the browser marks
+`Sec-Fetch-Site: cross-site` (`403 csrf_failed`). Session cookies are
 `SameSite=Lax` and `HttpOnly`. Setting `PYWEB_CSRF_SECRET` adds a
 token check for RPCs marked `@pyweb.decorators.auth_required`.
+
+## Signing keys and rotation
+
+`PYWEB_AUTH_SECRET` is a root secret. Sessions, live-update feeds and
+live query specs are each signed with their own key derived from it, so
+a token made for one purpose can't be used as another.
+
+To change the secret without signing everyone out, set the new value as
+`PYWEB_AUTH_SECRET` and move the old one to `PYWEB_AUTH_SECRET_PREVIOUS`
+(comma-separate several). Tokens signed with an old secret keep working
+until they expire; remove it from the list after a month (the longest a
+session lasts). Tokens issued before 0.4.4 also keep working through
+0.4.x.
+
+## Server function arguments
+
+Arguments are checked against the function's type hints before it runs:
+`str`, `int`, `float`, `bool`, `list[...]`, `dict[str, ...]`,
+`Optional[...]`, `Literal[...]`, dataclasses, `Model` subclasses and
+`Email`. A `name: str` never receives an object, a dataclass or Model
+gets only its own fields, and unknown argument names are refused, all
+with `422 validation_error` naming the field. Parameters without a type
+hint receive the JSON value as it is.
 
 ## SQL injection
 
@@ -70,7 +126,16 @@ table and column identifiers.
 
 ## Other protections
 
-- Request bodies are capped (1 MiB by default, `413` beyond).
+- Request bodies are capped (1 MiB by default, `413` beyond), and RPC
+  bodies nested more than 32 levels deep or holding more than 10,000
+  values are refused (`422`).
+- `pyweb serve` drops clients that stall for 30 seconds
+  (`PYWEB_SOCKET_TIMEOUT`), answers `503` beyond 256 simultaneous
+  connections (`PYWEB_MAX_CONNECTIONS`) and `431` to headers over 16 KB.
+  A client address may hold 20 live connections
+  (`PYWEB_MAX_STREAMS_PER_CLIENT`; `429` beyond).
+- Pages that take longer than 30 seconds (`PYWEB_RENDER_TIMEOUT`) get a
+  `504` instead of holding the server.
 - RPC calls are rate-limited (120/minute per client address by default).
   Behind a reverse proxy, set `PYWEB_TRUST_PROXY=1` so the visitor's
   address is used; `X-Forwarded-For` is ignored otherwise, because
@@ -81,7 +146,22 @@ table and column identifiers.
   targets; `pyweb.uploads.validate_upload` checks size, declared type and
   magic bytes, and generates safe storage names.
 - Passwords use PBKDF2-HMAC-SHA256 with per-user salts; session cookies
-  are HMAC-SHA256 signed and compared in constant time.
+  are HMAC-SHA256 signed and compared in constant time. Each login
+  starts a new session, sessions end 30 days after sign-in, and
+  `auth.revoke_user(user_id)` signs a user out everywhere
+  (see [Auth](10-auth.md)).
+- Every response carries `X-Content-Type-Options`, `Referrer-Policy`,
+  `X-Frame-Options`, `Permissions-Policy` (camera, microphone, location
+  and payments off), `Cross-Origin-Opener-Policy` and
+  `Cross-Origin-Resource-Policy`; with `PYWEB_COOKIE_SECURE=1`, also
+  `Strict-Transport-Security`. A page that needs the camera can send its
+  own `Permissions-Policy`.
+- `RedisCache` stores JSON. Reading pickled data can run code, so it's
+  only allowed with `RedisCache(..., allow_pickle=True)`.
+- `pyweb.lock` records a SHA-256 for every npm file; `pyweb build`
+  refuses files that changed since `pyweb add`.
+- Releases carry signed build provenance: check a downloaded file with
+  `gh attestation verify FILE --repo MaanavKrishna/PyWeb`.
 - Live-update channels can only be read with a feed from `channel()`:
   an HMAC-signed token that expires after 24 hours. A page that shows
   private data should only create a feed after checking the visitor

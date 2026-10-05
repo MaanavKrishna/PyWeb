@@ -133,3 +133,26 @@ def test_healthz_bodies_are_json(tmp_path):
         status, headers, body = site.respond("GET", path, {})
         assert status == 200 and json.loads(body)["ok"] is True
         assert dict(headers)["Cache-Control"] == "no-store"
+
+
+def test_check_production(tmp_path, monkeypatch, capsys):
+    import argparse
+
+    from pyweb import cli
+    (tmp_path / "app.pyweb").write_text("from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    <p>x</p>\n")
+    for var in ("PYWEB_AUTH_SECRET", "PYWEB_ENV", "PYWEB_COOKIE_SECURE", "PYWEB_TRUST_PROXY", "PYWEB_REDIS_URL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("WEB_CONCURRENCY", "4")
+    args = argparse.Namespace(file=str(tmp_path / "app.pyweb"), production=True)
+    with pytest.raises(SystemExit):
+        cli.cmd_check(args)
+    out = capsys.readouterr().out
+    for word in ("PYWEB_AUTH_SECRET", "PYWEB_ENV", "PYWEB_COOKIE_SECURE", "PYWEB_TRUST_PROXY", "WEB_CONCURRENCY=4"):
+        assert word in out
+    monkeypatch.setenv("PYWEB_AUTH_SECRET", "short")
+    assert any("shorter than 32" in p for p in cli.production_problems())
+    for var, value in (("PYWEB_AUTH_SECRET", "k" * 40), ("PYWEB_ENV", "production"), ("PYWEB_COOKIE_SECURE", "1"),
+                       ("PYWEB_TRUST_PROXY", "1"), ("WEB_CONCURRENCY", "1")):
+        monkeypatch.setenv(var, value)
+    cli.cmd_check(args)                                          # no SystemExit
+    assert "production: ready" in capsys.readouterr().out

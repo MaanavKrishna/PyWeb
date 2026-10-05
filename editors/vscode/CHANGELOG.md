@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4
+
+- Released with PyWeb 0.4.4 (security and production hardening; see the
+  main changelog). No changes to the extension itself.
+
 ## 0.4.3
 
 - Released with PyWeb 0.4.3 (fixes, security and speed; see the main

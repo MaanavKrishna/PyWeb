@@ -168,6 +168,13 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
     os.makedirs(f"{out}/static", exist_ok=True)
     os.makedirs(f"{out}/server", exist_ok=True)
 
+    if app_dir and os.path.isfile(os.path.join(app_dir, "pyweb.lock")):
+        from pyweb import packages
+        problems = packages.verify(app_dir)
+        if problems:
+            listing = "\n".join(f"  {path}: {why}" for path, why in problems[:20])
+            raise RuntimeError("npm package files don't match pyweb.lock (edited or tampered with?):\n"
+                               f"{listing}\nRun `pyweb add` to reinstall them, then build again.")
     if app_dir and os.path.isdir(os.path.join(app_dir, "static")):
         shutil.copytree(os.path.join(app_dir, "static"), f"{out}/static", dirs_exist_ok=True)
 

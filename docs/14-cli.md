@@ -7,6 +7,7 @@ pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
                                      development server: recompile on save, live reload,
                                      in-browser error overlay with the failing line
 pyweb check FILE                     compile + security checks; non-zero exit on problems
+pyweb check FILE --production        also check the environment is ready for production
 pyweb inspect FILE [--security]      where every name runs and why; RPC table; findings
 pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
                                      self-contained dist/; --production hashes and minifies;

@@ -20,6 +20,18 @@ jobs:
       - run: pip install ruff
       - run: ruff check pyweb tests website
 
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[all]" pip-audit
+      # Known vulnerabilities in anything PyWeb installs (the package itself is skipped as editable).
+      - run: pip-audit --skip-editable --progress-spinner off
+
   test:
     name: unit (Python ${{ matrix.python }})
     runs-on: ubuntu-latest

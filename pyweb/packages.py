@@ -706,7 +706,9 @@ def install(app_dir, specs=(), *, registry=None, remove=()):
         packages[name] = {"version": pkg["version"], "requested": direct.get(name, pkg["requested"]),
                           "direct": name in direct, **({"entries": entries[name]} if name in direct else {}),
                           "integrity": pkg["integrity"], "needs": sorted(pkg.get("needs", ())),
-                          "files": sorted(pkg["out"]), "types": types_summary(pkg["pkg"], pkg["raw"])}
+                          "files": sorted(pkg["out"]),
+                          "hashes": {rel: _sha256(text) for rel, text in sorted(pkg["out"].items())},
+                          "types": types_summary(pkg["pkg"], pkg["raw"])}
     if os.path.isdir(vendor):  # drop versions nothing uses any more
         import shutil
         for entry in os.listdir(vendor):
@@ -725,6 +727,38 @@ def install(app_dir, specs=(), *, registry=None, remove=()):
         json.dump(new, fh, indent=2)
         fh.write("\n")
     return new
+
+
+def _sha256(text):
+    data = text.encode("utf-8") if isinstance(text, str) else text
+    return hashlib.sha256(data).hexdigest()
+
+
+def verify(app_dir):
+    """Vendored files that differ from what ``pyweb add`` recorded in pyweb.lock.
+
+    Returns ``[(path, problem)]``: an empty list means every file matches. Locks
+    written before 0.4.4 have no hashes; their packages are skipped.
+    """
+    lock = read_lock(app_dir)
+    problems = []
+    for name, pkg in lock.get("packages", {}).items():
+        hashes = pkg.get("hashes")
+        if not hashes:
+            continue
+        folder = os.path.join(app_dir, VENDOR_DIR, f"{name}@{pkg['version']}")
+        for rel, digest in hashes.items():
+            path = os.path.join(folder, rel)
+            shown = os.path.relpath(path, app_dir)
+            try:
+                with open(path, "rb") as fh:
+                    actual = hashlib.sha256(fh.read()).hexdigest()
+            except OSError:
+                problems.append((shown, "missing"))
+                continue
+            if actual != digest:
+                problems.append((shown, "changed since pyweb add"))
+    return problems
 
 
 def page_imports(lock, specs):

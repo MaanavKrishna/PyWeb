@@ -54,7 +54,30 @@ def Account():
 | `session.require(*roles)` | Returns the payload or raises `RPCError` (`unauthenticated` / `forbidden`). |
 | `session.logout()` | Clears the cookie. |
 
-Sessions last 7 days (`session.max_age`).
+### How long sessions last
+
+- Each `session.login(...)` starts a new session with its own id, so a
+  session someone planted before login is never reused.
+- A session ends after **7 days without a visit** (`session.max_age`).
+  Visiting renews it (the cookie is reissued at most once a day).
+- A session ends **30 days after sign-in** however active the user is
+  (`session.absolute_age`); they then sign in again.
+
+### Signing someone out everywhere
+
+```python
+from pyweb import auth
+
+auth.revoke_user(user_id)        # e.g. after a password change or "log out of all devices"
+```
+
+Every session the user has, on every device, stops working; new logins
+work as usual. By default this is remembered in the server process. With
+several processes, keep it in Redis:
+
+```python
+auth.use_session_versions(auth.RedisSessionVersions("redis://localhost:6379/0"))
+```
 
 ### Configuration
 

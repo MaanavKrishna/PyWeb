@@ -21,6 +21,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -36,6 +37,11 @@ jobs:
           v=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != pyproject version $v"; exit 1; }
       - run: pip install build && python -m build
+      # Signed build provenance: anyone can check the files came from this workflow
+      # (gh attestation verify <file> --repo MaanavKrishna/PyWeb).
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
       - uses: pypa/gh-action-pypi-publish@release/v1
       - name: Attach files and changelog notes to the GitHub release
         env:
@@ -64,6 +70,9 @@ jobs:
           v=$(node -p "require('./package.json').version")
           test "v$v" = "${GITHUB_REF_NAME}" || { echo "editors/vscode version $v != ${GITHUB_REF_NAME}"; exit 1; }
       - run: npm ci && npm test && npx vsce package
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: editors/vscode/*.vsix
       - name: Attach the .vsix to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

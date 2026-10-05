@@ -5,7 +5,7 @@ from pathlib import Path
 from playwright.sync_api import expect
 
 from pyweb.testing import serve
-from tests.e2e.conftest import ready
+from tests.e2e.conftest import ready, until
 from tests.test_multipage import APP
 
 
@@ -75,8 +75,8 @@ def test_hovering_a_link_prefetches_it(page, tmp_path):
         ready(page)
         fetched = []
         page.on("request", lambda r: fetched.append(r.url[len(url):]) if r.resource_type == "fetch" else None)
-        page.hover("text=Products")
-        page.wait_for_function("performance.getEntriesByType('resource').some(e => e.name.endsWith('/products'))")
+        with page.expect_request(lambda r: r.url.endswith("/products")):
+            page.hover("text=Products")
         page.click("text=Products")
         expect(page.locator("#info")).to_be_visible()
         assert fetched == ["/products"]                                    # the click reused the prefetch
@@ -121,7 +121,7 @@ def test_scroll_is_restored_and_unmount_runs(page, tmp_path):
         assert page.evaluate("localStorage.getItem('left')") == "Long"
         page.go_back()
         expect(page.locator("#next")).to_be_visible()
-        page.wait_for_function("scrollY > 2000")
+        until(page, "scrollY > 2000")
         assert documents(page) == 1
 
 
@@ -265,8 +265,8 @@ def test_a_page_prefetched_before_a_server_call_is_fetched_again(page, tmp_path)
     with serve(app_file(tmp_path, CART)) as url:
         page.goto(url)
         ready(page)
-        page.hover("#cart")                                                # prefetched with 0 items
-        page.wait_for_function("performance.getEntriesByType('resource').some(e => e.name.endsWith('/cart'))")
+        with page.expect_request(lambda r: r.url.endswith("/cart")):
+            page.hover("#cart")                                            # prefetched with 0 items
         page.click("#add")
         expect(page.locator("#add")).to_have_text("Add (1)")
         page.click("#cart")

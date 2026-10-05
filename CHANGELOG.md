@@ -6,6 +6,61 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.4.4]
+
+Security and running in production. No app changes needed, and nobody
+is signed out by the upgrade.
+
+### Added
+- **Signing keys per purpose, and rotation.** Sessions, live-update feeds
+  and live query specs are signed with separate keys derived from
+  `PYWEB_AUTH_SECRET`. `PYWEB_AUTH_SECRET_PREVIOUS` keeps tokens from an
+  old secret working while you change it. Tokens from 0.4.3 and earlier
+  still work.
+- **Sessions:** each login starts a new session; sessions renew on visits
+  and end 30 days after sign-in; `auth.revoke_user(user_id)` signs a user
+  out on every device (in memory, or shared with `RedisSessionVersions`).
+- **Typed server function arguments:** `list[...]`, `dict[...]`,
+  `Optional`, `Literal`, dataclasses, Models and `Email` are checked
+  against their type hints, and unknown arguments are refused (422).
+- **`pyweb/config.py`:** every `PYWEB_*` setting in one place, validated
+  at startup (a bad value stops the server with a clear message).
+- **`PYWEB_REDIS_URL`:** shares rate limits (`RedisRateLimiter`) and live
+  updates between server processes.
+- **`/readyz`** checks that every database the app opened answers (503
+  when one doesn't); `/healthz` stays a liveness check.
+- **Graceful shutdown:** on SIGTERM and ASGI shutdown, live connections
+  end and background jobs get up to 10 seconds to finish.
+- **`pyweb check --production`** lists settings that would leave a gap
+  (secret, HTTPS cookies, proxy, Redis with several workers, ...).
+- **npm supply chain:** `pyweb.lock` records a SHA-256 per vendored file
+  and `pyweb build` refuses files that changed.
+- **CI:** dependency vulnerability audit (pip-audit), CodeQL code
+  scanning, Dependabot, and signed build provenance for release files.
+- Docs: a threat model, key rotation, session lifetime, a production
+  checklist, and the new settings.
+
+### Security
+- Requests the browser marks `Sec-Fetch-Site: cross-site` can't call
+  server functions.
+- Deeply nested JSON bodies crashed the request handler with a
+  `RecursionError`; bodies deeper than 32 levels or with more than
+  10,000 values are now refused.
+- `pyweb serve` and `pyweb dev` drop clients that stall (30 s), answer
+  503 past 256 simultaneous connections and 431 to headers over 16 KB.
+- At most 20 open live connections per client address (429 beyond).
+- Pages that take longer than 30 seconds to render answer 504 instead of
+  holding a thread.
+- New response headers: `Permissions-Policy`, `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Resource-Policy`, and `Strict-Transport-Security` when
+  `PYWEB_COOKIE_SECURE` is on. Both servers now send the same set.
+- `RedisCache` no longer unpickles data unless `allow_pickle=True`
+  (unpickling can run code written by anyone with Redis access).
+
+### Fixed
+- `@auth_required` server functions rejected sessions older than one
+  hour, while pages accepted them for 7 days.
+
 ## [0.4.3]
 
 A review release: bug fixes, security hardening and speed-ups. No API

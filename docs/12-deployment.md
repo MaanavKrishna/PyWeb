@@ -69,32 +69,76 @@ with a health check. `pyweb deploy --target docker|compose|k8s` writes
 deployment files for an app directory (Kubernetes manifests include
 liveness and readiness probes on `/healthz`).
 
+## Production checklist
+
+```bash
+pyweb check --production app.pyweb
+```
+
+It exits non-zero and says what to fix when:
+
+- `PYWEB_AUTH_SECRET` is missing or shorter than 32 characters;
+- `PYWEB_ENV` isn't `production`;
+- `PYWEB_COOKIE_SECURE` is off (serve over HTTPS and turn it on);
+- `PYWEB_TRUST_PROXY` isn't set (needed behind a reverse proxy);
+- `WEB_CONCURRENCY` is above 1 without `PYWEB_REDIS_URL`;
+- the app uses `RedisCache(allow_pickle=True)`;
+- npm package files don't match `pyweb.lock`.
+
+## Health checks
+
+- `/healthz` answers `200` while the process runs (liveness).
+- `/readyz` also checks that every database the app opened with
+  `pyweb.db.connect` answers; it returns `503` with the failing check
+  when one doesn't (readiness). Point load balancers and Kubernetes
+  readiness probes here.
+
+On `SIGTERM` (and ASGI lifespan shutdown), the server ends open live
+connections, waits up to 10 seconds for background jobs, then stops.
+
 ## Scaling
 
 Servers keep no per-user state: sessions are signed cookies, pages
 render per request, and RPC is stateless HTTP. Run as many processes or
 containers as you need behind any load balancer; no sticky sessions are
-required. Shared state belongs in your database (and Redis, if you use
-`RedisBus`/`RedisQueue`/`RedisCache`).
+required. Shared state belongs in your database.
+
+With more than one process, set `PYWEB_REDIS_URL` (and
+`pip install redis`): rate limits are then shared, so the limit applies
+to the whole site rather than per process, and live updates published
+in one process reach browsers connected to another. For job queues and
+caches across processes use `RedisQueue` and `RedisCache`, and for
+"sign out everywhere" `auth.use_session_versions(auth.RedisSessionVersions(url))`.
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `PYWEB_ENV` | `development` | `production` makes `PYWEB_AUTH_SECRET` mandatory for sessions |
-| `PYWEB_AUTH_SECRET` | derived (dev only) | session signing key |
+| `PYWEB_AUTH_SECRET` | derived (dev only) | root signing secret (sessions, live feeds, live queries) |
+| `PYWEB_AUTH_SECRET_PREVIOUS` | unset | old secrets still accepted while you rotate (comma-separated) |
 | `PYWEB_COOKIE_SECURE` | off | add `Secure` to cookies (set when behind HTTPS) |
 | `PYWEB_CSRF_SECRET` | unset | token CSRF checks for `@auth_required` RPCs |
 | `PYWEB_CSP` | see [Security](13-security.md) | override the Content-Security-Policy |
 | `PYWEB_TRUST_PROXY` | off | behind a reverse proxy (nginx, Caddy, a load balancer): `1`, or the number of proxies, so rate limits use the visitor's address from `X-Forwarded-For` instead of the proxy's |
+| `PYWEB_REDIS_URL` | unset | share rate limits and live updates between server processes |
+| `PYWEB_MAX_CONNECTIONS` | `256` | simultaneous connections for `pyweb serve` (`503` beyond) |
+| `PYWEB_SOCKET_TIMEOUT` | `30` | seconds before a stalled client is dropped |
+| `PYWEB_MAX_STREAMS_PER_CLIENT` | `20` | open live connections per client address (`429` beyond) |
+| `PYWEB_RENDER_TIMEOUT` | `30` | seconds a page may take to render (`504` beyond) |
 | `DATABASE_URL` | — | conventional; read it in your app and pass to `pyweb.db.connect` |
+
+A value that can't be parsed (`PYWEB_MAX_CONNECTIONS=lots`) stops the
+server at startup with a message naming the variable.
 
 ## Security headers
 
 HTML responses carry a Content-Security-Policy that only allows scripts
-from your own origin (the page-state JSON is data, not script), plus
-`X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and
-`X-Frame-Options: SAMEORIGIN`.
+from your own origin (the page-state JSON is data, not script). Every
+response also carries `X-Content-Type-Options`, `Referrer-Policy`,
+`X-Frame-Options`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`
+and `Cross-Origin-Resource-Policy`, plus `Strict-Transport-Security`
+when `PYWEB_COOKIE_SECURE` is on. See [Security](13-security.md).
 
 ## Caching and compression
 

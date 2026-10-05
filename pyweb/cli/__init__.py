@@ -52,8 +52,52 @@ def cmd_check(args):
         findings.append({"kind": "compile-error", "line": 0, "message": str(exc)})
     for f in findings:
         print(f"{f['kind']} {args.file}:{f['line']}: {f['message']}")
-    if any(f["kind"] in ("secret-leak", "compile-error") for f in findings):
+    problems = production_problems(src, os.path.dirname(os.path.abspath(args.file))) \
+        if getattr(args, "production", False) else []
+    for p in problems:
+        print(f"production: {p}")
+    if getattr(args, "production", False) and not problems:
+        print("production: ready")
+    if problems or any(f["kind"] in ("secret-leak", "compile-error") for f in findings):
         raise SystemExit(1)
+
+
+def production_problems(source="", app_dir="."):
+    """What would make this app unsafe or unreliable in production, from the environment and the app."""
+    from pyweb import config
+    out = []
+    try:
+        s = config.settings()
+    except ValueError as exc:
+        return [str(exc)]
+    if not s.auth_secret:
+        out.append("PYWEB_AUTH_SECRET isn't set: sessions would use a development key "
+                   "(generate one: python -c \"import secrets; print(secrets.token_hex(32))\")")
+    elif len(s.auth_secret) < 32:
+        out.append("PYWEB_AUTH_SECRET is shorter than 32 characters; use a long random value")
+    if not s.production:
+        out.append("PYWEB_ENV isn't 'production' (it makes a missing secret an error instead of a fallback)")
+    if not s.cookie_secure:
+        out.append("PYWEB_COOKIE_SECURE isn't on: cookies would also travel over plain HTTP "
+                   "(set it when you serve over HTTPS, which you should)")
+    if not s.trust_proxy:
+        out.append("PYWEB_TRUST_PROXY isn't set: behind nginx, Caddy or a load balancer every visitor "
+                   "looks like the proxy to rate limits (set it to 1, or the number of proxies; "
+                   "ignore this if clients connect directly)")
+    try:
+        workers = int(os.environ.get("WEB_CONCURRENCY", "1") or 1)
+    except ValueError:
+        workers = 1
+    if workers > 1 and not s.redis_url:
+        out.append(f"WEB_CONCURRENCY={workers} without PYWEB_REDIS_URL: each worker would keep its own rate "
+                   "limits and live updates (connect Redis to share them)")
+    if "allow_pickle=True" in (source or ""):
+        out.append("RedisCache(allow_pickle=True): anyone who can write to Redis could run code; store JSON")
+    if os.path.isfile(os.path.join(app_dir, "pyweb.lock")):
+        from pyweb import packages
+        for path, why in packages.verify(app_dir)[:5]:
+            out.append(f"{path}: {why} (run pyweb add to reinstall)")
+    return out
 
 
 def cmd_build(args):
@@ -62,8 +106,12 @@ def cmd_build(args):
     src = _load(args.file)
     out = compile_source(src, filename=args.file)
     production = getattr(args, "production", False)
-    manifest = _build(out, args.out, source=src, production=production,
-                      app_dir=os.path.dirname(os.path.abspath(args.file)))
+    try:
+        manifest = _build(out, args.out, source=src, production=production,
+                          app_dir=os.path.dirname(os.path.abspath(args.file)))
+    except RuntimeError as exc:
+        print(f"build failed: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
     mode = " (production)" if production else ""
     print(f"built {len(manifest['pages'])} page(s) + {len(out['rpc'])} rpc(s) -> {args.out}/{mode}")
     from pathlib import Path as _Path
@@ -443,7 +491,9 @@ def main(argv=None):
     p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=["blank", "counter", "todo", "blog", "auth", "chat", "ai-chat"], help="starter app"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
-    p = sub.add_parser("check"); p.add_argument("file"); p.set_defaults(fn=cmd_check)
+    p = sub.add_parser("check"); p.add_argument("file")
+    p.add_argument("--production", action="store_true", help="also check the environment is ready for production")
+    p.set_defaults(fn=cmd_check)
     p = sub.add_parser("dts", help="generate Python stubs from a TypeScript .d.ts file (experimental)")
     p.add_argument("dts"); p.add_argument("-o", "--out", default=None); p.set_defaults(fn=cmd_dts)
     p = sub.add_parser("add", help="add npm packages for browser code (no Node.js needed)")

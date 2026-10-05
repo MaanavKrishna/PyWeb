@@ -34,3 +34,18 @@ def page(browser):
 
 def ready(pg):
     pg.wait_for_selector("[data-pw-ready]")
+
+
+def until(pg, expression, timeout=5.0):
+    """Wait for a JavaScript condition, polling from Python.
+
+    page.wait_for_function re-evaluates its condition with eval(), which the
+    pages' Content-Security-Policy (rightly) blocks, so it fails whenever the
+    condition isn't already true on the first check.
+    """
+    import time
+    end = time.monotonic() + timeout
+    while not pg.evaluate(expression):
+        if time.monotonic() > end:
+            raise AssertionError(f"timed out waiting for {expression}")
+        pg.wait_for_timeout(25)

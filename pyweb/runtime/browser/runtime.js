@@ -1663,59 +1663,6 @@ export class RpcStream {
 
 rpc.stream = (name, args) => new RpcStream(name, args);
 
-// Live updates. `feed` is a signed token made on the server with
-// channel(name). Messages arrive over Server-Sent Events (the browser
-// reconnects and resumes on its own); if the stream can't be opened the
-// page polls instead. Each message runs `onMsg` like an event handler.
-// Returns an unsubscribe function; the subscription also ends with the
-// page or component that made it.
-export function subscribe(feed, onMsg, opts = {}) {
-  let stopped = false;
-  let lastId = opts.lastId || 0;
-  let src = null;
-  const q = `feed=${encodeURIComponent(feed)}` + (opts.live ? `&live=${encodeURIComponent(opts.live)}` : "");
-  const deliver = (raw) => {
-    let v = raw;
-    if (typeof raw === "string") { try { v = JSON.parse(raw); } catch { /* plain text */ } }
-    try {
-      const r = batch(() => onMsg(v));
-      if (r && typeof r.then === "function") r.then(null, reportError);
-    } catch (e) { reportError(e); }
-  };
-  const stop = () => { stopped = true; if (src) src.close(); };
-  onCleanup(stop);
-  async function poll() {
-    while (!stopped) {
-      try {
-        const res = await fetch(`/__pyweb/poll?${q}&since=${lastId}`, { credentials: "same-origin" });
-        if (res.status === 403 || res.status === 400) { reportError(new Error(`pyweb: feed rejected (${res.status}); reload the page`)); return; }
-        if (!res.ok) throw new Error(`poll ${res.status}`);
-        const data = await res.json();
-        for (const msg of data.messages || []) { lastId = msg.id; if (!stopped) deliver(msg.data); }
-      } catch { /* retry below */ }
-      await _sleep(opts.interval || 2500);
-    }
-  }
-  if (typeof EventSource !== "undefined" && !opts.poll) {
-    src = new EventSource(`/__pyweb/events?${q}`);
-    src.onmessage = (e) => { if (e.lastEventId) lastId = Number(e.lastEventId) || lastId; deliver(e.data); };
-    // CONNECTING means the browser is reconnecting by itself; CLOSED means it gave up.
-    src.onerror = () => { if (src.readyState === 2 && !stopped) { src = null; poll(); } };
-  } else {
-    poll();
-  }
-  return stop;
-}
-
-/** Keep page variable `sig` in step with a live query (`meta` comes from the server's live()). */
-export function live(sig, meta) {
-  if (!meta || !meta.feed) return;
-  let version = meta.version;
-  subscribe(meta.feed, (msg) => {
-    if (msg && msg.version !== version) { version = msg.version; sig(msg.rows); }
-  }, { live: meta.spec });
-}
-
 // Optimistic mutation: apply local patch, run server call, reconcile/rollback.
 export async function mutate({ apply, server, reconcile, rollback }) {
   const undo = apply ? apply() : null;

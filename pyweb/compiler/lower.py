@@ -36,11 +36,11 @@ from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
 
 RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when as $when, signal as $signal, "
                   "computed as $computed, mount as $mount, onMount as $onMount, py as $py, rpc as $rpc, "
-                  "subscribe as $subscribe, slot as $slot, onCleanup as $onCleanup, live as $live } "
-                  "from \"./runtime.js\";")
+                  "slot as $slot, onCleanup as $onCleanup } from \"./runtime.js\";")
 
 MARKDOWN_IMPORT = 'import { markdown as $markdown } from "./markdown.js";'
 FORMS_IMPORT = 'import "./forms.js";'
+LIVE_IMPORT = 'import { subscribe as $subscribe, live as $live, join as $join } from "./live.js";'
 SECRET_NAME = re.compile(r"(?i)(secret|password|passwd|api_?key|token|private_?key|credential)")
 
 PAGE_DECORATOR_ATTRS = ("page",)
@@ -267,8 +267,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                 continue
             for alias in node.names:
                 local = alias.asname or alias.name.split(".")[0]
-                if mod == "pyweb" and alias.name == "subscribe":
-                    ctx.browser_globals[local] = "$subscribe"
+                if mod == "pyweb" and alias.name in ("subscribe", "join"):
+                    ctx.browser_globals[local] = "$" + alias.name
                 elif mod == "pyweb" and alias.name in BUILTIN_COMPONENTS:
                     ctx.builtin_components[local] = alias.name
                 elif mod == "pyweb.browser" and alias.name in browser_bindings:
@@ -983,6 +983,8 @@ class Emitter:
             imports.append(MARKDOWN_IMPORT)
         if getattr(info, "forms", None):
             imports.append(FORMS_IMPORT)
+        if "$subscribe(" in body or "$live(" in body or "$join(" in body:
+            imports.append(LIVE_IMPORT)
         info.npm = []
         for alias in sorted(set(re.findall(r"\$npm_[A-Za-z0-9_]+", body))):
             spec, export = self.ctx.npm_aliases[alias]

@@ -178,9 +178,10 @@ def test_asgi_streams_until_disconnect(tmp_path):
 
 def test_browser_runtime_exports_subscribe():
     from pathlib import Path
-    src = Path("pyweb/runtime/browser/runtime.js").read_text()
+    src = Path("pyweb/runtime/browser/live.js").read_text()
     assert "export function subscribe(feed" in src
-    assert "/__pyweb/events?${q}" in src and "/__pyweb/poll?${q}" in src and "feed=${" in src
+    assert "/__pyweb/ws" in src                                    # one shared socket first
+    assert "/__pyweb/events?${q()}" in src and "/__pyweb/poll?${q()}" in src and "feed=${" in src
 
 
 def test_bus_forgets_quiet_channels(monkeypatch):

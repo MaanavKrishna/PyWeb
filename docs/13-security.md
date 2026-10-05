@@ -130,10 +130,17 @@ table and column identifiers.
   bodies nested more than 32 levels deep or holding more than 10,000
   values are refused (`422`).
 - `pyweb serve` drops clients that stall for 30 seconds
-  (`PYWEB_SOCKET_TIMEOUT`), answers `503` beyond 256 simultaneous
-  connections (`PYWEB_MAX_CONNECTIONS`) and `431` to headers over 16 KB.
-  A client address may hold 20 live connections
-  (`PYWEB_MAX_STREAMS_PER_CLIENT`; `429` beyond).
+  (`PYWEB_SOCKET_TIMEOUT`) or take more than 10 seconds to send a request
+  head, answers `503` beyond 10,000 simultaneous connections per process
+  (`PYWEB_MAX_CONNECTIONS`) and `431` to headers over 16 KB. It refuses
+  requests whose length is ambiguous (both `Content-Length` and
+  `Transfer-Encoding`, repeated lengths, folded headers), which is how
+  request smuggling past a proxy works. A client address may hold 20 live
+  connections (`PYWEB_MAX_STREAMS_PER_CLIENT`; `429` beyond).
+- The pages' WebSocket only accepts connections whose `Origin` is the site
+  itself (or one in `PYWEB_ALLOWED_ORIGINS`), so another site can't open it
+  with a visitor's cookies. A socket closes when its session is revoked, and
+  sending too many or too large messages closes it too.
 - Pages that take longer than 30 seconds (`PYWEB_RENDER_TIMEOUT`) get a
   `504` instead of holding the server.
 - RPC calls are rate-limited (120/minute per client address by default).

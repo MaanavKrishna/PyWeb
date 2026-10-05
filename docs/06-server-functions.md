@@ -178,8 +178,8 @@ def Job():
 
 ## Live updates
 
-Server code can push messages to every browser showing a page, over
-Server-Sent Events. Three functions from `pyweb` do it:
+Server code can push messages to every browser showing a page. Three
+functions from `pyweb` do it:
 
 - `publish(name, data)` in server code sends `data` (anything
   JSON-serialisable) to channel `name`.
@@ -227,16 +227,55 @@ How it behaves:
   page rendered, so messages published before the browser connects are
   still delivered, and a browser that reconnects resumes after the last
   message it saw.
-- **It falls back to polling** (`/__pyweb/poll`) if the stream can't be
-  opened, for example behind a proxy that refuses streaming responses.
-- **Feeds expire** after 24 hours; reloading the page makes a new one.
+- **One connection per tab.** Every subscription and live query on a page
+  shares one WebSocket (`/__pyweb/ws`), which reconnects with backoff and
+  resumes where it stopped. Where WebSockets don't get through (a proxy
+  that blocks them, an ASGI server without them) each subscription uses
+  Server-Sent Events instead, and polling (`/__pyweb/poll`) as a last resort.
+- **Feeds expire** after 24 hours; reloading the page makes a new one. A
+  feed made while someone is signed in only works for that session, and
+  stops when it ends.
 - **One process or many.** Messages go through `pyweb.realtime`'s bus,
-  in memory by default. With several processes, share it through Redis
-  once at startup: `realtime.use_bus(RedisBus("redis://..."))`.
-- **Servers.** `pyweb dev`, `pyweb serve` and the ASGI adapter all stream.
-  Each open page holds one connection; streams close after five minutes
-  and browsers reconnect on their own. Behind nginx, responses carry
-  `X-Accel-Buffering: no` so they aren't buffered.
+  in memory by default. With several processes set `PYWEB_REDIS_URL` and
+  every process shares it.
+- **Slow clients** can't make the server buffer without limit: a page that
+  falls behind on a live query gets the current result once instead of
+  every change, and one that stops reading is disconnected (it reconnects).
+
+### Who's here: presence
+
+`presence(name)` in a page returns a room token; `join(room, info,
+on_members, on_cast)` in the browser joins it. `on_members(list)` runs
+whenever someone joins or leaves, and `handle.cast(data)` sends `data` to
+everyone else in the room (cursors, "typing..."), without storing it.
+
+```pyweb
+from pyweb import App, join, presence
+
+app = App()
+
+
+@app.page("/docs/{doc_id}")
+def Doc(doc_id: int):
+    room = presence(f"doc:{doc_id}")
+    names = []
+    me = None
+
+    def members(people):
+        names = [p["name"] for p in people]
+
+    def on_mount():
+        me = join(room, {"name": "Ada"}, members)
+
+    <p>Here now: {", ".join(names)}</p>
+```
+
+Each member is the `info` the page joined with (at most 1 KB), plus
+`"id"` (one per open page) and `"user"`: the signed-in user's id, set by
+the server so a page can't pretend to be someone else. A member leaves
+when its page closes, or within 45 seconds if its server goes away.
+Presence uses the page's WebSocket; without one, `on_members` gets an
+empty list.
 
 ## Limits and protection
 

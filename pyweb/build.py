@@ -198,7 +198,7 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
     # Add-on modules, shipped only with apps that use them.
     addon_names = {}
     units = [*compiled["pages"].values(), *(compiled.get("layouts") or {}).values()]
-    for addon in ("markdown.js", "forms.js"):
+    for addon in ("markdown.js", "forms.js", "live.js"):
         if not any(f'"./{addon}"' in (u.get("js") or "") for u in units):
             continue
         with open(os.path.join(os.path.dirname(rt_path), addon), encoding="utf-8") as fh:

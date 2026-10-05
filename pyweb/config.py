@@ -16,7 +16,8 @@ Variable                       Default      Meaning
 ``PYWEB_CSP``                  built in     Content-Security-Policy for pages
 ``PYWEB_TRUST_PROXY``          0            reverse proxies in front (for ``X-Forwarded-For``)
 ``PYWEB_REDIS_URL``            (none)       share rate limits and live updates across servers
-``PYWEB_MAX_CONNECTIONS``      256          simultaneous connections (``pyweb serve``)
+``PYWEB_MAX_CONNECTIONS``      10000        simultaneous connections per server process
+``PYWEB_THREADS``              32           threads per process rendering pages and running RPCs
 ``PYWEB_SOCKET_TIMEOUT``       30           seconds before a stalled client is dropped
 ``PYWEB_MAX_STREAMS_PER_CLIENT`` 20         open live connections per client address
 ``PYWEB_RENDER_TIMEOUT``       30           seconds a page may take to render (504 after)
@@ -88,7 +89,8 @@ class Settings:
     csp: str | None = None
     trust_proxy: int = 0
     redis_url: str | None = None
-    max_connections: int = 256
+    max_connections: int = 10_000
+    threads: int = 32
     socket_timeout: int = 30
     max_streams_per_client: int = 20
     render_timeout: int = 30
@@ -111,7 +113,8 @@ class Settings:
             csp=env.get("PYWEB_CSP") or None,
             trust_proxy=_proxies(env),
             redis_url=env.get("PYWEB_REDIS_URL") or None,
-            max_connections=_int("PYWEB_MAX_CONNECTIONS", env, 256),
+            max_connections=_int("PYWEB_MAX_CONNECTIONS", env, 10_000),
+            threads=_int("PYWEB_THREADS", env, 32),
             socket_timeout=_int("PYWEB_SOCKET_TIMEOUT", env, 30),
             max_streams_per_client=_int("PYWEB_MAX_STREAMS_PER_CLIENT", env, 20),
             render_timeout=_int("PYWEB_RENDER_TIMEOUT", env, 30),

@@ -51,7 +51,7 @@ class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
     def __init__(self, *args, **kwargs):
-        self.max_connections = _env_int("PYWEB_MAX_CONNECTIONS", 256)
+        self.max_connections = min(_env_int("PYWEB_MAX_CONNECTIONS", 256), 1024)   # one thread each
         self._slots = threading.BoundedSemaphore(self.max_connections)
         super().__init__(*args, **kwargs)
 

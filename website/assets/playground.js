@@ -304,18 +304,18 @@
     frame.srcdoc = preview(r.body || `<p>${r.status}</p>`);
   }
 
-  // Point a module's imports of the runtime (and markdown.js) at their blob: URLs.
-  let markdownUrl = null;
+  // Point a module's imports of the runtime and its add-ons (markdown.js, forms.js,
+  // live.js) at their blob: URLs.
+  const addonUrls = {};
   function linkModules(js) {
     js = js.replace(/from\s+"\.\/runtime\.js"/g, `from "${runtimeUrl}"`);
-    if (/from\s+"\.\/markdown\.js"/.test(js)) {
-      if (!markdownUrl) {
-        const md = request("GET", "/static/markdown.js").body.replace(/from\s+"\.\/runtime\.js"/g, `from "${runtimeUrl}"`);
-        markdownUrl = URL.createObjectURL(new Blob([md], { type: "text/javascript" }));
+    return js.replace(/(from\s+|import\s+)"\.\/(markdown|forms|live)\.js"/g, (m, kw, name) => {
+      if (!addonUrls[name]) {
+        const src = request("GET", `/static/${name}.js`).body.replace(/from\s+"\.\/runtime\.js"/g, `from "${runtimeUrl}"`);
+        addonUrls[name] = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
       }
-      js = js.replace(/from\s+"\.\/markdown\.js"/g, `from "${markdownUrl}"`);
-    }
-    return js;
+      return `${kw}"${addonUrls[name]}"`;
+    });
   }
 
   // Page HTML with /static/ files turned into blob: URLs and a bridge
@@ -334,6 +334,7 @@
       const host = parent.__pywebPlayground;
       const realFetch = window.fetch.bind(window);
       window.EventSource = undefined; // live updates use the polling path here
+      window.WebSocket = undefined;
       window.fetch = (input, init) => {
         const url = typeof input === "string" ? input : input.url;
         return url.startsWith("/__pyweb/") ? host.fetch(url, init || {}) : realFetch(input, init);

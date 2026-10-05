@@ -185,9 +185,12 @@ def Away():
 '''
 
 TRACK_SOURCES = """
-const Real = window.EventSource;
 window.__closed = 0;
-window.EventSource = class extends Real { close() { window.__closed++; super.close(); } };
+const send = WebSocket.prototype.send;
+WebSocket.prototype.send = function (data) {
+  if (typeof data === "string" && data.includes('"t":"unsub"')) window.__closed++;
+  return send.call(this, data);
+};
 """
 
 
@@ -203,7 +206,7 @@ def test_watch_and_on_mount_cleanup(page, tmp_path):
         assert page.evaluate("window.__closed") == 0
         page.click("#away")
         expect(page.locator("#bump")).to_be_visible()
-        assert page.evaluate("window.__closed") == 1               # the page's live feed was closed
+        assert page.evaluate("window.__closed") == 1               # the page's live feed was unsubscribed
 
 
 def test_site_example(page):

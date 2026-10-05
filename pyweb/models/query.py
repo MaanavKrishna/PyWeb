@@ -660,5 +660,4 @@ class QuerySet:
         sql, params = self.sql()
         meta = self.model._meta
         tables = [meta.table] + [self.model._meta.relation(n.split(".")[0]).target_table() for n in self._include]
-        rows = live(db, sql, params, tables=tables)
-        return rows
+        return live(db, sql, params, tables=tables, key=meta.pk.name)

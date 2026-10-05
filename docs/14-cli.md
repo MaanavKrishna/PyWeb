@@ -12,8 +12,8 @@ pyweb inspect FILE [--security]      where every name runs and why; RPC table; f
 pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
                                      self-contained dist/; --production hashes and minifies;
                                      budgets fail the build when a file exceeds SIZE (e.g. 20KB)
-pyweb serve [DIR] [--host 0.0.0.0] [--port 8000]
-                                     production server for a built dist/
+pyweb serve [DIR] [--host 0.0.0.0] [--port 8000] [--workers N] [--migrate]
+                                     production server for a built dist/ (N processes)
 pyweb db migrate|status|rollback|new [--database URL] [--migrations DIR]
                                      [--name NAME] [--steps N] [--to VERSION]
 pyweb deploy [--target docker|compose|k8s] [--out deploy] [--port 8000]

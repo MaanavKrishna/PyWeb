@@ -70,3 +70,87 @@ def test_writes_reach_every_open_page(browser, tmp_path, monkeypatch):
         ready(b)
         expect(b.locator("#list li.done")).to_have_text(["milk"])
     assert errors == []
+
+
+PATCH_APP = '''from pyweb import App, live, server
+from pyweb.db import connect
+
+app = App()
+db = connect("sqlite:///patch.db")
+db.execute("create table if not exists items (id integer primary key, title text, done integer default 0)")
+if not db.execute("select count(*) as n from items").dicts()[0]["n"]:
+    for i in range(30):
+        db.execute("insert into items (title) values (?)", (f"item {i}",))
+
+
+@server
+def toggle(item_id: int) -> None:
+    db.execute("update items set done = 1 - done where id = ?", (item_id,))
+
+
+@server
+def add(title: str) -> None:
+    db.execute("insert into items (title) values (?)", (title,))
+
+
+@app.page("/")
+def Items():
+    items = live(db, "select id, title, done from items order by id")
+    <ul id="list">
+        for t in items:
+            <li id={"i" + str(t["id"])} class={"done" if t["done"] else ""}>{t["title"]}</li>
+    </ul>
+    <button id="t5" onclick={lambda: toggle(5)}>toggle 5</button>
+    <button id="add" onclick={lambda: add("new one")}>add</button>
+'''
+
+TRACK = """
+window.__frames = [];
+window.__sockets = [];
+const Real = window.WebSocket;
+window.WebSocket = class extends Real {
+  constructor(...a) {
+    super(...a);
+    window.__sockets.push(this);
+    this.addEventListener("message", (e) => window.__frames.push(e.data));
+  }
+};
+"""
+
+
+def test_a_change_patches_one_row_and_keeps_the_rest(browser, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "app.pyweb").write_text(PATCH_APP)
+    with serve(str(tmp_path / "app.pyweb")) as url:
+        a, b = browser.new_page(), browser.new_page()
+        b.add_init_script(TRACK)
+        for page in (a, b):
+            page.goto(url)
+            ready(page)
+        b.evaluate("document.getElementById('i1').__mark = 'kept'; document.getElementById('i5').__mark = 'kept'")
+        a.click("#t5")
+        expect(b.locator("#i5")).to_have_class("done")
+        frames = [f for f in b.evaluate("window.__frames") if '"ops"' in f]
+        assert len(frames) == 1 and len(frames[0]) < 300 and "item 6" not in frames[0]   # one row on the wire
+        assert b.evaluate("document.getElementById('i1').__mark") == "kept"                # other rows' DOM kept
+        assert b.evaluate("document.getElementById('i5').__mark") is None                   # the changed row redrawn
+        a.click("#add")
+        expect(b.locator("#list li")).to_have_count(31)
+        expect(b.locator("#list li").last).to_have_text("new one")
+
+
+def test_a_dropped_socket_reconnects_and_catches_up(browser, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "app.pyweb").write_text(PATCH_APP)
+    with serve(str(tmp_path / "app.pyweb")) as url:
+        a, b = browser.new_page(), browser.new_page()
+        b.add_init_script(TRACK)
+        for page in (a, b):
+            page.goto(url)
+            ready(page)
+        b.evaluate("window.__sockets[0].close()")
+        a.click("#t5")                                   # happens while b is disconnected
+        a.click("#add")
+        expect(b.locator("#i5")).to_have_class("done", timeout=8000)
+        expect(b.locator("#list li")).to_have_count(31)
+        assert b.evaluate("window.__sockets.length") == 2

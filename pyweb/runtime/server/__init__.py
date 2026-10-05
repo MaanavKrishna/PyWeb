@@ -611,6 +611,8 @@ class Server:
             return self.handle_events(req)
         if req.path == "/__pyweb/poll" or req.path.startswith("/__pyweb/poll?"):
             return self.handle_poll(req)
+        if req.path.startswith("/__pyweb/live?"):
+            return self.handle_live(req)
         if req.path.startswith("/__pyweb/form/"):
             if req.method != "POST":
                 return Response(405, "forms accept POST only", {"Allow": "POST", "Content-Type": "text/plain"})
@@ -957,24 +959,68 @@ class Server:
         pages = self.compiled.setdefault("error_pages", {})
         pages[status] = html_template
 
-    def _feed(self, req: Request):
-        """(bus, channel name, query) for a ``?feed=`` request, or an error Response."""
-        from urllib.parse import urlparse, parse_qs
+    def open_feed(self, token, spec=None):
+        """``(bus, channel name, start id)`` for a feed token, or ``(status, message)``.
+
+        Call inside a request scope (the session decides session-bound feeds).
+        """
         from pyweb import context as _ctx
         from pyweb import realtime as _rt
-        qs = parse_qs(urlparse(req.path).query)
-        token = (qs.get("feed") or [""])[0]
         if not token:
-            return self._err(400, "missing ?feed= (create one with channel(name) while rendering)")
+            return 400, "missing feed (create one with channel(name) while rendering)"
         feed = _rt.read_feed(token, _ctx.verify_keys("feed"))
         if feed is None:
-            return self._err(403, "invalid or expired feed; reload the page")
+            return 403, "invalid or expired feed; reload the page"
+        sid = _rt.feed_session(token)
+        if sid and _rt.current_sid() != sid:
+            return 403, "this feed belongs to a session that ended; reload the page"
         name, start = feed
-        spec = (qs.get("live") or [""])[0]
         if spec and name.startswith("pyweb.live:"):
             from pyweb import livedata
             livedata.adopt_spec(spec, _ctx.verify_keys("live"))   # keep re-running it here too
-        return getattr(self, "bus", None) or _rt.current_bus(), name, start, qs
+        return getattr(self, "bus", None) or _rt.current_bus(), name, start
+
+    def live_snapshot(self, token, spec):
+        """``{"version", "rows"}`` of the live query a feed and spec name, or ``(status, message)``."""
+        from pyweb import context as _ctx
+        from pyweb import livedata
+        feed = self.open_feed(token, spec)
+        if len(feed) == 2:
+            return feed
+        _bus, name, _start = feed
+        snap = livedata.snapshot(spec, _ctx.verify_keys("live"))
+        if snap is None or name != livedata.LIVE_CHANNEL + livedata.adopt_spec(spec, _ctx.verify_keys("live")):
+            return 403, "invalid live query"
+        return snap
+
+    def in_request(self, req: Request, fn, *args):
+        """Run ``fn(*args)`` inside a request scope for ``req`` (WebSocket messages use the upgrade request)."""
+        from pyweb import context as _ctx
+        rc = _ctx.RequestContext(req, auth_secret=self.auth_secret, secure_cookies=self.secure_cookies)
+        token = _ctx.activate(rc)
+        try:
+            return fn(*args)
+        finally:
+            _ctx.deactivate(token)
+
+    def _feed(self, req: Request):
+        """(bus, channel name, start, query) for a ``?feed=`` request, or an error Response."""
+        from urllib.parse import parse_qs, urlparse
+        qs = parse_qs(urlparse(req.path).query)
+        feed = self.open_feed((qs.get("feed") or [""])[0], (qs.get("live") or [""])[0])
+        if len(feed) == 2:
+            return self._err(*feed)
+        return (*feed, qs)
+
+    def handle_live(self, req: Request):
+        """GET /__pyweb/live?feed=TOKEN&live=SPEC: the whole result of a live query (after a missed change)."""
+        from urllib.parse import parse_qs, urlparse
+        qs = parse_qs(urlparse(req.path).query)
+        snap = self.live_snapshot((qs.get("feed") or [""])[0], (qs.get("live") or [""])[0])
+        if isinstance(snap, tuple):
+            return self._err(*snap)
+        return Response(200, json.dumps(snap, default=str),
+                        {"Content-Type": "application/json", "Cache-Control": "no-store"})
 
     def handle_events(self, req: Request):
         """Server-Sent Events: GET /__pyweb/events?feed=TOKEN streams the

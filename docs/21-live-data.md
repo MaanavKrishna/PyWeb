@@ -62,9 +62,21 @@ in both at once.
   parameters) is re-run once per change, however many pages show it,
   and only sends rows when they actually changed. A burst of writes is
   coalesced into one re-run.
+- **Changes travel as patches.** When rows have an `id` column (or you
+  pass `key="column"`), a change sends only the rows that were added,
+  changed or removed, and where rows moved. Editing one row of a 500-row
+  list sends that one row, and the browser redraws only it: the other
+  rows keep their DOM (and focus, selection, animations). A page that
+  missed a change (it was offline) gets the whole result once.
 - **Pages follow a signed feed**, like `channel()`: only visitors who
   were served the page can listen, and nothing written after the render
   is missed.
+
+With Models, `.live()` on a query does the same:
+
+```python
+orders = Order.where(status="new").order("-id").limit(50).live()
+```
 
 The tables to watch are the ones after `FROM` and `JOIN`. Pass
 `tables=["orders", "customers"]` when that isn't enough (views,
@@ -81,26 +93,18 @@ db.notify("orders")            # after the other write has committed
 
 ## Several processes and servers
 
-With more than one worker process or server, share the realtime bus
-through Redis (the same setting live updates use):
-
-```python
-from pyweb.realtime import RedisBus, use_bus
-
-use_bus(RedisBus("redis://localhost:6379/0"))
-```
-
-Then a write in any process reaches pages connected to any other. A
-process that didn't render a page (the browser's connection landed on
-another worker, or the worker restarted) takes over re-running its
-query from the page's signed query description.
+With more than one worker process or server, set `PYWEB_REDIS_URL`: the
+realtime bus then goes through Redis, and a write in any process reaches
+pages connected to any other. A process that didn't render a page (the
+browser's connection landed on another worker, or the worker restarted)
+takes over re-running its query from the page's signed query description.
 
 ## Limits
 
 - Live queries are for what a page shows: keep them small with `LIMIT`.
   A live query that returns more than 10,000 rows is an error.
-- Every change sends the query's full result. For large lists, page them
-  (`limit ? offset ?`) or show counts.
+- Rows without a key (no `id` column and no `key=`) are sent whole on
+  every change. For large lists, give rows a key, page them, or show counts.
 - Rows are sent to every page showing the query, so filter per user in
   SQL (`where owner = ?`, with the id from `session.user()`), never in the
   browser.

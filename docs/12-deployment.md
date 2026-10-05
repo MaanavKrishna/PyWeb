@@ -28,15 +28,27 @@ Without `--production`, files keep readable names and are not minified.
 
 ## Serve
 
-### Built-in server
+### PyWeb's server
 
 ```bash
-PYWEB_ENV=production PYWEB_AUTH_SECRET=... pyweb serve dist --host 0.0.0.0 --port 8000
+PYWEB_ENV=production PYWEB_AUTH_SECRET=... pyweb serve dist --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-A threaded, dependency-free HTTP server. It serves hashed assets with
-`Cache-Control: immutable`, answers `GET /healthz`, drains in-flight
-requests on `SIGTERM`, and applies the security headers below. Put it
+PyWeb's own server, standard library only: HTTP/1.1 with keep-alive,
+WebSockets and Server-Sent Events on one asyncio event loop per process,
+so thousands of open live connections cost a coroutine each rather than a
+thread. Page renders and server functions run on a thread pool
+(`PYWEB_THREADS`, default 32 per process). `--workers N` (or
+`WEB_CONCURRENCY`) starts N processes sharing the port and replaces any
+that die.
+
+It refuses ambiguous requests that could let a proxy and the server
+disagree about where a request ends (request smuggling): both
+`Content-Length` and `Transfer-Encoding`, repeated lengths, folded
+headers, bad chunk sizes. It times out slow request heads, bodies and
+readers, caps connections, serves hashed assets with
+`Cache-Control: immutable`, and on `SIGTERM` stops accepting, finishes
+in-flight requests and tells open pages to reconnect elsewhere. Put it
 behind a reverse proxy (nginx, Caddy, a cloud load balancer) for TLS.
 
 ### ASGI (uvicorn, gunicorn, hypercorn)
@@ -53,9 +65,9 @@ pip install "pyweb-stack[asgi]"
 uvicorn asgi:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-Page rendering and server functions run in a thread pool, so the event
-loop is never blocked. Use this when you want a process manager,
-HTTP/1.1 keep-alive tuning or HTTP/2 from your ASGI server.
+Use this when you want something only an ASGI server has, such as
+HTTP/2 from hypercorn. The pages' WebSocket works where the ASGI server
+supports WebSockets; elsewhere pages use Server-Sent Events by themselves.
 
 ### Docker
 
@@ -125,11 +137,18 @@ location / {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_buffering off;              # live updates (Server-Sent Events) stream immediately
+    proxy_http_version 1.1;           # live updates: the pages' WebSocket ...
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 1h;
+    proxy_buffering off;              # ... and Server-Sent Events stream immediately
 }
+
+# in the http block:
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 ```
 
-Caddy (`reverse_proxy` adds `X-Forwarded-For` by itself):
+Caddy (`reverse_proxy` adds `X-Forwarded-For` and passes WebSockets by itself):
 
 ```text
 example.com {
@@ -157,8 +176,8 @@ required. Shared state belongs in your database.
 
 With more than one process, set `PYWEB_REDIS_URL` (and
 `pip install redis`): rate limits are then shared, so the limit applies
-to the whole site rather than per process, and live updates published
-in one process reach browsers connected to another. For job queues and
+to the whole site rather than per process, and live updates, live
+queries and presence in one process reach browsers connected to another. For job queues and
 caches across processes use `RedisQueue` and `RedisCache`, and for
 "sign out everywhere" `auth.use_session_versions(auth.RedisSessionVersions(url))`.
 
@@ -174,7 +193,10 @@ caches across processes use `RedisQueue` and `RedisCache`, and for
 | `PYWEB_CSP` | see [Security](13-security.md) | override the Content-Security-Policy |
 | `PYWEB_TRUST_PROXY` | off | behind a reverse proxy (nginx, Caddy, a load balancer): `1`, or the number of proxies, so rate limits use the visitor's address from `X-Forwarded-For` instead of the proxy's |
 | `PYWEB_REDIS_URL` | unset | share rate limits and live updates between server processes |
-| `PYWEB_MAX_CONNECTIONS` | `256` | simultaneous connections for `pyweb serve` (`503` beyond) |
+| `PYWEB_MAX_CONNECTIONS` | `10000` | simultaneous connections per server process (`503` beyond) |
+| `PYWEB_THREADS` | `32` | threads per process rendering pages and running server functions |
+| `PYWEB_ALLOWED_ORIGINS` | unset | other origins allowed to open the pages' WebSocket (comma-separated); by default only the site itself |
+| `WEB_CONCURRENCY` | `1` | worker processes for `pyweb serve` (same as `--workers`) |
 | `PYWEB_SOCKET_TIMEOUT` | `30` | seconds before a stalled client is dropped |
 | `PYWEB_MAX_STREAMS_PER_CLIENT` | `20` | open live connections per client address (`429` beyond) |
 | `PYWEB_RENDER_TIMEOUT` | `30` | seconds a page may take to render (`504` beyond) |

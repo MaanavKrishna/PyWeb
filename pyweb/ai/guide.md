@@ -214,7 +214,14 @@ def Item(item_id: int):
   page `feed = channel("room:1")` (runs on the server); in `on_mount`
   `subscribe(feed, handler)`, where `handler(message)` assigns page
   variables. Import all three from `pyweb`. Never poll with
-  `setInterval` when `publish` fits.
+  `setInterval` when `publish` fits. For lists from the database prefer
+  `rows = live(db, sql)` or `Post.where(...).live()` in the page: it
+  updates by itself, sending only changed rows (keep an `id` column).
+- Presence: `room = presence("doc:1")` in the page, then in `on_mount`
+  `me = join(room, {"name": name}, on_members)`; `me.cast(data)` reaches
+  the others' `on_cast(data, sender)`. Trust `member["user"]`, not names.
+- Serve with `pyweb serve dist --workers 4` (PyWeb's own server: WebSockets,
+  keep-alive, graceful SIGTERM); set `PYWEB_REDIS_URL` with several workers.
 
 ## 7. Python that compiles to the browser
 

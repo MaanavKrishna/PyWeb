@@ -88,12 +88,44 @@ Work towards 0.5.0: production apps in one Python file.
 - **`pyweb.mail`.** `PYWEB_MAIL_URL` (SMTP/SMTPS) and `PYWEB_MAIL_FROM`;
   while developing, emails are printed and kept in `pyweb.mail.OUTBOX`.
 - `pyweb check --production` reports `use_auth()` without `PYWEB_ORIGIN`.
+- **PyWeb's own server.** `pyweb serve` and `pyweb dev` now run on
+  `pyweb.net`: HTTP/1.1, WebSockets (RFC 6455) and Server-Sent Events on
+  one asyncio loop per process, standard library only. Thousands of open
+  live connections cost a coroutine each instead of a thread (the old
+  server stopped at 256); page renders and RPCs run on a thread pool
+  (`PYWEB_THREADS`). `--workers N` / `WEB_CONCURRENCY` forks processes
+  sharing the port and replaces crashed ones. The parser refuses request
+  smuggling vectors (CL+TE, repeated lengths, folded headers, bad chunk
+  sizes, bare LF) and has timeouts for heads, bodies, idle keep-alive and
+  slow readers; SIGTERM drains gracefully.
+- **One WebSocket per tab for live updates.** Every `subscribe()` and live
+  query on a page shares `/__pyweb/ws` (Server-Sent Events used one
+  connection each, and browsers allow six per site), with jittered
+  reconnects that resume where they stopped, and automatic fallback to
+  Server-Sent Events, then polling. The socket checks `Origin`
+  (`PYWEB_ALLOWED_ORIGINS` for others), re-checks the session every minute
+  and closes when it's revoked, limits subscriptions, message size and
+  rate, and doesn't buffer without limit for slow clients. Works in the
+  ASGI adapter too.
+- **Live queries send patches.** Rows with an `id` (or `key=`) travel as
+  inserts, updates, deletes and moves: changing one row of a long list
+  sends that row only, and the browser redraws only it. A page that missed
+  a change gets the whole result once. `Model.query().live()` uses the
+  primary key.
+- **Presence.** `presence(name)` and `join(room, info, on_members,
+  on_cast)`: who is on a page, and ephemeral casts (cursors, typing) to
+  everyone else in the room, across processes with Redis.
+- Feeds made while someone is signed in only work for that session.
+- `live.js`: live-update code loads only on pages that use it.
 - **Read replicas** with `DATABASE_REPLICA_URL` (read-your-writes inside a
   request), slow query logging with query plans (`PYWEB_SLOW_QUERY_MS`),
   `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and
   `pyweb.testing.Factory`.
 
 ### Changed
+- `PYWEB_MAX_CONNECTIONS` defaults to 10,000 per process (it was 256 for
+  the threaded server, which `pyweb serve --app module:factory` still uses).
+- `pyweb.testing.serve` runs PyWeb's server.
 - SQLite connections enforce foreign keys and use write-ahead logging.
 - `Model.configure()` is deprecated in favour of `App(database=...)` /
   `DATABASE_URL`; 0.4-style Models keep working (rows still read like

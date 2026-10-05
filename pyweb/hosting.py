@@ -135,7 +135,8 @@ def gzip_response(headers, body, accept_encoding):
 def shutdown(timeout=10.0, logger=None):
     """Wind down cleanly: end live connections, then let background jobs finish."""
     from . import jobs, realtime
-    closed = realtime.close_streams()
+    from .net import live
+    closed = realtime.close_streams() + live.close_all()
     unfinished = jobs._default_queue.shutdown(timeout)
     if logger is not None:
         logger.info(f"shutdown: closed {closed} live connection(s); {unfinished} job(s) unfinished")
@@ -263,13 +264,22 @@ class Site:
         rel, _, q = rel.partition("?")
         query = query or q
         if self.source_mode:
-            if rel in ("runtime.js", "markdown.js", "forms.js"):
+            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js"):
                 with open(os.path.join(os.path.dirname(RUNTIME_PATH), rel), "rb") as fh:
                     return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], fh.read()
             if rel in self.memory_js:
                 return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], \
                     self.memory_js[rel].encode()
         return static_file(self.static_dirs, rel, query=query, if_none_match=if_none_match, dev=self.source_mode)
+
+    # --------------------------------------------------------- websocket
+    def websocket(self, path, headers, client=None):
+        """A :class:`pyweb.net.live.LiveSession` for ``/__pyweb/ws``, or ``(status, message)``."""
+        from .net import live
+        if path.split("?")[0] != "/__pyweb/ws":
+            return 404, "no WebSocket here"
+        req = Request("GET", path, headers, b"", client=client)
+        return live.open_session(self.server, req, {k.lower(): v for k, v in (headers or {}).items()})
 
     # ----------------------------------------------------------- request
     def respond(self, method, path, headers, body=b"", client=None):

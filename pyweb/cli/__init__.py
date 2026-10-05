@@ -184,57 +184,54 @@ def _dev_load(state, Site):
     state.version += 1
 
 
+class _DevSite:
+    """What the server serves while developing: the current build of the app, the error
+    overlay while it doesn't compile, and a script that reloads pages after a change."""
+
+    def __init__(self, state):
+        self.state = state
+
+    @property
+    def max_body(self):
+        site = self.state.site
+        return site.max_body if site is not None else 1_048_576
+
+    def respond(self, method, path, headers, body=b"", client=None):
+        state = self.state
+        if path == "/__pyweb/dev/version":
+            return 200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], str(state.version).encode()
+        if state.error is not None or state.site is None:
+            return 500, [("Content-Type", "text/html; charset=utf-8")], _error_overlay(state.error, state.path).encode()
+        status, hdrs, raw = state.site.respond(method, path, headers, body, client=client)
+        ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
+        if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
+            raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
+            hdrs = [(k, v) for k, v in hdrs if k.lower() != "content-length"]
+        return status, hdrs, raw
+
+    def websocket(self, path, headers, client=None):
+        if self.state.site is None:
+            return 503, "the app doesn't compile"
+        return self.state.site.websocket(path, headers, client)
+
+
 def cmd_dev(args):
     """Development server: compile on save, live reload, error overlay."""
     from pyweb.hosting import Site
-    from pyweb.serve import LimitedHandler, ThreadedServer
+    from pyweb.net import server as _net
 
     state = _DevState(args.file)
     _dev_load(state, Site)
     if state.error is not None:
         print(f"error: {state.error}", file=sys.stderr)
-
-    class H(LimitedHandler):
-        def _send(self, status, headers, body):
-            from pyweb.hosting import write_http
-            write_http(self, status, headers, body, head=self.command == "HEAD")
-
-        def _handle(self, method, body=b""):
-            if self.path == "/__pyweb/dev/version":
-                return self._send(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")],
-                                  str(state.version).encode())
-            if state.error is not None or state.site is None:
-                html = _error_overlay(state.error, state.path).encode()
-                return self._send(500, [("Content-Type", "text/html; charset=utf-8")], html)
-            status, headers, raw = state.site.respond(method, self.path, dict(self.headers), body,
-                                                      client=self.client_address[0])
-            ctype = next((v for k, v in headers if k.lower() == "content-type"), "")
-            if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
-                raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
-            return self._send(status, headers, raw)
-
-        def do_GET(self):  # noqa: N802
-            self._handle("GET")
-
-        def do_HEAD(self):  # noqa: N802
-            self._handle("HEAD")
-
-        def do_POST(self):  # noqa: N802
-            try:
-                n = int(self.headers.get("Content-Length", 0) or 0)
-            except ValueError:
-                n = 0
-            self._handle("POST", self.rfile.read(n) if n else b"")
-
-        def log_message(self, *a):
-            pass
-
     host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
-    with ThreadedServer((host, args.port), H) as httpd:
-        print(f"PyWeb dev server: http://{host}:{httpd.server_address[1]}/  ({args.file})", flush=True)
+
+    def ready(port):
+        print(f"PyWeb dev server: http://{host}:{port}/  ({args.file})", flush=True)
         if not getattr(args, "no_reload", False):
             _watch_and_reload(state, Site)
-        httpd.serve_forever()
+
+    _net.run(lambda: _DevSite(state), host=host, port=args.port, ready=ready)
 
 
 def _watch_and_reload(state, Site):
@@ -286,21 +283,39 @@ def _watch_and_reload(state, Site):
 
 
 def cmd_serve(args):
-    from pyweb import serve as _serve
     from pyweb import observability as _obs
-    httpd = _serve.serve(args.dir, host=args.host, port=args.port,
-                         app_factory=args.app, logger=_obs.Logger("serve"),
-                         migrate=getattr(args, "migrate", False))
-    addr = httpd.server_address
-    print(f"serving {args.dir} on http://{addr[0]}:{addr[1]} "
-          f"(health: /healthz)")
-    _serve.install_shutdown_handlers(httpd, logger=_obs.Logger("serve"))
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        httpd.server_close()
+    logger = _obs.Logger("serve")
+    if args.app:                                     # legacy: RPC implementations from a factory
+        from pyweb import serve as _serve
+        httpd = _serve.serve(args.dir, host=args.host, port=args.port, app_factory=args.app, logger=logger)
+        _serve.install_shutdown_handlers(httpd, logger=logger)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            httpd.server_close()
+        return
+    from pyweb import config
+    from pyweb.net import server as _net
+    config.startup()
+    if getattr(args, "migrate", False) or os.environ.get("PYWEB_MIGRATE_ON_START", "").lower() in ("1", "true", "yes"):
+        import subprocess
+        app_file = os.path.join(args.dir, "app.pyweb")
+        done = subprocess.run([sys.executable, "-m", "pyweb.cli", "db", "upgrade", "--app", app_file], check=False)
+        if done.returncode != 0:
+            raise SystemExit("migrations failed; not serving")
+    workers = args.workers or int(os.environ.get("WEB_CONCURRENCY", "1") or 1)
+
+    def make_site():
+        from pyweb.hosting import Site
+        return Site(args.dir, max_body=1_048_576)
+
+    def ready(port):
+        print(f"serving {args.dir} on http://{args.host}:{port} with {workers} worker(s) (health: /healthz)",
+              flush=True)
+
+    _net.run(make_site, host=args.host, port=args.port, workers=workers, logger=logger, ready=ready)
 
 
 def cmd_test(args):
@@ -558,7 +573,7 @@ def main(argv=None):
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
-    p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db", help="migrations and seed data")
     p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "new", "adopt", "squash", "seed", "migrate", "rollback"])
     p.add_argument("--app", default=None, help="the app whose Models to use (default: ./app.pyweb)")

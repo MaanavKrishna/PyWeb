@@ -13,6 +13,7 @@ from .jobs import task
 from .context import NotFound, head, redirect, request, session
 from .rpc import RPCError
 from .decorators import component, edge, server, worker
+from .rooms import join, presence
 from .realtime import channel, publish, subscribe
 from .packages import npm
 from .markdown import Markdown
@@ -32,6 +33,8 @@ __all__ = [
     "server",
     "worker",
     "channel",
+    "join",
+    "presence",
     "publish",
     "subscribe",
     "npm",

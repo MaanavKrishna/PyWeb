@@ -19,11 +19,31 @@ from .runtime.server import Request, Server
 
 RUNTIME_PATH = os.path.join(os.path.dirname(__file__), "runtime", "browser", "runtime.js")
 
-SECURITY_HEADERS = [
-    ("X-Content-Type-Options", "nosniff"),
-    ("Referrer-Policy", "same-origin"),
-    ("X-Frame-Options", "SAMEORIGIN"),
-]
+def security_headers(secure=False):
+    """Headers every response carries (the app's own values win).
+
+    ``secure`` (HTTPS, ``PYWEB_COOKIE_SECURE``) adds HSTS so browsers only
+    ever use HTTPS for the site. Override ``Permissions-Policy`` from the app
+    if it needs the camera, microphone or location.
+    """
+    out = [
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "same-origin"),
+        ("X-Frame-Options", "SAMEORIGIN"),
+        ("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()"),
+        ("Cross-Origin-Opener-Policy", "same-origin-allow-popups"),  # OAuth popups keep working
+        ("Cross-Origin-Resource-Policy", "same-origin"),
+    ]
+    if secure:
+        out.append(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))
+    return out
+
+
+def secure_from_env():
+    return os.environ.get("PYWEB_COOKIE_SECURE", "").lower() in ("1", "true")
+
+
+SECURITY_HEADERS = security_headers()
 
 
 def _ctype(path):
@@ -230,10 +250,11 @@ class Site:
             raw = resp.body.encode() if isinstance(resp.body, str) else (resp.body or b"")
             out = (resp.status, hdrs, raw)
         if is_stream(out[2]) and method == "HEAD":
+            out[2].close()               # never sent: release it (and its connection slot) now
             out = (out[0], out[1], b"")
         status, hdrs, raw = out
         names = {k.lower() for k, _ in hdrs}
-        for k, v in SECURITY_HEADERS:
+        for k, v in security_headers(self.server_kwargs.get("secure_cookies")):
             if k.lower() not in names:
                 hdrs.append((k, v))
         ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")

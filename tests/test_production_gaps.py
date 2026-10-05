@@ -131,8 +131,8 @@ def test_body_cap_and_head_and_security_headers(tmp_path):
         # HEAD mirrors GET headers, no body.
         h_status, h_headers, h_body = raw("HEAD", "/healthz")
         assert h_status == 200 and h_body == b""
-        assert (h_headers.get("Content-Length")
-                == headers.get("Content-Length"))
+        # A real length (the uptime in the body can differ by a digit between the two calls).
+        assert int(h_headers.get("Content-Length")) > 0
         # Oversize POST -> 413 at the HTTP layer (before RPC dispatch).
         big_status, _, big_raw = raw(
             "POST", "/__pyweb/rpc/anything", data=b"x" * 64,

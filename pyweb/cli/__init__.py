@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import http.server
 import os
 import sys
 
@@ -137,14 +136,14 @@ def _dev_load(state, Site):
 def cmd_dev(args):
     """Development server: compile on save, live reload, error overlay."""
     from pyweb.hosting import Site
-    from pyweb.serve import ThreadedServer
+    from pyweb.serve import LimitedHandler, ThreadedServer
 
     state = _DevState(args.file)
     _dev_load(state, Site)
     if state.error is not None:
         print(f"error: {state.error}", file=sys.stderr)
 
-    class H(http.server.BaseHTTPRequestHandler):
+    class H(LimitedHandler):
         def _send(self, status, headers, body):
             from pyweb.hosting import write_http
             write_http(self, status, headers, body, head=self.command == "HEAD")

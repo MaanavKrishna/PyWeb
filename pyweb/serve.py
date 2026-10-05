@@ -34,9 +34,68 @@ def _version():
 VERSION = _version()
 
 
+def _env_int(name, default):
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except ValueError:
+        return default
+
+
 class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """One thread per connection, at most ``PYWEB_MAX_CONNECTIONS`` (default 256) at once.
+
+    Over the cap, a connection gets an immediate 503 instead of a thread, so a
+    flood of connections can't exhaust the process.
+    """
+
     daemon_threads = True
     allow_reuse_address = True
+
+    def __init__(self, *args, **kwargs):
+        self.max_connections = _env_int("PYWEB_MAX_CONNECTIONS", 256)
+        self._slots = threading.BoundedSemaphore(self.max_connections)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            try:
+                request.sendall(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n"
+                                b"Retry-After: 1\r\nConnection: close\r\n\r\n")
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
+#: Request headers larger than this in total get a 431.
+MAX_HEADER_BYTES = 16 * 1024
+
+
+class LimitedHandler(http.server.BaseHTTPRequestHandler):
+    """Request handler with a socket timeout and a cap on header size.
+
+    The timeout (``PYWEB_SOCKET_TIMEOUT``, default 30 s) drops clients that
+    send a request too slowly or stop reading, so they can't hold threads.
+    """
+
+    timeout = _env_int("PYWEB_SOCKET_TIMEOUT", 30)
+
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        size = sum(len(k) + len(v) + 4 for k, v in self.headers.items())
+        if size > MAX_HEADER_BYTES:
+            self.close_connection = True
+            self.send_error(431, "Request Header Fields Too Large")
+            return False
+        return True
 
 
 def load_dist(dist):
@@ -73,11 +132,12 @@ DEFAULT_CSP = ("default-src 'self'; script-src 'self'; object-src 'none'; base-u
                "style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; "
                "connect-src 'self'; worker-src 'self' blob:")
 
-SECURITY_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "same-origin",
-    "X-Frame-Options": "SAMEORIGIN",
-}
+def _security_headers():
+    from pyweb.hosting import secure_from_env, security_headers
+    return dict(security_headers(secure_from_env()))
+
+
+SECURITY_HEADERS = _security_headers()
 
 
 def csp_for(csp, html):
@@ -96,14 +156,14 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
                  started_at=None, max_body=MAX_BODY):
     started = started_at or time.time()
 
-    class H(http.server.BaseHTTPRequestHandler):
+    class H(LimitedHandler):
         server_version = f"PyWeb/{VERSION}"
 
         def _bytes(self, body, status=200, ctype="text/plain", extra=None):
             raw = body.encode() if isinstance(body, str) else body
             self.send_response(status)
             self.send_header("Content-Type", ctype)
-            merged = dict(SECURITY_HEADERS)
+            merged = _security_headers()
             if ctype.startswith("text/html"):
                 merged["Content-Security-Policy"] = csp_for(os.environ.get("PYWEB_CSP", DEFAULT_CSP), raw)
             merged.update(extra or {})
@@ -143,8 +203,8 @@ def make_handler(*, static_dir, server_runtime=None, logger=None,
                     "GET", self.path, dict(self.headers),
                     cookies=parse_cookies(self.headers.get("Cookie")), client=self.client_address[0]))
                 if hasattr(resp.body, "snapshot"):  # Server-Sent Events
-                    from pyweb.hosting import SECURITY_HEADERS as _sec
-                    from pyweb.hosting import write_http
+                    from pyweb.hosting import secure_from_env, security_headers, write_http
+                    _sec = security_headers(secure_from_env())
                     hdrs = list(resp.headers.items()) + [h for h in _sec if h[0] not in resp.headers]
                     return write_http(self, resp.status, hdrs, resp.body, head=self.command == "HEAD")
                 return self._bytes(resp.body, resp.status,

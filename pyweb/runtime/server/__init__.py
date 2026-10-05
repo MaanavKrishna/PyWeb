@@ -198,6 +198,114 @@ def client_ip(req, proxies=None):
     return req.client or "unknown"
 
 
+#: RPC bodies nested deeper, or holding more values, than this are refused (400).
+MAX_JSON_DEPTH = 32
+MAX_JSON_ITEMS = 10_000
+
+
+def _bounded_json(raw):
+    """Parse an RPC body, refusing absurd nesting before ``json.loads`` can recurse on it."""
+    if raw.count(b"[") + raw.count(b"{") <= MAX_JSON_DEPTH and raw.count(b",") <= MAX_JSON_ITEMS:
+        return json.loads(raw)   # too few brackets to nest deeply: no need to scan
+    depth = top = items = 0
+    in_str = esc = False
+    for b in raw:
+        if in_str:
+            if esc:
+                esc = False
+            elif b == 0x5C:          # backslash
+                esc = True
+            elif b == 0x22:          # quote
+                in_str = False
+            continue
+        if b == 0x22:
+            in_str = True
+            items += 1
+        elif b in (0x5B, 0x7B):      # [ {
+            depth += 1
+            items += 1
+            top = max(top, depth)
+        elif b in (0x5D, 0x7D):      # ] }
+            depth -= 1
+        elif b == 0x2C:              # , separates values
+            items += 1
+        if top > MAX_JSON_DEPTH or items > MAX_JSON_ITEMS * 2:
+            raise ValueError("request too complex")
+    return json.loads(raw)
+
+
+class _StreamSlots:
+    """Open event streams per client address, so one visitor can't hold every thread."""
+
+    def __init__(self):
+        import threading
+        self.lock = threading.Lock()
+        self.open: dict = {}
+
+    def take(self, key, limit):
+        with self.lock:
+            if self.open.get(key, 0) >= limit:
+                return False
+            self.open[key] = self.open.get(key, 0) + 1
+            return True
+
+    def give_back(self, key):
+        with self.lock:
+            left = self.open.get(key, 1) - 1
+            if left > 0:
+                self.open[key] = left
+            else:
+                self.open.pop(key, None)
+
+
+STREAM_SLOTS = _StreamSlots()
+
+
+class _Counted:
+    """A stream body that returns its slot when it ends, however it ends."""
+
+    def __init__(self, stream, key):
+        self.stream, self.key, self._done = stream, key, False
+
+    def _release(self):
+        if not self._done:
+            self._done = True
+            STREAM_SLOTS.give_back(self.key)
+
+    def __iter__(self):
+        try:
+            yield from self.stream
+        finally:
+            self._release()
+
+    async def aiter(self):
+        try:
+            async for chunk in self.stream.aiter():
+                yield chunk
+        finally:
+            self._release()
+
+    def snapshot(self):
+        try:
+            return self.stream.snapshot()
+        finally:
+            self._release()
+
+    def close(self):
+        try:
+            self.stream.close()
+        finally:
+            self._release()
+
+
+def _max_streams():
+    import os
+    try:
+        return max(1, int(os.environ.get("PYWEB_MAX_STREAMS_PER_CLIENT", "20")))
+    except ValueError:
+        return 20
+
+
 _SIGNATURES: dict = {}
 
 
@@ -321,20 +429,11 @@ class Server:
         return None
 
     def _validate(self, fn, args: dict):
-        sig = _signature(fn)
-        out = {}
-        for pname, param in sig.parameters.items():
-            ann = getattr(param.annotation, "__name__", str(param.annotation)) if param.annotation is not inspect.Parameter.empty else "Any"
-            if pname in args:
-                try:
-                    out[pname] = _coerce(args[pname], ann)
-                except (ValueError, TypeError):
-                    raise TypeError(f"{fn.__name__}.{pname} expects {ann}")
-                if "Email" in ann and "@" not in str(out[pname]):
-                    raise ValueError(f"{fn.__name__}.{pname} must be a valid email")
-            elif param.default is inspect.Parameter.empty:
-                raise TypeError(f"{fn.__name__} missing required argument {pname!r}")
-        return out
+        from .argcheck import ArgError, check_args
+        try:
+            return check_args(fn, args, _signature(fn))
+        except ArgError as exc:
+            raise ValueError(str(exc)) from None
 
     def handle_rpc(self, req: Request):
         from pyweb import rpc as _rpc
@@ -363,6 +462,10 @@ class Server:
                 # preflight using form encodings; requiring JSON blocks them.
                 return self._err(415, "RPC requests must be application/json",
                                  trace_id=trace_id, traceparent=traceparent)
+            if hdr.get("sec-fetch-site") == "cross-site":
+                # Browsers say where a request came from; another site's page can't call these.
+                return self._err(_rpc.Code.CSRF, "cross-site RPC call rejected",
+                                 trace_id=trace_id, traceparent=traceparent)
             origin = hdr.get("origin")
             host = hdr.get("x-forwarded-host") or hdr.get("host")
             if origin and host and origin != "null":
@@ -374,10 +477,14 @@ class Server:
                 return self._err(413, "request body too large",
                                  trace_id=trace_id, traceparent=traceparent)
             try:
-                payload = json.loads(req.body or b"{}")
+                payload = _bounded_json(req.body or b"{}")
             except json.JSONDecodeError:
                 return self._err(_rpc.Code.VALIDATION, "invalid JSON",
                                  trace_id=trace_id, traceparent=traceparent)
+            except (ValueError, RecursionError):
+                return self._err(_rpc.Code.VALIDATION,
+                                 f"request too complex (at most {MAX_JSON_DEPTH} levels and "
+                                 f"{MAX_JSON_ITEMS} values)", trace_id=trace_id, traceparent=traceparent)
             args = payload.get("args", {}) if isinstance(payload, dict) else {}
             try:
                 clean = self._validate(fn, args if isinstance(args, dict) else {})
@@ -628,10 +735,15 @@ class Server:
         except ValueError:
             last_id = 0
         last_id = max(last_id, start)
+        key = client_ip(req)
+        if not STREAM_SLOTS.take(key, _max_streams()):
+            return self._err(429, "too many open live connections from this address",
+                             retry_after=10)
         body = _rt.EventStream(bus, name, last_id)
         if name.startswith("pyweb.live:"):
             from pyweb import livedata
             body = livedata.WatchedStream(body, name[len("pyweb.live:"):])
+        body = _Counted(body, key)
         return Response(200, body, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",

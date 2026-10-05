@@ -44,22 +44,20 @@ def test_package_exports_new_modules():
 
 
 def test_deploy_compose_with_a_domain_puts_caddy_in_front(tmp_path):
-    import yaml
     r = run("deploy", "--target", "compose", "--out", str(tmp_path / "c"), "--domain", "shop.example.com")
     assert r.returncode == 0, r.stderr
-    spec = yaml.safe_load((tmp_path / "c" / "compose.yaml").read_text())
-    app, caddy = spec["services"]["pyweb"], spec["services"]["caddy"]
-    assert "ports" not in app and app["expose"] == ["8000"]          # only reachable through Caddy
-    assert "PYWEB_TRUST_PROXY=1" in app["environment"] and "PYWEB_COOKIE_SECURE=1" in app["environment"]
-    assert caddy["ports"] == ["80:80", "443:443"]
+    spec = (tmp_path / "c" / "compose.yaml").read_text()
+    app, caddy = spec.split("  caddy:\n")
+    assert "ports:" not in app and 'expose:\n      - "8000"' in app          # only reachable through Caddy
+    assert "- PYWEB_TRUST_PROXY=1" in app and "- PYWEB_COOKIE_SECURE=1" in app
+    assert '- "80:80"' in caddy and '- "443:443"' in caddy
     assert "reverse_proxy pyweb:8000" in (tmp_path / "c" / "Caddyfile").read_text()
     assert "docker compose up" in r.stdout
 
 
 def test_deploy_k8s_trusts_the_ingress_and_checks_readiness(tmp_path):
-    import yaml
     run("deploy", "--target", "k8s", "--out", str(tmp_path / "k"))
-    deployment = next(yaml.safe_load_all((tmp_path / "k" / "k8s.yaml").read_text()))
-    container = deployment["spec"]["template"]["spec"]["containers"][0]
-    assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"
-    assert {"name": "PYWEB_TRUST_PROXY", "value": "1"} in container["env"]
+    manifest = (tmp_path / "k" / "k8s.yaml").read_text()
+    readiness = manifest.split("readinessProbe:", 1)[1]
+    assert "path: /readyz" in readiness.split("env:", 1)[0]
+    assert '- name: PYWEB_TRUST_PROXY\n          value: "1"' in manifest

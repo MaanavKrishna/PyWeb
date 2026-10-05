@@ -51,13 +51,15 @@ def check(value, ann, where):
     if origin is typing.Union or (types.UnionType is not None and isinstance(ann, types.UnionType)):
         if value is None and type(None) in args:
             return None
-        errors = []
-        for option in (a for a in args if a is not type(None)):
+        options = [a for a in args if a is not type(None)]
+        if len(options) == 1:                      # Optional[X]: X's own, more useful message
+            return check(value, options[0], where)
+        for option in options:
             try:
                 return check(value, option, where)
-            except ArgError as exc:
-                errors.append(str(exc))
-        raise ArgError(f"{where} expects {_name(ann)}")
+            except ArgError:
+                pass
+        raise ArgError(f"{where} expects one of {', '.join(_name(o) for o in options)}")
     if origin is typing.Literal:
         if value in args:
             return value

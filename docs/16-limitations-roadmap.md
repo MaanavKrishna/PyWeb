@@ -13,6 +13,13 @@ can decide up front whether they matter for your app.
   [npm packages](18-npm-packages.md).
 - **Dev reload is a full page reload.** State is not preserved across
   edits.
+- **SQLite is for one machine.** Several processes on one host share it
+  fine, but more than one server needs Postgres or MySQL;
+  `pyweb check --production` and `pyweb deploy` say so.
+- **Uploaded files aren't garbage-collected.** Deleting a row doesn't
+  delete its file yet.
+- **The playground can't upload files**, and runs background jobs right
+  after each request (the browser's Python has no threads).
 
 ## Released so far
 

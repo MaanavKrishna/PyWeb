@@ -84,34 +84,34 @@ runs when the event fires, not while rendering.
 
 ## 3. Persist to a database with server functions
 
-Functions marked `@server` run only on the server. Calling one from a
-handler sends a typed RPC request and waits for the result; the
-compiler generates both ends.
+A Model is a table: each annotated attribute is a column, and `Field`
+holds its rules. Functions marked `@server` run only on the server.
+Calling one from a handler sends a typed RPC request and waits for the
+result; the compiler generates both ends.
 
 ```pyweb
-from pyweb import App, RPCError, server
-from pyweb.db import connect
+from pyweb import App, Field, Model, RPCError, server
 
-app = App(title="Notes")
-db = connect("sqlite:///notes.db")
-db.execute("create table if not exists notes (id integer primary key, body text not null)")
+app = App(title="Notes", database="sqlite:///notes.db")
+
+
+class Note(Model):
+    body: str = Field(min=1, max=500)
 
 
 def all_notes():
-    return db.execute("select id, body from notes order by id").dicts()
+    return Note.query().order("id").all()
 
 
 @server
-def add_note(body: str) -> list:
-    if not body.strip():
-        raise RPCError("validation_error", "A note can't be empty.")
-    db.execute("insert into notes (body) values (?)", (body.strip(),))
+def add_note(body: str = Field(min=1, max=500)) -> list:
+    Note.create(body=body.strip())
     return all_notes()
 
 
 @server
 def delete_note(note_id: int) -> list:
-    db.execute("delete from notes where id = ?", (note_id,))
+    Note.get_or_404(note_id).delete()
     return all_notes()
 
 
@@ -145,6 +145,10 @@ def Home():
     </main>
 ```
 
+While you develop, the `notes` table is created the first time the
+Model is used. When the app grows up, `pyweb db diff` writes a
+migration for it (see [Data & databases](09-data.md)).
+
 What the compiler did (run `pyweb inspect app.pyweb` to see it):
 
 - `notes = all_notes()` calls a module function, so it runs **on the
@@ -152,10 +156,16 @@ What the compiler did (run `pyweb inspect app.pyweb` to see it):
   sent to the browser as initial state.
 - `save` and `remove` are compiled to `async` JavaScript functions that
   call `/__pyweb/rpc/add_note` and `/__pyweb/rpc/delete_note`.
-- `db` and `connect` never reach the browser. Referencing them from a
-  handler is a compile error that points at the line.
-- `RPCError("validation_error", ...)` becomes a typed error in the
-  browser; `except RPCError as e` catches it there.
+- `Note` and the database never reach the browser. Querying a Model from
+  a handler is a compile error that points at the line.
+- `body: str = Field(min=1, max=500)` is checked on every call. An empty
+  note comes back as an `RPCError` with the code `validation_error` and
+  the message "Body is required", and `except RPCError as e` catches it
+  in the browser.
+
+For bigger forms, `<Form action={add_note}>` builds the inputs from the
+function's parameters, checks them as you type and works without
+JavaScript: see [Forms & uploads](23-forms.md).
 
 ## 4. Sign-in with sessions
 
@@ -210,6 +220,13 @@ stays on the server because browser code never reads it.
 In server functions, `session.require()` returns the session or raises
 an `unauthenticated` RPC error. Set `PYWEB_AUTH_SECRET` in production
 (see [Authentication](10-auth.md)).
+
+This is the do-it-yourself version. For real accounts, one line,
+`auth = app.use_auth()`, adds sign-up with email confirmation, password
+reset, passkeys, OAuth, two-factor and an admin. Then
+`@app.page("/", login=True)` and `@server(login=True)` keep visitors out,
+and `auth.user()` is the person signed in. The
+[SaaS tutorial](28-saas-tutorial.md) builds on it.
 
 ## 5. Ship it
 

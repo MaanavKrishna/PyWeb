@@ -217,7 +217,10 @@ assistants that understand your data. Most 0.4 apps run unchanged; see
   pointing at the line), and Models changed without a migration, with a
   code lens that writes it. VS Code: "Create Migration from Model Changes",
   "Apply Migrations", and snippets for Models, relations, form pages, live
-  pages, jobs, schedules, row policies and `use_auth`.
+  pages, jobs, schedules, row policies and `use_auth`. The extension uses
+  the current language client (vscode-languageclient 10), is bundled
+  (12 files instead of 364), needs VS Code 1.91 or later, and is tested in
+  a real VS Code against the real language server in CI.
 - **`pyweb db check`**: fails (exit 1) when the Models changed without a
   migration, by applying the migrations to a scratch database, so it needs
   no real database. For CI.
@@ -250,6 +253,8 @@ assistants that understand your data. Most 0.4 apps run unchanged; see
 
 ### Changed
 - The blog template and example use a Model instead of raw SQL.
+- `pyweb lsp` answers requests it doesn't handle with "method not found"
+  (it answered `null`), as LSP clients expect.
 - `PYWEB_MAX_CONNECTIONS` defaults to 10,000 per process (it was 256 for
   the threaded server, which `pyweb serve --app module:factory` still uses).
 - `pyweb.testing.serve` runs PyWeb's server.
@@ -282,6 +287,14 @@ assistants that understand your data. Most 0.4 apps run unchanged; see
   gzipped before the reload script could be added.
 - `Model.query()...live()` in a page made a static page: the compiler only
   recognised `live(db, sql)`.
+- A value computed from a live query (`left = len([t for t in tasks if not
+  t["done"]])`), or from any server-loaded list a handler changes, was
+  computed once on the server and never updated in the browser. It now
+  follows its source there.
+- A form for a Model with a read-only field (`owner: User =
+  Field(readonly=True)`) was refused with "owner is required" before the
+  server function could set the field.
+- Validation messages named the field twice ("body Body is required").
 - Schedules in UTC (including PyWeb's nightly cleanup) no longer need a
   time zone database, which Windows and Pyodide (the playground) don't
   ship; other zones explain that `pip install tzdata` provides one.

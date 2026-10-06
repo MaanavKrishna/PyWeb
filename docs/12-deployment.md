@@ -141,7 +141,7 @@ cp .env.example .env        # fill in PYWEB_AUTH_SECRET (and DB_PASSWORD if it a
 docker compose up -d --build
 ```
 
-Point the domain's DNS at the server first. `pyweb deploy --target k8s`
+Point the domain's DNS at the server first. `pyweb deploy k8s`
 already sets `PYWEB_TRUST_PROXY=1` (traffic arrives through your
 Ingress). Platforms such as Fly.io, Render and Railway also put a proxy
 in front of your app: set `PYWEB_TRUST_PROXY=1` there.

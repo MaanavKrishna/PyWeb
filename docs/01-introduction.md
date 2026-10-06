@@ -13,6 +13,27 @@ runs where and produces:
 - **typed RPC endpoints** for your `@server` functions, with generated
   browser calls, argument validation and structured errors.
 
+Around that core, PyWeb has what a product needs, in the same file:
+
+- **Data**: Models with relations, a query builder, migrations that
+  write themselves (`pyweb db diff`) and row policies that decide who
+  sees which rows. SQLite, Postgres and MySQL.
+  ([Data & databases](09-data.md))
+- **Forms**: `<Form action={create_post}>` takes its fields and rules from
+  the Model, checks them in the browser as you type and again on the
+  server, and works without JavaScript. ([Forms & uploads](23-forms.md))
+- **Accounts**: `app.use_auth()` adds sign-up, login, passkeys, magic
+  links, OAuth, two-factor and an admin. ([Authentication](10-auth.md))
+- **Live updates**: `Post.query().live()` keeps a list in step with the
+  database in every open tab, sending only the rows that changed.
+  ([Live data](21-live-data.md))
+- **Background work**: `@app.job` and `@app.cron`, stored in your
+  database, retried, and queued in the same transaction as the request.
+  ([Background jobs](24-jobs.md))
+- **Shipping**: `pyweb deploy` writes Docker, Compose, Kubernetes, Fly,
+  Render or Railway files; logs, metrics and traces come built in.
+  ([Scaling & deploying](25-scaling.md))
+
 ```pyweb
 from pyweb import App, server
 
@@ -67,13 +88,17 @@ and makes Python the source language for all of it:
 
 - **Interactions run in the browser.** Typing, toggling and filtering
   update the DOM locally. The network is used only when your code calls
-  a `@server` function.
-- **Servers stay stateless.** Pages render per request and RPC calls are
-  plain JSON over HTTP, so any number of processes can sit behind an
-  ordinary load balancer. No sticky sessions or WebSocket fan-out.
+  a `@server` function, or when a page shows live data.
+- **Servers stay stateless.** Pages render per request, RPC calls are
+  plain JSON over HTTP and sessions are signed cookies, so any number of
+  processes can sit behind an ordinary load balancer without sticky
+  sessions. Pages with live data open one WebSocket per tab (Server-Sent
+  Events where WebSockets are blocked), and Redis carries changes between
+  processes.
 - **What ships is small.** The shared runtime is about 14 KB gzipped and
-  cached; a typical page adds well under 1 KB. Pages without
-  interactivity ship no JavaScript at all.
+  cached; a typical page adds well under 1 KB. Forms (about 3 KB) and
+  live updates (about 2 KB) load only on pages that use them, and pages
+  without interactivity ship no JavaScript at all.
 - **Boundaries are explicit and checked.** Code that can't run in a
   browser (database access, imports, secrets) is a compile error with a
   file and line, not a runtime surprise. `pyweb inspect` explains where
@@ -85,8 +110,9 @@ and makes Python the source language for all of it:
   ones that update live as the database changes.
 - AI features: chat, summarising, drafting, with replies streamed from
   your server and keys kept there.
-- Product sites and small SaaS apps where pages should be fast and
-  indexable but still interactive.
+- Product sites and SaaS apps with accounts, data and background work
+  (`pyweb new myapp --template saas` starts one; the
+  [SaaS tutorial](28-saas-tutorial.md) walks through it).
 - Teams that know Python and want a web UI without adopting a separate
   JavaScript stack.
 

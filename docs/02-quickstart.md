@@ -12,7 +12,7 @@ and the command is `pyweb`.
 
 ```bash
 pip install pyweb-stack            # Python 3.10+; no other dependencies
-pip install "pyweb-stack[all]"     # optional: Postgres, MySQL, Redis, cryptography, uvicorn
+pip install "pyweb-stack[all]"     # optional: Postgres, MySQL, Redis, argon2, OpenTelemetry, ...
 ```
 
 ## Create and run an app
@@ -24,8 +24,10 @@ pyweb dev app.pyweb          # http://localhost:8000, reloads on save
 ```
 
 `pyweb new` writes `app.pyweb`, a starter test (`test_app.py`) and
-`AGENTS.md`/`CLAUDE.md` (instructions for AI coding agents). Add `--template todo` (or `blog`, `auth`, `chat`,
-`blank`) to start from a bigger example. The default counter app is:
+`AGENTS.md`/`CLAUDE.md` (instructions for AI coding agents). Add
+`--template saas` for a small product with accounts, a database,
+migrations, live updates, a background job and an admin, or `todo`,
+`blog`, `auth`, `chat`, `ai-chat` or `blank`. The default counter app is:
 
 ```pyweb
 from pyweb import App
@@ -86,7 +88,14 @@ pyweb serve dist                               # production server with /healthz
 ## Next
 
 The [tutorial](03-tutorial.md) builds a notes app with a database,
-server functions and login. Then, depending on what you're building:
+server functions and login, and [a SaaS in an hour](28-saas-tutorial.md)
+builds a product with accounts, live updates and background jobs, then
+ships it. Then, depending on what you're building:
+
+- tables, relations and migrations: [Data & databases](09-data.md);
+- forms that check what people type: [Forms & uploads](23-forms.md);
+- sign-up, login, passkeys and an admin: [Authentication](10-auth.md);
+- work that runs later or on a schedule: [Background jobs](24-jobs.md);
 
 - several pages with a shared header: [Layouts & navigation](19-layouts-navigation.md);
 - pages that update when data changes: [Live data](21-live-data.md);

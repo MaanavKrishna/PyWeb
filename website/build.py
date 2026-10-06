@@ -40,6 +40,7 @@ DOCS = [
     ("01-introduction.md", "introduction", "Introduction", "Start"),
     ("02-quickstart.md", "quickstart", "Quickstart", "Start"),
     ("03-tutorial.md", "tutorial", "Tutorial", "Start"),
+    ("28-saas-tutorial.md", "saas-tutorial", "Tutorial: a SaaS in an hour", "Start"),
     ("17-ai-assistants.md", "ai-assistants", "AI assistants & MCP", "Start"),
     ("04-pyweb-files.md", "language", "The .pyweb language", "Language"),
     ("05-reactivity.md", "reactivity", "State & reactivity", "Language"),
@@ -48,20 +49,19 @@ DOCS = [
     ("06-server-functions.md", "server-functions", "Server functions & RPC", "Server"),
     ("08-pages-routing-assets.md", "routing", "Pages, routing & assets", "Server"),
     ("19-layouts-navigation.md", "layouts", "Layouts & navigation", "Server"),
-    ("21-live-data.md", "live-data", "Live data", "Server"),
-    ("20-ai-apps.md", "ai-apps", "Building AI apps", "Server"),
     ("09-data.md", "data", "Data & databases", "Server"),
     ("23-forms.md", "forms", "Forms & uploads", "Server"),
-    ("24-jobs.md", "jobs", "Background jobs", "Server"),
-    ("25-scaling.md", "scaling", "Scaling & deploying", "Ship"),
-    ("26-observability.md", "observability", "Logs, metrics & tracing", "Ship"),
-    ("28-saas-tutorial.md", "saas-tutorial", "Tutorial: a SaaS in an hour", "Ship"),
-    ("27-upgrading.md", "upgrading", "Upgrading to 0.5", "Ship"),
     ("10-auth.md", "auth", "Authentication", "Server"),
+    ("21-live-data.md", "live-data", "Live data", "Server"),
+    ("24-jobs.md", "jobs", "Background jobs", "Server"),
+    ("20-ai-apps.md", "ai-apps", "Building AI apps", "Server"),
     ("11-testing.md", "testing", "Testing", "Ship"),
     ("12-deployment.md", "deployment", "Deployment", "Ship"),
+    ("25-scaling.md", "scaling", "Scaling & deploying", "Ship"),
+    ("26-observability.md", "observability", "Logs, metrics & tracing", "Ship"),
     ("13-security.md", "security", "Security model", "Ship"),
     ("14-cli.md", "cli", "Command line", "Ship"),
+    ("27-upgrading.md", "upgrading", "Upgrading to 0.5", "Ship"),
     ("15-toolkit.md", "toolkit", "Toolkit & stability", "Reference"),
     ("22-recipe-web3.md", "web3", "Recipe: wallets & web3", "Reference"),
     ("16-limitations-roadmap.md", "roadmap", "Limitations & roadmap", "Reference"),
@@ -70,11 +70,14 @@ DOC_SLUG = {f: s for f, s, _, _ in DOCS}
 GROUPS = ["Start", "Language", "Server", "Ship", "Reference"]
 
 EXAMPLES = [
+    ("saas", "Teamboard (SaaS)", "Accounts, Models with migrations and row policies, forms, lists that update live in "
+     "every tab, a background job, a daily email and an admin.", False),
     ("counter", "Counter", "Signals, a computed value and a bound number input.", True),
     ("todo", "Todos", "Components, list mutation, filters and keyed lists.", True),
-    ("blog", "Blog", "SQL database, server functions, route parameters, 404s and validation errors.", False),
-    ("auth", "Accounts", "Registration, password hashing, sessions and protected pages.", False),
-    ("chat", "Chat rooms", "Route parameters, shared server state and live updates over Server-Sent Events.", False),
+    ("blog", "Blog", "A Model, server functions, route parameters, 404s and validation errors.", False),
+    ("auth", "Accounts", "Your own registration, password hashing, sessions and protected pages.", False),
+    ("chat", "Chat rooms", "Route parameters, shared server state and live updates with publish() and subscribe().",
+     False),
     ("showcase", "Showcase", "Reactive state, derived values and a server-backed search on one page.", False),
     ("site", "Plant shop", "A layout, client-side navigation, typed query parameters, page titles and a 404 page.",
      False),
@@ -421,7 +424,7 @@ def markdown(text, *, compile_pyweb=True):
 
 # ------------------------------------------------------------------ layout
 
-CSS_VERSION = "4"
+CSS_VERSION = "5"
 
 LOGO = ('<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="pwg" x1="0" y1="0" x2="1" y2="1">'
         '<stop offset="0" stop-color="#3d5afe"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#f2a10c"/>'
@@ -430,6 +433,14 @@ LOGO = ('<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="p
         'stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="16" r="3.3" fill="#fff"/></svg>')
 
 _ICON_PATHS = {
+    "database": '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M20 12c0 1.66-3.58 3-8 3s-8-1.34-8-3"/>'
+                '<path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/>',
+    "form": '<path d="m9 11 3 3 9-9"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+    "user": '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    "rocket": '<path d="M5 15c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>'
+              '<path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>'
+              '<path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
     "play": '<path d="M7 4.5v15l12-7.5z"/>',
     "reset": '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
     "download": '<path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 19h16"/>',
@@ -684,6 +695,9 @@ def landing(bench, demo_gz):
     with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
         readme = fh.read()
     sample = re.search(r"```pyweb\n(.*?)```", readme, re.S).group(1)
+    # The README's whole-product example (accounts, a Model, a form, a job, a live list).
+    product = next(b for b in re.findall(r"```pyweb\n(.*?)```", readme, re.S) if "use_auth" in b)
+    compile_source(product, filename="app.pyweb")                 # the landing page never shows code that doesn't build
     compiled = compile_source(sample, filename="app.pyweb")
     page = next(iter(compiled["pages"].values()))
     # The browser half: the handler exactly as the compiler wrote it.
@@ -706,49 +720,58 @@ def landing(bench, demo_gz):
     render_ms = bench["todo"]["ssr_ms"]
     feats = [
         ("browser", "browser", "Interactions run in the browser",
-         "Handlers and expressions compile to small JavaScript modules. The network is only used when you call a "
-         "<code>@server</code> function: no WebSocket per user, no Python runtime download."),
+         "Handlers and expressions compile to small JavaScript modules. Typing, toggling and filtering update the "
+         "page locally; the network is used for <code>@server</code> calls and live data. No Python runtime download."),
         ("server", "server", "Every page is server-rendered",
-         "Complete HTML on first paint with real data from your database, then hydrated in place. Good for search "
-         "engines, slow devices and links that just work."),
+         "Complete HTML on first paint with real data from your database, then hydrated in place. Layouts keep their "
+         "state while links load without a full reload."),
         ("link", "both", "No API layer to write",
          "<code>@server</code> functions get endpoints, argument validation, typed errors and generated browser calls."),
         ("pulse", "browser", "Variables are state",
          "The compiler sees which variables your handlers change and makes exactly those reactive. Updates touch "
          "only the DOM nodes that read them."),
+        ("database", "server", "Models and migrations",
+         "<code>class Post(Model)</code> is a table with rules, relations and row policies, on SQLite, Postgres or "
+         "MySQL. <code>pyweb db diff</code> writes the migration; N+1 loops are an error while you develop."),
+        ("form", "both", "Forms that check themselves",
+         "<code>&lt;Form action={save}&gt;</code> takes its fields and rules from the Model, checks them as you type "
+         "and on the server, blocks double submits and works without JavaScript."),
+        ("user", "server", "Accounts in one line",
+         "<code>app.use_auth()</code>: sign-up, passkeys, magic links, GitHub/Google/Microsoft, two-factor, "
+         "throttling, an audit log and <code>/admin</code> for every Model."),
+        ("bolt", "both", "Live, row by row",
+         "<code>Post.query().live()</code> updates every open tab when the data changes, one changed row at a time over "
+         "one WebSocket. Server functions that <code>yield</code> stream AI replies, with a Stop that really stops."),
+        ("clock", "server", "Background jobs and schedules",
+         "<code>@app.job</code> and <code>@app.cron</code>, stored in your database, retried with backoff, and queued "
+         "in the request's transaction, so a rollback queues nothing."),
         ("shield", "server", "Checked boundaries",
          "Database handles, imports and secrets can't reach browser code: it's a compile error with a line number. "
          "<code>pyweb inspect</code> explains every decision."),
-        ("pulse", "both", "Data that keeps up",
-         "<code>live(db, \"select ...\")</code> keeps a page in step with the database in every open window, and "
-         "server functions that <code>yield</code> stream to the page: AI replies with a Stop that really stops."),
-        ("link", "browser", "Real multi-page apps",
-         "Shared layouts that keep their state, links that load without a full reload, typed query parameters, "
-         "per-page titles and social tags."),
         ("box", "browser", "npm without Node",
          "<code>pyweb add chart.js/auto</code> vendors a package for browser code, pinned in "
          "<code>pyweb.lock</code>. No <code>node_modules</code>, no bundler."),
-        ("box", "both", "Boring to operate",
-         "Stateless servers, signed-cookie sessions, plain JSON over HTTP. Run <code>pyweb serve</code>, uvicorn or "
-         "the generated Dockerfile behind any load balancer."),
+        ("rocket", "both", "Ship it, then watch it",
+         "<code>pyweb deploy fly</code> (or docker, compose, k8s, render, railway) plans Postgres, workers and Redis "
+         "for you. JSON logs, Prometheus metrics and OpenTelemetry traces are built in."),
     ]
     feat_html = "".join(f'<div class="feat reveal"><span class="chip {cls}">{icon(ic)}</span><h3>{t}</h3><p>{d}</p></div>'
                         for ic, cls, t, d in feats)
     tools = [
         ("playground.html", "Playground", "Write an app and run it in your browser, server functions included.", "Open it"),
-        ("cli.html#editor-support", "VS Code &amp; LSP", "Errors as you type, and hover that shows where each line runs.",
-         "Set up your editor"),
-        ("ai-assistants.html", "AI assistants", "An MCP server to scaffold, check, render, screenshot and test.",
-         "Connect an assistant"),
-        ("server-functions.html#live-updates", "Live updates", "<code>publish()</code> on the server, "
-         "<code>subscribe()</code> in the page, over Server-Sent Events.", "Read the guide"),
+        ("cli.html#editor-support", "VS Code &amp; LSP", "Errors as you type, hover that shows where each line runs, "
+         "completion for your Models, and a lens that writes migrations.", "Set up your editor"),
+        ("ai-assistants.html", "AI assistants", "An MCP server to scaffold, check, render, screenshot and test, and to "
+         "read your schema, data and recent requests.", "Connect an assistant"),
+        ("saas-tutorial.html", "A SaaS in an hour", "Accounts, data, live updates, a job and an admin, then "
+         "<code>pyweb deploy</code>: the tutorial builds and ships one.", "Follow it"),
     ]
     tool_html = "".join(f'<a class="tool reveal" href="{h}"><b>{t}</b><span>{d}</span><em>{c} →</em></a>'
                         for h, t, d, c in tools)
     compare = """<div class="table"><table><thead><tr><th>Approach</th><th>You write</th><th>Trade-off</th></tr></thead><tbody>
 <tr><td>Django / Flask / FastAPI + React</td><td>A Python API and a JavaScript app</td><td>Two languages, two builds, a hand-written API in between</td></tr>
 <tr><td>Templates + htmx</td><td>Views, templates, an endpoint per interaction</td><td>Every interaction is a round trip; client state is awkward</td></tr>
-<tr><td>Reflex, NiceGUI, Streamlit</td><td>Python only</td><td>UI state lives on the server; clicks round-trip over a WebSocket</td></tr>
+<tr><td>Reflex, NiceGUI, Streamlit</td><td>Python only</td><td>UI state lives on the server; every click is a round trip</td></tr>
 <tr><td>PyScript / Pyodide</td><td>Python only</td><td>A multi-megabyte runtime before anything is interactive</td></tr>
 <tr class="us"><td><b>PyWeb</b></td><td><b>One Python file</b></td><td><b>Browser code is a compiled subset of Python</b></td></tr>
 </tbody></table></div>"""
@@ -756,10 +779,11 @@ def landing(bench, demo_gz):
 <div class="hero-wrap">
 <section class="hero">
   <div class="hero-text">
-    <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: npm packages, layouts, streaming AI, live queries →</a>
+    <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: Models, forms, accounts, live updates, jobs, deploys →</a>
     <h1>Full-stack web apps in <span class="grad">one Python file.</span></h1>
-    <p class="sub">PyWeb is a Python web framework: server-rendered pages, reactive UI compiled from Python, and typed calls to server functions.
-    No JavaScript toolchain, no WebSocket per user, no runtime download.</p>
+    <p class="sub">PyWeb is a Python web framework: server-rendered pages, a reactive UI compiled from Python, and typed calls to
+    server functions, plus the rest of a product (data, forms, accounts, live updates, background jobs, deploys) in the same file.
+    No JavaScript toolchain, no runtime download.</p>
     <div class="cta"><a class="btn primary" href="quickstart.html">Get started <span class="arrow">→</span></a>
     <a class="btn" href="playground.html">Try it in your browser</a></div>
     <div class="install code"><span class="prompt">$</span><code>pip install pyweb-stack</code>
@@ -792,6 +816,19 @@ def landing(bench, demo_gz):
       {code_block(server_demo, "text", "HTTP · a real request to the app above")}</div>
   </div>
 </section>
+<section class="band product">
+  <div class="band-text reveal"><div class="kicker">New in 0.5</div>
+    <h2>A whole product, still one file</h2>
+    <p>Accounts, a table with rules, a form, a background job and a list that updates in every open tab: {len(product.strip().splitlines())} lines.</p>
+    <ul class="checks"><li><code>app.use_auth()</code> adds sign-up, passkeys, OAuth and <code>/admin</code></li>
+    <li>The <code>Idea</code> Model is a table, its rules, and the form's fields</li>
+    <li><code>.policy()</code> keeps people's rows their own, on every query</li>
+    <li><code>thank.enqueue()</code> is queued only if the request commits</li>
+    <li><code>.live()</code> sends each new idea to every open tab</li></ul>
+    <a class="more" href="saas-tutorial.html">Build one in the SaaS tutorial →</a>
+  </div>
+  <div class="reveal">{code_block(product, "pyweb", "app.pyweb", window=True)}</div>
+</section>
 <section class="band">
   <div class="band-text reveal"><div class="kicker">Live demo</div>
     <h2>This is a real PyWeb app</h2>
@@ -816,7 +853,8 @@ def landing(bench, demo_gz):
     <h2>Built for building with AI</h2>
     <p>One file, plain Python, and a compiler that answers mistakes with a line number and a fix. The built-in MCP
     server lets Claude Code, Cursor and other assistants scaffold apps, check them, see what runs where, render
-    pages, call server functions, look at the result in a real browser and run the tests.</p>
+    pages, call server functions, look at the result in a real browser and run the tests. Data tools show them
+    your schema, pending migrations, jobs and recent requests, and run read-only queries.</p>
     <ul class="checks"><li>New projects include <code>AGENTS.md</code>, <code>CLAUDE.md</code> and a starter test</li>
     <li>The docs ship as <a href="llms-full.txt">llms-full.txt</a></li></ul>
     <a class="more" href="ai-assistants.html">Set it up →</a>
@@ -825,7 +863,7 @@ def landing(bench, demo_gz):
 </section>
 <section class="compare">
   <div class="section-head reveal"><div class="kicker">Where it fits</div><h2>Made for Python developers who ship web UIs</h2>
-  <p>Internal tools, dashboards, CRUD apps and small products, without adopting a JavaScript stack. For large
+  <p>Internal tools, dashboards, CRUD apps and SaaS products, without adopting a JavaScript stack. For large
   client-heavy single-page apps, use a JavaScript framework; for scientific Python in the browser, use Pyodide.
   <a href="introduction.html">Read the full comparison →</a></p></div>
   <div class="reveal">{compare}</div>

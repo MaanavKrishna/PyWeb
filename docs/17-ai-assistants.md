@@ -13,10 +13,12 @@ get it right:
 
 ## The MCP server
 
-The tools below are those of `pyweb-stack` 0.4.1
-(`pip install -U pyweb-stack`; older versions have fewer:
-`pyweb_routes`, `pyweb_packages` and the task prompts arrived in 0.4.1,
-`pyweb_screenshot` and `pyweb_test` in 0.3.0). Install PyWeb, then register the
+The tools below are those of `pyweb-stack` 0.5
+(`pip install -U pyweb-stack`; older versions have fewer: the data tools
+`pyweb_db_schema`, `pyweb_db_query`, `pyweb_migrations`, `pyweb_jobs`
+and `pyweb_requests` arrived in 0.5, `pyweb_routes`, `pyweb_packages`
+and the task prompts in 0.4.1, `pyweb_screenshot` and `pyweb_test` in
+0.3.0). Install PyWeb, then register the
 server with your assistant. It talks
 over stdio and has no dependencies beyond PyWeb itself.
 

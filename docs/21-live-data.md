@@ -6,35 +6,37 @@ table it reads changes, every open page showing it gets the new rows. No
 polling, channels or handlers to write.
 
 ```pyweb
-from pyweb import App, live, server
-from pyweb.db import connect
+from pyweb import App, Field, Model, server
 
-app = App(title="Orders")
-db = connect("sqlite:///shop.db")
-db.execute("create table if not exists orders (id integer primary key, item text, status text default 'new')")
+app = App(title="Orders", database="sqlite:///shop.db")
+
+
+class Order(Model):
+    item: str = Field(min=1, max=80)
+    status: str = "new"
 
 
 @server
 def place(item: str) -> None:
-    db.execute("insert into orders (item) values (?)", (item,))
+    Order.create(item=item)
 
 
 @server
 def ship(order_id: int) -> None:
-    db.execute("update orders set status = 'shipped' where id = ?", (order_id,))
+    Order.where(id=order_id).update(status="shipped")
 
 
 @app.page("/")
 def Orders():
-    orders = live(db, "select id, item, status from orders order by id desc limit 50")
-    waiting = live(db, "select count(*) as n from orders where status = 'new'")
+    orders = Order.query().order("-id").limit(50).live()
+    waiting = len([o for o in orders if o["status"] == "new"])
     item = ""
 
     def order():
         place(item)
         item = ""
 
-    <h1>Orders ({waiting[0]["n"]} waiting)</h1>
+    <h1>Orders ({waiting} waiting)</h1>
     <form onsubmit={order}><input bind={item} /><button>Order</button></form>
     <ul>
         for o in orders:
@@ -46,13 +48,26 @@ def Orders():
 ```
 
 Open the page in two windows: an order placed or shipped in one appears
-in both at once.
+in both at once. `waiting` is derived from `orders`, so it follows it in
+the browser too.
+
+`.live()` works on any Model query (`where`, `order`, `limit`,
+`include`). With raw SQL, `live()` does the same:
+
+```python
+from pyweb import live
+from pyweb.db import connect
+
+db = connect("sqlite:///shop.db")
+orders = live(db, "select id, item, status from orders order by id desc limit 50")   # in a page
+```
 
 ## How it works
 
-- **`live(db, sql, params)`** runs the query while the page renders, like
-  `db.execute(sql, params).dicts()`, so the first paint has the data and
-  needs no extra request. In the browser the variable is reactive state.
+- **`query.live()`** (or `live(db, sql, params)`) runs the query while
+  the page renders, so the first paint has the data and needs no extra
+  request. In the browser the variable is reactive state, and values
+  computed from it are recomputed there.
 - **Writes announce themselves.** Every `INSERT`, `UPDATE`, `DELETE`,
   `REPLACE` or `TRUNCATE` made through `pyweb.db` (and so through
   `pyweb.models`) announces its table once it's committed. Inside
@@ -72,13 +87,11 @@ in both at once.
   were served the page can listen, and nothing written after the render
   is missed.
 
-With Models, `.live()` on a query does the same:
+- **One connection per tab.** Every live query and `subscribe()` on a
+  page shares one WebSocket (`/__pyweb/ws`); where a proxy blocks
+  WebSockets, pages use Server-Sent Events, then polling, by themselves.
 
-```python
-orders = Order.where(status="new").order("-id").limit(50).live()
-```
-
-The tables to watch are the ones after `FROM` and `JOIN`. Pass
+For raw SQL, the tables to watch are the ones after `FROM` and `JOIN`. Pass
 `tables=["orders", "customers"]` when that isn't enough (views,
 functions, subqueries).
 
@@ -105,8 +118,8 @@ takes over re-running its query from the page's signed query description.
   A live query that returns more than 10,000 rows is an error.
 - Rows without a key (no `id` column and no `key=`) are sent whole on
   every change. For large lists, give rows a key, page them, or show counts.
-- Rows are sent to every page showing the query, so filter per user in
-  SQL (`where owner = ?`, with the id from `session.user()`), never in the
-  browser.
+- Rows are sent to every page showing the query, so filter per user on
+  the server (`.where(owner=auth.user())`, a row policy, or
+  `where owner = ?` in SQL), never in the browser.
 - A query nobody has rendered or watched for ten minutes is forgotten
   until a page renders it again.

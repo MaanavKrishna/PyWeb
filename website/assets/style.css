@@ -297,8 +297,8 @@ a.eyebrow:hover { text-decoration: none; border-color: var(--line-2); color: var
 
 .band { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 56px; align-items: center; }
 .checks { list-style: none; padding: 0; margin: 22px 0; display: grid; gap: 10px; }
-.checks li { display: flex; gap: 10px; align-items: baseline; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
-.checks li::before { content: "✓"; flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-weight: 700;
+.checks li { position: relative; padding-left: 30px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.checks li::before { content: "✓"; position: absolute; left: 0; top: .2em; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-weight: 700;
   color: var(--browser-ink); background: var(--browser-soft); }
 .more { font-weight: 600; }
 

@@ -21,9 +21,12 @@ pipeline.compile_source ─► {pages: {html (static prerender), js, signals, pl
    └─► app_loader.py LoadedApp: exec Python half, register @server fns, render pages per request
                           │
                           ▼
-         runtime/server Server ─► hosting.Site ─► pyweb dev │ pyweb serve │ asgi.create_app
+         runtime/server Server ─► hosting.Site ─► net/server (pyweb dev, pyweb serve) │ asgi.create_app
+                                    │
+          models + db (queries, migrations) · forms · authkit · livedata · jobs · telemetry
                                                       │
 browser:  runtime.js (signals, DOM regions, py helpers, rpc) + <Page>.js ─► mount()
+          + forms.js, live.js, auth.js, markdown.js on the pages that need them
 ```
 
 ## 1. Parsing (`pyweb/compiler/parser.py`)
@@ -159,24 +162,105 @@ files are executed the same way as modules registered under their
 import name; a component's render env carries the file it came from, so
 nested components resolve in that file and its markup sees its globals.
 
-`Server` routes pages, dispatches RPC (validation by annotation, JSON
-and Origin checks, auth/permission gates, rate limiting, timeouts in a
-shared pool, async functions, structured errors with request ids and
-`traceparent`), and runs everything inside a `contextvars` request
-context that powers `request`, `session` and cookies. `hosting.Site`
-adds static files, health checks and security headers and is shared by
-`pyweb dev`, `pyweb.testing` and the ASGI adapter; `pyweb serve` uses
-the same `Server` behind its threaded HTTP handler.
+`Server` routes pages, dispatches RPC (validation by annotation and
+`Field` rules, JSON and Origin checks, `login=`/`roles=` gates, rate
+limiting, timeouts in a shared pool, async functions, structured errors),
+posts forms, and runs everything inside a `contextvars` request context
+that powers `request`, `session`, cookies and the request's database
+transaction. `hosting.Site` adds static files, health checks, metrics,
+security headers (with a hashed Content-Security-Policy) and telemetry,
+and is shared by `pyweb dev`, `pyweb serve`, `pyweb.testing` and the ASGI
+adapter.
+
+**The network server** (`pyweb/net/`) is PyWeb's own, standard library
+only: one asyncio loop per process holds every keep-alive connection,
+event stream and WebSocket as a coroutine, while page renders and RPC
+calls (ordinary blocking Python) run on a thread pool. `http.py` and
+`ws.py` are I/O-free parsers: the HTTP parser refuses anything that could
+desync a proxy (both `Content-Length` and `Transfer-Encoding`, duplicate
+lengths, folded headers, bad chunk sizes) and the WebSocket codec enforces
+RFC 6455 masking, control-frame and message-size rules before reading a
+payload. `pyweb serve --workers N` starts N processes, each with its own
+`SO_REUSEPORT` socket, and drains them gracefully on shutdown. The ASGI
+adapter (`asgi.py`) remains for uvicorn, hypercorn and friends.
 
 Streaming server functions return an `RPCStream` body that steps the
 generator inside the request's context and closes it when the client
-disconnects. Live data (`livedata.py`) hooks `pyweb.db`: committed writes
-publish their table on the realtime bus; a per-process registry of
-distinct live queries re-runs those whose tables changed (debounced, once
-for all viewers) and publishes rows that changed to the query's channel,
-which pages follow over the same SSE feeds as `channel()`.
+disconnects.
 
-## 8. Build (`build.py`)
+## 8. Data (`models/`, `db/`, `rules.py`, `forms.py`)
+
+- **Databases** (`db/`): one driver layer for SQLite, Postgres and MySQL
+  with pooling, request-scoped transactions with savepoints, read
+  replicas (read-your-writes inside a request) and `after_commit` hooks.
+  `dialect.py` holds the few places the three differ; values are always
+  bound parameters.
+- **Models** (`models/`): annotated classes become tables. `fields.py`
+  holds each column's type, schema and rules in one object; `query.py`
+  is an immutable `QuerySet` (`where`, `order`, `include`, `page`,
+  aggregates) whose column names come from the Model; `relations.py`
+  loads foreign keys and many-to-many with one `IN (...)` query per
+  relation and, while developing, raises on a relation read that wasn't
+  `include()`d (no silent N+1). Row policies (`Model.policy(read=,
+  write=)`) are added to every query and save made for a request.
+- **Migrations** (`db/schema.py`, `db/migrate.py`): `from_models` and
+  `introspect` describe the wanted and the actual schema the same way;
+  `diff` turns the difference into operations, splitting risky changes
+  into expand and contract steps. Migrations run under a lock (Postgres
+  advisory lock, MySQL `GET_LOCK`, or a row in SQLite) so many servers
+  can start at once.
+- **Rules and forms**: one `Rules` object checks a value when a Model is
+  saved, when an RPC argument arrives and when a form is posted, and its
+  JSON schema drives `forms.js` in the browser. `<Form action={fn}>`
+  takes its fields from the function's parameters (or the Model it
+  edits), adds a CSRF token and a one-time key so a double submit runs
+  once, and works as a plain POST without JavaScript.
+
+## 9. Live data (`livedata.py`, `net/live.py`, `runtime/browser/live.js`)
+
+Writes through `pyweb.db` announce their table on the realtime bus after
+the transaction commits (a rollback announces nothing). Each distinct
+live query (`Post.query().live()` or `live(db, sql)`) is registered once
+per process; a watcher re-runs the queries whose tables changed, once for
+all viewers, and publishes a **patch** keyed by primary key (`{version,
+prev, ops}`: deletes, updates, inserts at an index, moves). One changed
+row costs one row on the wire, and `live.js` updates only those rows'
+DOM. A browser that missed a version asks for the whole result again.
+
+Each tab opens one WebSocket (`/__pyweb/ws`) and multiplexes every
+subscription over it; where WebSockets are blocked it falls back to
+Server-Sent Events, then polling. Sockets check `Origin`, re-check the
+session every minute (a revoked session is closed), and have bounded
+send queues: a client that can't keep up gets one resync instead of an
+ever-growing backlog. `rooms.py` adds presence and ephemeral broadcasts.
+With `RedisBus`, changes reach every process and host.
+
+## 10. Accounts, jobs and telemetry
+
+- **Auth kit** (`authkit/`): `app.use_auth()` adds Models (users,
+  identities, passkeys, tokens, audit events), server-rendered pages that
+  work without JavaScript, scrypt or argon2id passwords, passkeys
+  (`webauthn.py`, pure Python ES256/RS256), magic links, OAuth with PKCE,
+  TOTP, delay-based throttling instead of lockouts, and `/admin` for every
+  Model.
+- **Jobs** (`jobs/`): `@app.job` and `@app.cron` share one store
+  interface with three backends: the app's database (`pyweb_jobs`; claims
+  with `FOR UPDATE SKIP LOCKED`, enqueueing joins the request's
+  transaction), Redis (sorted sets and Lua scripts) and memory. Leases
+  hand a crashed worker's job to another; cron slots are deduplicated by
+  key, so every server can run the scheduler and each slot still runs
+  once.
+- **Telemetry** (`telemetry/`): each request and job gets a
+  `RequestTelemetry` (request id = W3C trace id, route, user, queries,
+  spans). Logs, Prometheus metrics (merged across worker processes),
+  OpenTelemetry spans, error reports and the dev toolbar all read it; a
+  job queued in a request continues the request's trace.
+- **Deploy** (`deploy/`): `plan.py` reads the app (database? jobs? live
+  updates? sign-in?) and decides the services and processes; `targets.py`
+  writes the same multi-stage image and web/worker/release processes for
+  Docker, Compose, Kubernetes, Fly, Render and Railway.
+
+## 11. Build (`build.py`)
 
 Copies the source to `dist/app.pyweb`, writes the runtime and page
 modules (rewriting the runtime import to the hashed file name),
@@ -189,21 +273,28 @@ already in `static/vendor/` (put there by `pyweb add`, see
 follows imports from the browser entry point, applies the `browser`
 field and records everything in `pyweb.lock`).
 
-## 9. Tools around the compiler
+## 12. Tools around the compiler
 
 - **`pyweb lsp`** (`lsp.py`): a stdio Language Server. Every keystroke
   compiles the buffer with its real path (so imports resolve); errors and
   `security.check_source` findings become diagnostics, the placement
   report answers hover, and the context's component table drives
-  completion and go to definition. `editors/vscode` adds a TextMate
-  grammar and starts the server.
+  completion and go to definition. Data features read the Models
+  statically (`lsp_data.py`: field and query completion, form fields, N+1
+  loops) and run `pyweb db check` in the background for the "needs a
+  migration" code lens. `editors/vscode` adds a TextMate grammar,
+  commands and snippets, and starts the server.
 - **`pyweb mcp`** (`mcp.py`): the same compiler, `TestClient`, Playwright
-  and pytest behind MCP tools for AI assistants.
+  and pytest behind MCP tools for AI assistants, plus read-only data
+  tools (schema, guarded queries, migrations, jobs, recent requests).
+- **`pyweb upgrade`** (`upgrade.py`): reads an app and its scripts and
+  lists what changed since 0.4, with safe rewrites behind `--fix`.
 - **Playground** (`website/playground`): PyWeb itself runs in Pyodide.
   `host.py` wraps a `TestClient`; the page renders its HTML into an
   iframe and a fetch bridge sends the iframe's `/__pyweb/` requests back
-  to Python, so pages, RPC, sessions and live updates behave as under
-  `pyweb dev`.
+  to Python, so pages, RPC, forms, sessions, Models (on Pyodide's SQLite)
+  and live updates behave as under `pyweb dev`. Jobs run inline after
+  each request, since Pyodide has no threads.
 
 ## Design decisions
 
@@ -223,7 +314,12 @@ field and records everything in `pyweb.lock`).
   size and a privacy property.
 - **Stateless HTTP everywhere.** Pages per request, RPC as JSON POST,
   sessions as signed cookies: operationally boring, horizontally
-  scalable, debuggable with curl.
+  scalable, debuggable with curl. The only long-lived connection is the
+  live-data WebSocket, and it holds no state a reconnect can't rebuild.
+- **The database is the source of truth.** Jobs, schedules, migrations'
+  journal and live-query versions live in tables or derive from them, so
+  a crash or a deploy loses nothing and needs no extra service until
+  scale asks for Redis.
 - **Hydrate, but never trust it blindly.** The client adopts the server
   DOM when it matches exactly and otherwise renders from scratch, so a
   mismatch costs a re-render, never a broken page.
@@ -237,5 +333,11 @@ field and records everything in `pyweb.lock`).
 | Runtime | reactive core in Node, DOM behaviour in Chromium (`tests/test_runtime_signals.py`, `tests/e2e/test_runtime_dom.py`) |
 | Compiler/server | `TestClient`-based end-to-end tests (`tests/test_e2e.py`) and contract tests |
 | Examples | every example app driven in Chromium under the production CSP (`tests/e2e/test_examples_browser.py`) |
-| Services | Postgres, MySQL and Redis integration tests (`tests/integration`) |
+| Data | query SQL per dialect, relations, transactions (`tests/test_models_db.py`, `tests/test_migrations_v5.py`), and a Hypothesis property test that random schema changes migrate up and down (`tests/test_migrations_property.py`) |
+| Network | HTTP parser and WebSocket codec fuzzed with Hypothesis (`tests/test_net.py`); random writes, then the applied patches must equal a fresh query (`tests/test_live_patches.py`) |
+| Jobs | one contract suite for every backend, concurrent workers, a worker killed mid-job (`tests/test_jobs_v5.py`, `tests/test_jobs_app.py`), cron against a brute-force minute scan in DST zones (`tests/test_cron.py`) |
+| Services | the full non-browser suite against real Postgres, MySQL and Redis (`tests/integration` and CI) |
+| Deploy | `pyweb deploy compose` stack (2 web replicas, worker, Postgres, Redis, Caddy) booted and smoke-tested in CI |
+| Editor | the VS Code extension in a real VS Code against the real language server (`editors/vscode/test/integration`) |
+| Playground | the playground on Pyodide in Chromium, database apps included (`tests/e2e/test_playground.py`) |
 | Docs | every `pyweb` code block in the docs compiles (`tests/test_docs.py`) |

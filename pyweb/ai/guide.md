@@ -382,21 +382,23 @@ def Chat():
 ## 11. Live data
 
 ```pyweb
-from pyweb import App, live, server
-from pyweb.db import connect
+from pyweb import App, Field, Model, server
 
-app = App()
-db = connect("sqlite:///app.db")
+app = App(database="sqlite:///app.db")
+
+
+class Todo(Model):
+    title: str = Field(max=200)
 
 
 @server
 def add(title: str) -> None:
-    db.execute("insert into todos (title) values (?)", (title,))   # announces "todos" after commit
+    Todo.create(title=title)            # announces "todos" after the commit
 
 
 @app.page("/")
 def Todos():
-    todos = live(db, "select id, title from todos order by id desc limit 50")
+    todos = Todo.query().order("-id").limit(50).live()
 
     <ul>
         for t in todos:
@@ -405,12 +407,14 @@ def Todos():
 ```
 
 - Every open page showing `todos` updates when the table is written
-  through `pyweb.db` (including `pyweb.models`). Don't add publish /
-  subscribe or polling for this.
+  through Models or `pyweb.db`; only changed rows are sent. Don't add
+  publish / subscribe or polling for this. Raw SQL works the same way:
+  `rows = live(db, "select id, title from todos ...")`.
 - Live variables are reactive in the browser; use `watch(lambda: todos, fn)`
   for side effects (redrawing a chart).
-- Filter per user in SQL (`where owner = ?`), keep queries small
-  (`LIMIT`), and call `db.notify("table")` after writes made elsewhere.
+- Filter per user with `.where(owner=user)` or a row policy, keep
+  queries small (`.limit()`), and call `db.notify("table")` after writes
+  made by another program.
 - Several processes: `realtime.use_bus(RedisBus(url))`.
 
 ## 12. npm packages

@@ -55,14 +55,14 @@ runtime is `pyweb/runtime/browser/runtime.js`, server rendering is
 ## Releasing (maintainers)
 
 1. Bump `version` in `pyproject.toml` and `editors/vscode/package.json`
-   (for example `0.3.0` → `0.4.0`; a test checks they match), and add an
+   (for example `0.5.0` → `0.6.0`; a test checks they match), and add an
    entry to `editors/vscode/CHANGELOG.md` if the extension changed.
 2. In `CHANGELOG.md`, move the "Unreleased" entries under a new
-   `## [0.4.0]` heading, and add the version to the "Released so far" list
+   `## [0.6.0]` heading, and add the version to the "Released so far" list
    in `docs/16-limitations-roadmap.md` and the README's version table.
 3. Push to `main` and wait for CI to pass.
-4. On GitHub: **Releases → Draft a new release**, create tag `v0.4.0` on
-   `main`, title `PyWeb 0.4.0`, leave the notes empty, **Publish release**.
+4. On GitHub: **Releases → Draft a new release**, create tag `v0.6.0` on
+   `main`, title `PyWeb 0.6.0`, leave the notes empty, **Publish release**.
 5. The Release workflow checks the tag matches `pyproject.toml`, builds,
    publishes to PyPI (trusted publishing) and attaches the files and the
    changelog section to the release. PyPI never accepts the same version

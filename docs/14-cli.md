@@ -97,8 +97,9 @@ also has a `.vsix` file (Extensions view → `...` → *Install from VSIX...*).
 It adds highlighting and snippets (`model`, `fk`, `formpage`, `livepage`,
 `job`, `cron`, `policy`, `useauth`, ...), the commands *Create Migration
 from Model Changes* and *Apply Migrations*, and starts `pyweb lsp` with the Python
-interpreter selected in the Python extension. PyWeb 0.3 or later must be
-installed in that environment; set `pyweb.server.command` to use a
+interpreter selected in the Python extension (VS Code 1.91 or later).
+PyWeb must be installed in that environment (0.5 or later for the data
+features); set `pyweb.server.command` to use a
 different command.
 
 ### Other editors

@@ -24,3 +24,7 @@ tests/deploy/compose.yaml
 tests/deploy/Caddyfile
 tests/deploy/*.whl
 tests/deploy/wheels/
+
+# packaging output
+build/
+*.egg-info/

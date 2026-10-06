@@ -887,9 +887,12 @@ def classify(info, ctx):
             # Loading data (`rows = load_rows()`) runs on the server even when
             # the helper happens to be browser-compatible: only the result ships.
             origin, js = "server", None
-        if origin == "browser" and any(info.origin.get(d) == "server" for d in info.deps.get(name, ())):
+        if origin == "browser" and any(info.origin.get(d) == "server" and d not in info.mutated
+                                       for d in info.deps.get(name, ())):
             # Derived from server data: compute it on the server and send only
             # the result, so the inputs (e.g. a whole session/user record) stay private.
+            # Not for state the browser already has (a live query, a list a handler
+            # changes): a value derived from it must follow it there.
             origin, js = "server", None
         info.origin[name] = origin
         info.js_init[name] = js

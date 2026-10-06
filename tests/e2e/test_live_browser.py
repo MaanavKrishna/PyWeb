@@ -154,3 +154,68 @@ def test_a_dropped_socket_reconnects_and_catches_up(browser, tmp_path, monkeypat
         expect(b.locator("#i5")).to_have_class("done", timeout=8000)
         expect(b.locator("#list li")).to_have_count(31)
         assert b.evaluate("window.__sockets.length") == 2
+
+
+MODEL_APP = '''from pyweb import App, Field, Model, server
+
+app = App(database="sqlite:///orders.db")
+
+
+class Order(Model):
+    item: str = Field(min=1, max=80)
+    status: str = "new"
+
+
+@server
+def place(item: str) -> None:
+    Order.create(item=item)
+
+
+@server
+def ship(order_id: int) -> None:
+    Order.where(id=order_id).update(status="shipped")
+
+
+@app.page("/")
+def Orders():
+    orders = Order.query().order("-id").limit(50).live()
+    waiting = len([o for o in orders if o["status"] == "new"])     # derived: follows orders in the browser
+    item = ""
+
+    def order():
+        place(item)
+        item = ""
+
+    <h1 id="title">Orders ({waiting} waiting)</h1>
+    <form onsubmit={order}><input id="item" bind={item} /><button>Order</button></form>
+    <ul id="orders">
+        for o in orders:
+            <li>{o["item"]}: {o["status"]}
+                if o["status"] == "new":
+                    <button class="ship" onclick={lambda: ship(o["id"])}>Ship</button>
+            </li>
+    </ul>
+'''
+
+
+def test_values_derived_from_a_live_model_query_follow_it(browser, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYWEB_WORKER", "0")
+    (tmp_path / "app.pyweb").write_text(MODEL_APP)
+    errors = []
+    with serve(str(tmp_path / "app.pyweb")) as url:
+        a, b = browser.new_page(), browser.new_page()
+        for page in (a, b):
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(url)
+            ready(page)
+        expect(b.locator("#title")).to_have_text("Orders (0 waiting)")
+        for item in ("Book", "Pen"):
+            a.fill("#item", item)
+            a.press("#item", "Enter")
+        expect(b.locator("#orders li")).to_have_count(2)
+        expect(b.locator("#title")).to_have_text("Orders (2 waiting)")
+        b.locator(".ship").first.click()                  # ships Pen (newest first)
+        expect(a.locator("#orders li").first).to_have_text("Pen: shipped")
+        expect(a.locator("#title")).to_have_text("Orders (1 waiting)")
+    assert errors == []

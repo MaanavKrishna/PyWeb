@@ -156,3 +156,76 @@ def test_server_calls_and_errors_are_logged(page, site):
     page.click(".pg-tabs >> text=Preview")
     page.click(".pg-sizes button[data-width='390']")
     assert page.locator("#pg-frame").evaluate("f => f.getBoundingClientRect().width") <= 392
+
+
+# ------------------------------------------------------------ playground 2
+
+SQLITE = PYODIDE and any(f.startswith("sqlite3-") for f in os.listdir(PYODIDE)) if PYODIDE and os.path.isdir(PYODIDE) \
+    else False
+
+
+def test_several_files_share_and_download(page, site):
+    app = open_playground(page, site)
+    page.once("dialog", lambda d: d.accept("widgets.pyweb"))
+    page.click("#pg-addfile")
+    expect(page.locator("#pg-files button[aria-selected=true]")).to_contain_text("widgets.pyweb")
+    page.locator("#pg-source").fill('from pyweb import component\n\n@component\ndef Badge(text):\n'
+                                    '    <b id="badge">{text}</b>\n')
+    page.locator("#pg-files button", has_text="app.pyweb").click()
+    editor = page.locator("#pg-source")
+    editor.fill(editor.input_value().replace("from pyweb import App", "from pyweb import App\nfrom widgets import Badge")
+                .replace("<h1>Counter</h1>", '<h1>Counter</h1>\n        <Badge text="from another file" />'))
+    expect(app.locator("#badge")).to_have_text("from another file", timeout=15000)
+    # an error in the other file opens it and points at the line
+    page.locator("#pg-files button", has_text="widgets.pyweb").click()
+    page.locator("#pg-source").fill('from pyweb import component\n\n@component\ndef Badge(text):\n    <b>{text}</div>\n')
+    expect(page.locator("#pg-error")).to_contain_text("widgets.pyweb, line 5", timeout=15000)
+    page.locator("#pg-source").fill('from pyweb import component\n\n@component\ndef Badge(text):\n'
+                                    '    <b id="badge">{text}!</b>\n')
+    expect(app.locator("#badge")).to_have_text("from another file!", timeout=15000)
+    page.click("#pg-share")
+    expect(page.locator("#pg-status")).to_contain_text("Link")
+    shared = page.url
+    assert "#files=" in shared
+    with page.expect_download() as dl:
+        page.click("#pg-download")
+    assert dl.value.suggested_filename == "pyweb-app.zip"
+    import zipfile
+    names = zipfile.ZipFile(dl.value.path()).namelist()
+    assert set(names) == {"app.pyweb", "widgets.pyweb"}
+    other = page.context.new_page()
+    app2 = open_playground(other, site, "#" + shared.split("#", 1)[1])
+    expect(app2.locator("#badge")).to_have_text("from another file!")
+    expect(other.locator("#pg-files button")).to_have_count(2)
+
+
+def test_requests_tab_and_user_switcher(page, site):
+    app = open_playground(page, site, "#auth")
+    page.click('.pg-tabs [data-tab="requests"]')
+    expect(page.locator(".pg-req").first).to_contain_text("GET")
+    page.click('.pg-tabs [data-tab="preview"]')
+    page.select_option("#pg-user", "user")
+    expect(page.locator("#pg-console")).to_contain_text("signed in as user@example.com", timeout=10000)
+    page.select_option("#pg-user", "")
+    expect(page.locator("#pg-console")).to_contain_text("signed out")
+    assert app is not None
+
+
+@pytest.mark.skipif(not SQLITE, reason="the pyodide package has no sqlite3 wheel (CI downloads it)")
+def test_database_jobs_and_sign_in(page, site):
+    app = open_playground(page, site, "#saas")
+    page.select_option("#pg-user", "admin")
+    page.fill("#pg-url", "/projects")
+    page.press("#pg-url", "Enter")
+    app.locator("input[name=name]").fill("Launch")
+    app.locator("button[type=submit]").click()
+    expect(app.locator("#tasks li")).to_have_count(3, timeout=15000)       # the welcome_tasks job ran
+    expect(page.locator("#pg-console")).to_contain_text("welcome_tasks ran")
+    page.click('.pg-tabs [data-tab="db"]')
+    page.locator(".pg-db nav button", has_text="tasks").click()
+    expect(page.locator(".pg-db td", has_text="Invite your team")).to_be_visible()
+    page.locator(".pg-db nav button", has_text="users").click()
+    expect(page.locator(".pg-db td", has_text="[redacted]")).to_be_visible()
+    page.click('.pg-tabs [data-tab="requests"]')
+    page.locator(".pg-req", has_text="create_project").locator("summary").click()
+    expect(page.locator(".pg-req", has_text="create_project")).to_contain_text("INSERT")

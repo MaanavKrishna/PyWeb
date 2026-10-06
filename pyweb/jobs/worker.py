@@ -255,6 +255,24 @@ class Worker:
         self.backend.fail(claim["id"], claim["token"], error, retry_at)
 
     # ----------------------------------------------------------------- tests
+    def run_inline(self, limit=100):
+        """Run due jobs one after another on this thread, without a thread pool (the playground
+        in Pyodide, scripts). Returns how many ran."""
+        ran = 0
+        while ran < limit:
+            now = time.time()
+            claims = self.backend.claim(self.queue_names(), self.name, 1, now=now)
+            if not claims:
+                break
+            claim = claims[0]
+            run = _Running(claim, core.RunContext(claim["id"], claim["name"], claim["attempt"],
+                                                  claim["max_attempts"], self.backend), None, now + claim["timeout"])
+            with self.lock:
+                self.running[claim["id"]] = run
+            self._execute(run)
+            ran += 1
+        return ran
+
     def drain(self, timeout=10.0):
         """Run jobs until none are due (tests and scripts). Returns how many ran."""
         end = time.monotonic() + timeout

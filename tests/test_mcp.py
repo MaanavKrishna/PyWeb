@@ -128,6 +128,11 @@ def test_templates_match_examples(name):
     assert packaged == (ROOT / "examples" / name / "app.pyweb").read_text()
 
 
+def test_saas_template_matches_its_example():
+    for fn in ("app.pyweb", "seeds.py", "test_app.py"):
+        assert (ROOT / "pyweb" / "templates" / "saas" / fn).read_text() == (ROOT / "examples" / "saas" / fn).read_text()
+
+
 def test_template_css_matches_examples():
     assert (ROOT / "pyweb" / "templates" / "app.css").read_text() == \
         (ROOT / "examples" / "todo" / "static" / "app.css").read_text()

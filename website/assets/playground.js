@@ -21,9 +21,16 @@
   const consoleOut = $("pg-console");
   const countEl = $("pg-count");
   const draftEl = $("pg-draft");
+  const filesEl = $("pg-files");
+  const userSel = $("pg-user");
+  const reqOut = $("pg-requests");
+  const reqCount = $("pg-reqcount");
+  const dbOut = $("pg-db");
   const DRAFT_KEY = "pyweb-playground-draft";
 
-  let host = null;          // Python functions: load, request
+  let host = null;          // Python functions: load, request, ...
+  let pyodide = null;
+  let sqlite = null;        // SQLite for apps with a database: null, "loading", "ok" or "failed"
   let runtimeUrl = null;    // blob: URL of the PyWeb browser runtime
   let pages = [];
   let path = "/";
@@ -31,6 +38,13 @@
   let errorLine = null;
   let example = "counter";  // the example the code started from ("" for shared code)
   let unseen = 0;
+  let files = { "app.pyweb": "" };   // every file in the editor; app.pyweb is the app
+  let current = "app.pyweb";
+  let errorFile = "app.pyweb";
+  let hasDatabase = false;
+  let lastRequest = "";              // newest request id the Requests tab has shown
+  let unseenRequests = 0;
+  let dbTable = "";
   const blobs = [];
 
   const status = (text, busy = false) => {
@@ -74,7 +88,7 @@
       last = m.index + m[0].length;
     }
     out += escHtml(code.slice(last));
-    if (errorLine) {
+    if (errorLine && errorFile === current) {
       const lines = out.split("\n");
       if (lines[errorLine - 1] !== undefined) lines[errorLine - 1] = `<mark class="err">${lines[errorLine - 1] || " "}</mark>`;
       out = lines.join("\n");
@@ -86,7 +100,7 @@
   function paint() {
     const n = editor.value.split("\n").length;
     let nums = "";
-    for (let i = 1; i <= n; i++) nums += (i === errorLine ? `<b>${i}</b>` : i) + "\n";
+    for (let i = 1; i <= n; i++) nums += (i === errorLine && errorFile === current ? `<b>${i}</b>` : i) + "\n";
     gutter.innerHTML = nums;
     hl.innerHTML = highlight(editor.value);
     sync();
@@ -98,6 +112,7 @@
   }
   editor.addEventListener("scroll", sync);
   editor.addEventListener("input", () => {
+    files[current] = editor.value;
     paint();
     saveDraft();
     clearTimeout(timer);
@@ -137,23 +152,79 @@
 
   function edited() {
     const original = example && cfg.examples[example] ? cfg.examples[example].source : null;
-    return editor.value !== original;
+    return Object.keys(files).length !== 1 || files["app.pyweb"] !== original;
   }
   function saveDraft() {
     draftEl.hidden = !edited();
-    if (edited()) store.set({ example, source: editor.value });
+    if (edited()) store.set({ example, files });
     else store.clear();
   }
 
+  // ------------------------------------------------------------ files
+  const FILE_NAME = /^(?:static\/)?[A-Za-z_][\w-]*\.(?:pyweb|py|css|js|json|txt|md)$/;
+  function renderFiles() {
+    filesEl.innerHTML = "";
+    for (const name of Object.keys(files)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(name === current));
+      b.textContent = name;
+      b.addEventListener("click", (e) => {
+        if (e.target.classList.contains("x")) return;
+        openFile(name);
+      });
+      if (name !== "app.pyweb") {
+        const x = document.createElement("span");
+        x.className = "x";
+        x.textContent = "×";
+        x.title = `Remove ${name}`;
+        x.addEventListener("click", () => {
+          if (!confirm(`Remove ${name}?`)) return;
+          delete files[name];
+          if (current === name) current = "app.pyweb";
+          openFile(current);
+          saveDraft();
+          run();
+        });
+        b.append(x);
+      }
+      filesEl.append(b);
+    }
+  }
+  function openFile(name) {
+    current = name;
+    editor.value = files[name] ?? "";
+    editor.scrollTop = 0;
+    renderFiles();
+    paint();
+  }
+  $("pg-addfile").addEventListener("click", () => {
+    const name = (prompt("New file: a .pyweb module (import its components with  from widgets import Card), " +
+      "a .py helper, or static/app.css", "widgets.pyweb") || "").trim();
+    if (!name) return;
+    if (!FILE_NAME.test(name) || files[name] !== undefined) {
+      status(files[name] !== undefined ? `${name} already exists` : "Use a name like widgets.pyweb, helpers.py or static/app.css");
+      return;
+    }
+    files[name] = name.endsWith(".pyweb")
+      ? "from pyweb import component\n\n\n@component\ndef Card(title):\n    <div class=\"card\">{title}</div>\n"
+      : name.endsWith(".css") ? "/* linked from App(stylesheets=[\"/static/app.css\"]) */\n" : "";
+    openFile(name);
+    saveDraft();
+  });
+
   function showError(err) {
     errorLine = err && err.line ? err.line : null;
+    errorFile = (err && err.file && files[err.file] !== undefined) ? err.file : "app.pyweb";
     if (!err) {
       errorEl.hidden = true;
     } else {
       errorEl.hidden = false;
       errorEl.innerHTML = "";
       const head = document.createElement(err.line ? "button" : "strong");
-      head.textContent = err.line ? `Line ${err.line}` : "Error";
+      const where = errorFile !== "app.pyweb" ? `${errorFile}, line` : "Line";
+      head.textContent = err.line ? `${where} ${err.line}` : "Error";
       if (err.line) { head.type = "button"; head.title = "Go to the line"; head.addEventListener("click", () => goToLine(err.line)); }
       const msg = document.createElement("span");
       msg.textContent = err.message;
@@ -168,6 +239,7 @@
   }
 
   function goToLine(n) {
+    if (errorFile !== current) openFile(errorFile);
     const lines = editor.value.split("\n");
     const at = lines.slice(0, n - 1).reduce((sum, l) => sum + l.length + 1, 0);
     editor.focus();
@@ -185,7 +257,7 @@
     row.className = "pg-row " + kind;
     const tag = document.createElement("span");
     tag.className = "pg-kind";
-    tag.textContent = { print: "print", call: "server", error: "error", browser: "browser", warn: "warning" }[kind] || kind;
+    tag.textContent = { print: "print", call: "server", error: "error", browser: "browser", warn: "warning", job: "job" }[kind] || kind;
     const body = document.createElement("span");
     body.className = "pg-text";
     body.textContent = text;
@@ -216,6 +288,10 @@
   function request(method, url, body = "", type = "") {
     const r = call("request", method, url, body || "", type || "");
     printed(r.output);
+    for (const j of r.jobs || []) {
+      log(j.state === "done" ? "job" : "error", `${j.name} ${j.state === "done" ? "ran" : j.state}`, j.error || "");
+    }
+    if (!url.startsWith("/static/")) refreshPanels(method !== "GET");
     return r;
   }
 
@@ -233,8 +309,10 @@
         ...cfg.static.map((name) => fetch(cfg.base + "static/" + name).then((r) => r.text())),
       ]);
       py.unpackArchive(new Uint8Array(zip), "zip", { extractDir: "/home/pyodide/lib" });
+      pyodide = py;
       py.runPython(hostPy);
-      host = { load: py.globals.get("load"), request: py.globals.get("request") };
+      host = {};
+      for (const fn of ["load", "request", "recent", "tables", "rows", "sign_in"]) host[fn] = py.globals.get(fn);
       cfg.static.forEach((name, i) => py.globals.get("install_static")(name, statics[i]));
       runtimeUrl = URL.createObjectURL(new Blob([runtime], { type: "text/javascript" }));
       run();
@@ -250,12 +328,28 @@
     const t0 = performance.now();
     let res;
     try {
-      res = call("load", editor.value);
+      const others = Object.fromEntries(Object.entries(files).filter(([n]) => n !== "app.pyweb"));
+      res = call("load", files["app.pyweb"], JSON.stringify(others));
     } catch (err) {
       showError({ message: String(err.message || err) });
       return;
     }
     printed(res.output);
+    if (!res.ok && res.needs === "sqlite3") {
+      if (sqlite === "loading") return;                 // run() again once it's here
+      if (sqlite === null) {
+        sqlite = "loading";
+        status("Loading SQLite for the app's database…", true);
+        pyodide.loadPackage("sqlite3", { messageCallback: () => {}, errorCallback: () => {} })
+          .then(() => { sqlite = "ok"; }, () => { sqlite = "failed"; })
+          .then(run);
+        return;
+      }
+      showError({ message: "This browser couldn't load SQLite, so apps with a database can't run here. " +
+        "Download the files and run them with  pyweb dev app.pyweb" });
+      status("Apps with a database need SQLite");
+      return;
+    }
     if (!res.ok) {
       showError(res.error);
       status("Fix the error to update the preview");
@@ -263,6 +357,13 @@
     }
     showError(null);
     pages = res.pages;
+    hasDatabase = res.database;
+    lastRequest = "";
+    dbTable = "";
+    reqOut.querySelectorAll(".pg-req").forEach((d) => d.remove());
+    if (userSel.value) {          // still signed in (the cookie survives edits): say so in the picker
+      try { call("sign_in", userSel.value); } catch { userSel.value = ""; }
+    }
     pageSel.innerHTML = "";
     for (const p of pages) {
       const opt = document.createElement("option");
@@ -390,6 +491,125 @@
     log: (kind, text) => log(kind, text),
   };
 
+  // ----------------------------------------------- requests and database
+  const tabOpen = (name) => document.querySelector(`.pg-tabs [data-tab="${name}"]`).getAttribute("aria-selected") === "true";
+  const ms = (v) => (v < 10 ? v.toFixed(1) : Math.round(v)) + " ms";
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+  function refreshPanels(wrote) {
+    if (!host) return;
+    let fresh = [];
+    try { fresh = call("recent", lastRequest).requests; } catch { return; }
+    if (fresh.length) {
+      lastRequest = fresh[fresh.length - 1].id;
+      const empty = reqOut.querySelector(".pg-empty");
+      if (empty) empty.hidden = true;
+      for (const r of fresh) reqOut.prepend(requestRow(r));
+      while (reqOut.querySelectorAll(".pg-req").length > 80) reqOut.querySelector(".pg-req:last-of-type").remove();
+      if (!tabOpen("requests")) {
+        unseenRequests += fresh.length;
+        reqCount.hidden = false;
+        reqCount.textContent = unseenRequests > 99 ? "99+" : String(unseenRequests);
+        reqCount.classList.toggle("bad", fresh.some((r) => r.error || (r.warnings || []).length) || reqCount.classList.contains("bad"));
+      }
+    }
+    if (wrote && tabOpen("db")) showDatabase();
+  }
+
+  function requestRow(r) {
+    const d = el("details", "pg-req");
+    const s = el("summary");
+    s.append(el("span", "m", r.method), el("span", "p", r.path), el("span", "st" + (r.status >= 400 || r.error ? " bad" : ""), String(r.status)),
+      el("span", "q", `${r.queries} SQL`), el("span", "ms", ms(r.ms)));
+    if ((r.warnings || []).length) s.querySelector(".q").append(" ", el("span", "warn", "N+1?"));
+    d.append(s);
+    const body = el("div", "body");
+    if (r.error) body.append(el("h4", "", "Error"), el("pre", "", r.error));
+    for (const w of r.warnings || []) body.append(el("div", "flag", "⚠ " + w));
+    if ((r.sql || []).length) {
+      const groups = new Map();
+      for (const q of r.sql) { const g = groups.get(q.sql); if (g) { g.n++; g.ms += q.ms; } else groups.set(q.sql, { ...q, n: 1 }); }
+      const t = el("table");
+      for (const q of groups.values()) {
+        const tr = el("tr");
+        tr.append(el("td", "n", ms(q.ms)), el("td", "", q.sql + (q.n > 1 ? `   ×${q.n}` : q.params && q.params.length ? "   " + JSON.stringify(q.params) : "")));
+        t.append(tr);
+      }
+      body.append(el("h4", "", "SQL"), t);
+    }
+    if ((r.spans || []).length) {
+      const t = el("table");
+      for (const sp of r.spans) { const tr = el("tr"); tr.append(el("td", "n", ms(sp.ms)), el("td", "", sp.name)); t.append(tr); }
+      body.append(el("h4", "", "Spans"), t);
+    }
+    const ev = r.events || [];
+    if (ev.length) {
+      const t = el("table");
+      for (const e of ev) {
+        const tr = el("tr");
+        const text = e.kind === "job" ? `queued ${e.name}` : e.kind === "mail" ? `email to ${(e.to || []).join(", ")}: ${e.subject}` : JSON.stringify(e);
+        tr.append(el("td", "n", e.kind), el("td", "", text));
+        t.append(tr);
+      }
+      body.append(el("h4", "", "Side effects"), t);
+    }
+    if (!body.childNodes.length) body.append(el("div", "pg-detail", `${r.route || ""} · no queries`));
+    d.append(body);
+    return d;
+  }
+
+  function showDatabase() {
+    if (!host) return;
+    dbOut.querySelectorAll("nav, .grid").forEach((n) => n.remove());
+    const empty = dbOut.querySelector(".pg-empty");
+    if (!hasDatabase) { empty.hidden = false; return; }
+    let info;
+    try { info = call("tables"); } catch (err) { empty.hidden = false; empty.textContent = String(err.message || err); return; }
+    empty.hidden = true;
+    const nav = el("nav");
+    const tables = info.tables.filter((t) => !t.name.startsWith("pyweb_"));
+    if (!dbTable || !tables.some((t) => t.name === dbTable)) {
+      dbTable = (tables.find((t) => t.rows) || tables[0] || {}).name || "";
+    }
+    for (const t of tables) {
+      const b = el("button");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(t.name === dbTable));
+      b.append(el("b", "", t.name), el("span", "", String(t.rows)));
+      b.addEventListener("click", () => { dbTable = t.name; showDatabase(); });
+      nav.append(b);
+    }
+    const grid = el("div", "grid");
+    if (dbTable) {
+      const data = call("rows", dbTable, 200);
+      const table = el("table");
+      const head = el("tr");
+      for (const c of data.columns || []) head.append(el("th", "", c));
+      table.append(head);
+      for (const row of data.rows || []) {
+        const tr = el("tr");
+        for (const v of row) tr.append(el("td", v === null ? "null" : "", v === null ? "null" : typeof v === "object" ? JSON.stringify(v) : String(v)));
+        table.append(tr);
+      }
+      grid.append(table);
+      if (!(data.rows || []).length) grid.append(el("p", "pg-empty", "No rows yet."));
+    }
+    dbOut.append(nav, grid);
+  }
+
+  userSel.addEventListener("change", () => {
+    if (!host) return;
+    try {
+      const r = call("sign_in", userSel.value);
+      printed(r.output);
+      log("call", r.user ? `signed in as ${r.user}${(r.roles || []).length ? " (" + r.roles.join(", ") + ")" : ""}` : "signed out");
+    } catch (err) {
+      log("error", "couldn't sign in: " + (err.message || err));
+      userSel.value = "";
+    }
+    navigate(path);
+  });
+
   // ------------------------------------------------------------ panels
   async function gzipSize(text) {
     if (typeof CompressionStream === "undefined") return null;
@@ -440,6 +660,14 @@
     consoleOut.hidden = name !== "console";
     $("pg-jswrap").hidden = name !== "js";
     placeOut.hidden = name !== "place";
+    reqOut.hidden = name !== "requests";
+    dbOut.hidden = name !== "db";
+    if (name === "requests") {
+      unseenRequests = 0;
+      reqCount.hidden = true;
+      reqCount.classList.remove("bad");
+    }
+    if (name === "db") showDatabase();
     if (name === "console") {
       unseen = 0;
       countEl.hidden = true;
@@ -517,7 +745,9 @@
   }
 
   $("pg-share").addEventListener("click", async () => {
-    const url = location.href.split("#")[0] + "#code=" + (await pack(editor.value));
+    const one = Object.keys(files).length === 1;
+    const url = location.href.split("#")[0] + (one ? "#code=" + (await pack(files["app.pyweb"]))
+      : "#files=" + (await pack(JSON.stringify(files))));
     history.replaceState(null, "", url);
     try {
       await navigator.clipboard.writeText(url);
@@ -527,15 +757,41 @@
     }
   });
 
+  // A small zip writer (stored, not compressed) for downloading several files.
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = (b) => { let c = 0xffffffff; for (const x of b) c = CRC[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  function zip(entries) {
+    const enc = new TextEncoder(), parts = [], dir = [];
+    let offset = 0;
+    for (const [name, text] of entries) {
+      const n = enc.encode(name), data = enc.encode(text), crc = crc32(data);
+      const local = new DataView(new ArrayBuffer(30));
+      [[0, 0x04034b50, 4], [4, 20, 2], [8, 0, 2], [14, crc, 4], [18, data.length, 4], [22, data.length, 4], [26, n.length, 2]]
+        .forEach(([at, v, size]) => size === 4 ? local.setUint32(at, v, true) : local.setUint16(at, v, true));
+      const central = new DataView(new ArrayBuffer(46));
+      [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [16, crc, 4], [20, data.length, 4], [24, data.length, 4], [28, n.length, 2], [42, offset, 4]]
+        .forEach(([at, v, size]) => size === 4 ? central.setUint32(at, v, true) : central.setUint16(at, v, true));
+      parts.push(local, n, data);
+      dir.push(central, n);
+      offset += 30 + n.length + data.length;
+    }
+    const size = dir.reduce((s, p) => s + p.byteLength, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    [[0, 0x06054b50, 4], [8, entries.length, 2], [10, entries.length, 2], [12, size, 4], [16, offset, 4]]
+      .forEach(([at, v, s]) => s === 4 ? end.setUint32(at, v, true) : end.setUint16(at, v, true));
+    return new Blob([...parts, ...dir, end], { type: "application/zip" });
+  }
+
   function download() {
+    const many = Object.keys(files).length > 1;
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([editor.value], { type: "text/plain" }));
-    a.download = "app.pyweb";
+    a.href = URL.createObjectURL(many ? zip(Object.entries(files)) : new Blob([files["app.pyweb"]], { type: "text/plain" }));
+    a.download = many ? "pyweb-app.zip" : "app.pyweb";
     document.body.append(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    status("Saved app.pyweb: run it with  pyweb dev app.pyweb");
+    status(many ? "Saved pyweb-app.zip: unzip it and run  pyweb dev app.pyweb" : "Saved app.pyweb: run it with  pyweb dev app.pyweb");
   }
   $("pg-download").addEventListener("click", download);
 
@@ -550,11 +806,10 @@
 
   function loadExample(name, source) {
     example = name;
-    editor.value = source ?? cfg.examples[name].source;
+    files = { "app.pyweb": source ?? cfg.examples[name].source };
     path = "/";
-    editor.scrollTop = 0;
+    openFile("app.pyweb");
     saveDraft();
-    paint();
     run();
   }
   for (const [name, ex] of Object.entries(cfg.examples)) {
@@ -577,24 +832,29 @@
     const hash = location.hash.slice(1);
     const draft = store.get();
     let restored = false;
-    if (hash.startsWith("code=")) {
+    if (hash.startsWith("code=") || hash.startsWith("files=")) {
       example = "";
-      try { editor.value = await unpack(hash.slice(5)); } catch { example = "counter"; editor.value = cfg.examples.counter.source; }
+      try {
+        const text = await unpack(hash.slice(hash.indexOf("=") + 1));
+        files = hash.startsWith("files=") ? JSON.parse(text) : { "app.pyweb": text };
+        if (typeof files["app.pyweb"] !== "string") throw new Error("no app.pyweb");
+      } catch { example = "counter"; files = { "app.pyweb": cfg.examples.counter.source }; }
       exampleSel.value = example;
     } else {
       const named = cfg.examples[hash] ? hash : "";
-      if (draft && draft.source && (!named || draft.example === named)) {
+      const saved = draft && (draft.files || (draft.source ? { "app.pyweb": draft.source } : null));
+      if (saved && (!named || draft.example === named)) {
         example = draft.example && cfg.examples[draft.example] ? draft.example : "";
-        editor.value = draft.source;
+        files = saved;
         restored = true;
       } else {
         example = named || "counter";
-        editor.value = cfg.examples[example].source;
+        files = { "app.pyweb": cfg.examples[example].source };
       }
       exampleSel.value = example;
     }
+    openFile("app.pyweb");
     draftEl.hidden = !edited();   // a draft for another example stays saved until you edit this one
-    paint();
     await boot();
     if (restored && host) status("Restored your last edits (Reset goes back to the example)");
   })();

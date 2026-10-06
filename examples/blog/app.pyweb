@@ -1,23 +1,17 @@
-"""Blog: SQL database, server functions, server-rendered pages, route params."""
+"""Blog: a Model, server functions, server-rendered pages, route params."""
 
-import os
+from pyweb import App, Field, Model, RPCError, component, server
 
-from pyweb import App, NotFound, RPCError, component, server
-from pyweb.db import connect
+app = App(title="PyWeb Blog", database="sqlite:///blog.db", stylesheets=["/static/app.css"])
 
-app = App(title="PyWeb Blog", stylesheets=["/static/app.css"])
 
-db = connect(os.environ.get("DATABASE_URL", "sqlite:///blog.db"))
-db.execute(
-    "create table if not exists posts ("
-    " id integer primary key autoincrement,"
-    " title text not null,"
-    " body text not null)"
-)
+class Article(Model):
+    title: str = Field(max=200)
+    body: str = ""
 
 
 def all_posts():
-    return db.execute("select id, title, body from posts order by id desc").dicts()
+    return [a.to_dict() for a in Article.query().order("-id")]
 
 
 @server
@@ -25,7 +19,7 @@ def publish(title: str, body: str) -> list:
     title, body = title.strip(), body.strip()
     if not title or not body:
         raise RPCError("validation_error", "A post needs a title and a body.")
-    db.execute("insert into posts (title, body) values (?, ?)", (title, body))
+    Article.create(title=title, body=body)
     return all_posts()
 
 
@@ -72,13 +66,10 @@ def Home():
 
 @app.page("/posts/{post_id}")
 def Post(post_id: int):
-    rows = db.execute("select title, body from posts where id = ?", (post_id,)).dicts()
-    if not rows:
-        raise NotFound()
-    post = rows[0]
+    post = Article.get_or_404(post_id)
 
     <main>
         <p><a href="/">← All posts</a></p>
-        <h1>{post["title"]}</h1>
-        <p>{post["body"]}</p>
+        <h1>{post.title}</h1>
+        <p>{post.body}</p>
     </main>

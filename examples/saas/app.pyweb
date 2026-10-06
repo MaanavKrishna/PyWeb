@@ -1,0 +1,168 @@
+"""Teamboard: a small SaaS. Accounts, projects and tasks that update live,
+forms with validation, a background job, a daily email and an admin.
+
+Run it:      pyweb dev app.pyweb        (sign up; the confirmation link is printed in the terminal)
+Test it:     pytest
+Ship it:     pyweb deploy compose        (or fly, render, railway, k8s)
+"""
+
+import logging
+
+from pyweb import App, Checkbox, Field, Form, Input, Model, Submit, Textarea, server
+from pyweb.authkit import User
+from pyweb.telemetry import span
+
+app = App(title="Teamboard", database="sqlite:///app.db", stylesheets=["/static/app.css"])
+auth = app.use_auth()
+log = logging.getLogger("teamboard")
+
+
+# ------------------------------------------------------------------ data
+
+class Project(Model):
+    name: str = Field(min=2, max=60)
+    about: str = Field(default="", max=500)
+    owner: User = Field(readonly=True)
+
+
+class Task(Model):
+    title: str = Field(min=1, max=120)
+    done: bool = False
+    project: Project = Field(readonly=True)
+    owner: User = Field(readonly=True)
+
+
+# Each person sees and changes only their own rows, on every query and save made for a request.
+def mine(model):
+    return lambda user: model.owner_id == (user.id if user else -1)
+
+
+Project.policy(read=mine(Project), write=lambda user, row: user is not None and row.owner_id == user.id)
+Task.policy(read=mine(Task), write=lambda user, row: user is not None and row.owner_id == user.id)
+
+
+# ------------------------------------------------------------------ actions
+
+@server(login=True)
+def create_project(project: Project):
+    project.owner = auth.user()
+    project.save()
+    welcome_tasks.enqueue(project.id)              # runs in the background, after this commits
+    return project
+
+
+@server(login=True)
+def add_task(project_id: int, title: str = Field(min=1, max=120)):
+    project = Project.get_or_404(project_id)       # someone else's project: 404, thanks to the policy
+    return Task.create(title=title, project=project, owner_id=project.owner_id)
+
+
+@server(login=True)
+def toggle(task_id: int) -> bool:
+    task = Task.get_or_404(task_id)
+    task.done = not task.done
+    task.save()
+    return task.done
+
+
+@server(login=True)
+def remove(task_id: int) -> None:
+    Task.get_or_404(task_id).delete()
+
+
+# ------------------------------------------------------------------ background work
+
+@app.job(retries=3)
+def welcome_tasks(project_id: int):
+    """A new project starts with a checklist (a job: it could just as well call an API)."""
+    project = Project.get(project_id)
+    with span("seed checklist", project=project_id):
+        for title in ("Invite your team", "Write the first task", "Ship something small"):
+            Task.get_or_create(title=title, project=project, defaults={"owner_id": project.owner_id})
+
+
+@app.cron("0 8 * * 1-5", tz="UTC")
+def morning_digest():
+    """Weekday mornings: email everyone their open tasks."""
+    from pyweb import mail
+    for user in User.query():
+        open_tasks = Task.where(owner=user, done=False).order("id").limit(20).values_list("title")
+        if open_tasks:
+            mail.send(user.email, f"{len(open_tasks)} open tasks",
+                      "Good morning! Still open:\n\n" + "\n".join(f"- {t}" for t in open_tasks))
+            log.info("sent digest", extra={"tasks": len(open_tasks)})
+
+
+# ------------------------------------------------------------------ pages
+
+@app.layout
+def Shell(children):
+    user = auth.user()
+    <nav class="site-nav">
+        <a href="/"><b>Teamboard</b></a>
+        <span class="spacer"></span>
+        if user:
+            <a href="/projects">Projects</a>
+            <a href="/account">{user.name or user.email}</a>
+            if "admin" in (user.roles or []):
+                <a href="/admin">Admin</a>
+        else:
+            <a href="/login">Sign in</a>
+            <a href="/signup">Sign up</a>
+    </nav>
+    {children}
+
+
+@app.page("/")
+def Home():
+    <main>
+        <h1>Plan the week with your team</h1>
+        <p class="muted">Projects and tasks that update live in every open tab.</p>
+        <p><a href="/signup">Create an account</a> or <a href="/projects">open your projects</a>.</p>
+    </main>
+
+
+@app.page("/projects", login=True, title="Projects")
+def Projects():
+    projects = Project.query().order("-id").live()
+    <main>
+        <h1>Projects</h1>
+        <ul id="projects">
+            for p in projects:
+                <li><a href={f"/projects/{p['id']}"}>{p["name"]}</a></li>
+        </ul>
+        if not projects:
+            <p class="empty">No projects yet. Start one:</p>
+        <Form action={create_project} redirect="/projects/{id}">
+            <Input name="name" placeholder="Website relaunch" />
+            <Textarea name="about" rows="2" placeholder="What is it about? (optional)" />
+            <Submit>Create project</Submit>
+        </Form>
+    </main>
+
+
+@app.page("/projects/{project_id}", login=True, title="Project")
+def ProjectPage(project_id: int):
+    project = Project.get_or_404(project_id)
+    tasks = Task.where(project_id=project.id).order("done", "id").live()
+    left = len([t for t in tasks if not t["done"]])
+    <main>
+        <p><a href="/projects">← Projects</a></p>
+        <h1>{project.name}</h1>
+        if project.about:
+            <p class="muted">{project.about}</p>
+        <Form action={add_task} values={{"project_id": project.id}}>
+            <Input name="project_id" type="hidden" />
+            <Input name="title" label="" placeholder="Add a task" />
+            <Submit>Add</Submit>
+        </Form>
+        <ul id="tasks">
+            for t in tasks:
+                <li class={{"done": t["done"]}}>
+                    <input type="checkbox" checked={t["done"]} onchange={lambda: toggle(t["id"])} />
+                    <span>{t["title"]}</span>
+                    <button class="remove" onclick={lambda: remove(t["id"])} aria-label="Remove">×</button>
+                </li>
+        </ul>
+        <p class="muted" id="left">{left} open</p>
+    </main>

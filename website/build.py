@@ -457,9 +457,11 @@ def icon(name):
 #: points at an unpacked `pyodide` npm package to serve it from the site
 #: instead (tests do this to run offline).
 PYODIDE_VERSION = "0.29.5"
-PYODIDE_CDN = f"https://cdn.jsdelivr.net/npm/pyodide@{PYODIDE_VERSION}/"
+# The full distribution: the core plus every package (SQLite for apps with a database).
+PYODIDE_CDN = f"https://cdn.jsdelivr.net/pyodide/v{PYODIDE_VERSION}/full/"
 PLAYGROUND_EXAMPLES = [("counter", "Counter"), ("todo", "Todo list"), ("showcase", "Showcase: server search"),
-                       ("site", "Multi-page site with a layout"), ("auth", "Sign-in and sessions"),
+                       ("site", "Multi-page site with a layout"), ("blog", "Blog: a Model and pages"),
+                       ("saas", "SaaS: accounts, data, forms, jobs"), ("auth", "Sign-in and sessions"),
                        ("chat", "Chat with live updates"), ("ai-chat", "AI chat (demo model)")]
 
 
@@ -923,7 +925,9 @@ def playground_page():
 </div>
 <div class="pg-split" id="pg-split" data-pane="code">
   <section class="pg-editor" aria-label="Editor">
-    <div class="pg-file"><span class="pg-dots"><i></i><i></i><i></i></span><span>app.pyweb</span>
+    <div class="pg-file"><span class="pg-dots"><i></i><i></i><i></i></span>
+      <div id="pg-files" class="pg-filetabs" role="tablist" aria-label="Files"></div>
+      <button id="pg-addfile" class="pg-addfile" type="button" title="Add a file: another .pyweb module, a .py helper or a static/ stylesheet" aria-label="Add a file">+</button>
       <span id="pg-draft" class="pg-draft" hidden>edited</span><span class="pg-keys">Tab indents · ⌘/Ctrl+Enter runs</span></div>
     <div class="pg-code"><pre id="pg-gutter" aria-hidden="true"></pre><div class="pg-edit"><pre id="pg-hl" aria-hidden="true"></pre><textarea id="pg-source" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="app.pyweb source"></textarea></div></div>
     <div id="pg-error" class="pg-error" role="alert" hidden></div>
@@ -933,12 +937,16 @@ def playground_page():
     <div class="pg-tabs" role="tablist">
       <button type="button" role="tab" data-tab="preview" aria-selected="true">Preview</button>
       <button type="button" role="tab" data-tab="console" aria-selected="false">Console <span id="pg-count" class="pg-count" hidden></span></button>
+      <button type="button" role="tab" data-tab="requests" aria-selected="false">Requests <span id="pg-reqcount" class="pg-count" hidden></span></button>
+      <button type="button" role="tab" data-tab="db" aria-selected="false">Database</button>
       <button type="button" role="tab" data-tab="js" aria-selected="false">JavaScript</button>
       <button type="button" role="tab" data-tab="place" aria-selected="false">What runs where</button>
     </div>
     <div class="pg-urlbar">
       <button id="pg-reload" class="pg-icon" type="button" title="Reload the page" aria-label="Reload">{icon("reset")}</button>
       <select id="pg-page" aria-label="Page"></select><input id="pg-url" aria-label="Path" value="/">
+      <select id="pg-user" aria-label="Visitor" title="Who is looking: sign the preview in as a test account">
+        <option value="">Signed out</option><option value="user">Signed in</option><option value="admin">Admin</option></select>
       <div class="pg-sizes" role="group" aria-label="Preview width">
         <button type="button" data-width="390" title="Phone" aria-label="Phone width">{icon("phone")}</button>
         <button type="button" data-width="768" title="Tablet" aria-label="Tablet width">{icon("tablet")}</button>
@@ -947,13 +955,16 @@ def playground_page():
     </div>
     <div class="pg-stage" id="pg-stage"><iframe id="pg-frame" title="App preview"></iframe></div>
     <div id="pg-console" class="pg-panel pg-log" hidden><p class="pg-empty">Output from <code>print()</code> in your Python, every call to a server function, and errors from the page show up here.</p></div>
+    <div id="pg-requests" class="pg-panel pg-reqs" hidden><p class="pg-empty">Each request the preview makes shows up here with the SQL it ran (a repeated query is flagged: that's an N+1 loop to fix with <code>include()</code>), the jobs and emails it queued, and its error.</p></div>
+    <div id="pg-db" class="pg-panel pg-db" hidden><p class="pg-empty">Apps with <code>App(database=...)</code> keep their rows here (a fresh SQLite database each run). Pick a table to see what your server functions wrote.</p></div>
     <div id="pg-jswrap" class="pg-panel" hidden><div class="pg-jsinfo" id="pg-jsinfo"></div><pre id="pg-js"></pre></div>
     <div id="pg-place" class="pg-panel" hidden></div>
   </section>
 </div>
 <p class="pg-note">Everything runs in your browser: PyWeb's compiler, server rendering and your <code>@server</code>
 functions run in real Python (<a href="https://pyodide.org">Pyodide</a>, CPython compiled to WebAssembly). Nothing
-is sent anywhere, and your edits are kept in this browser. To keep building, <strong>Download</strong> the file and run
+is sent anywhere, and your edits are kept in this browser. Apps with a database get a fresh SQLite database each run;
+background jobs run right after the request that queued them. To keep building, <strong>Download</strong> the files and run
 <code>pyweb dev app.pyweb</code> (see the <a href="quickstart.html">quickstart</a>).</p>
 </main>
 <script id="pg-config" type="application/json">{config}</script>

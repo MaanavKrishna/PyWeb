@@ -98,6 +98,9 @@ jobs:
           v=$(python -c "import re; print(re.search(r'PYODIDE_VERSION = \"(.+?)\"', open('website/build.py').read()).group(1))")
           mkdir -p "$RUNNER_TEMP/pyodide" && cd "$RUNNER_TEMP/pyodide"
           npm pack "pyodide@$v" --silent && tar xzf pyodide-*.tgz
+          # The npm build has only the core; SQLite (apps with a database) comes from the full distribution.
+          wheel=$(python -c "import json; print(json.load(open('package/pyodide-lock.json'))['packages']['sqlite3']['file_name'])")
+          curl -sSfL -o "package/$wheel" "https://cdn.jsdelivr.net/pyodide/v$v/full/$wheel"
           echo "PYWEB_PYODIDE_DIR=$RUNNER_TEMP/pyodide/package" >> "$GITHUB_ENV"
       - run: python -m pytest tests/e2e -q -p no:cacheprovider
 

@@ -221,7 +221,17 @@ Work towards 0.5.0: production apps in one Python file.
   `pyweb_migrations` (status, diff, upgrade), `pyweb_jobs` (list, retry,
   run) and `pyweb_requests` (each request's SQL, N+1 warnings, jobs, errors).
 
+- **Playground 2.** Several files per app (import components from a second
+  `.pyweb` file; shared as one link, downloaded as a zip), a Requests tab
+  (each request's SQL with N+1 warnings, spans, jobs, emails, errors), a
+  Database tab (tables and rows, secrets redacted), a visitor picker to see
+  pages signed out, signed in or as an admin, background jobs run right
+  after the request that queued them, and SQLite loaded when an app has a
+  database. New examples: the blog (on Models) and the saas template.
+- `Worker.run_inline()` runs due jobs on the calling thread (no thread pool).
+
 ### Changed
+- The blog template and example use a Model instead of raw SQL.
 - `PYWEB_MAX_CONNECTIONS` defaults to 10,000 per process (it was 256 for
   the threaded server, which `pyweb serve --app module:factory` still uses).
 - `pyweb.testing.serve` runs PyWeb's server.

@@ -51,7 +51,7 @@ in, which is normally your project.
 | Tool | What it does |
 |---|---|
 | `pyweb_guide` | Returns the rules for writing `.pyweb` apps (or one section): what runs where, state, markup, components, server functions, the browser Python subset, and every common error with its fix. |
-| `pyweb_new_app` | Creates an app from a template (`blank`, `counter`, `todo`, `blog`, `auth`, `chat`, `ai-chat`) with `AGENTS.md`, `CLAUDE.md`, a starter test and a stylesheet. |
+| `pyweb_new_app` | Creates an app from a template (`blank`, `counter`, `todo`, `blog`, `saas`, `auth`, `chat`, `ai-chat`) with `AGENTS.md`, `CLAUDE.md`, tests and a stylesheet; apps with a database also get their first migration. `saas` (accounts, Models with row policies, forms, live pages, jobs, admin) is the best start for a product. |
 | `pyweb_check` | Compiles the app and runs security checks. Returns `ok`, errors with `line`, `message` and a fix `hint`, plus pages (with their layouts, live-data variables and npm packages), signals, what's sent to the browser, JS size and the server functions (marking those that stream). |
 | `pyweb_inspect` | For every name: does it run in the browser or on the server, and why. |
 | `pyweb_compiled` | The JavaScript generated for a page, and its server-rendered HTML. |
@@ -60,6 +60,11 @@ in, which is normally your project.
 | `pyweb_routes` | The map of the app: every page with its route, parameters (path or query string, with types and defaults), title and head tags, the layouts around it and its live-data variables; layouts, error pages, and server functions. |
 | `pyweb_packages` | Adds, removes or lists npm packages for browser code (no Node.js): returns versions, exported names from the package's TypeScript declarations, and the `npm(...)` lines to bind them. Adding downloads from the npm registry. |
 | `pyweb_screenshot` | Opens a page in headless Chromium, optionally runs steps (click, fill, press, select, goto, wait), and returns a screenshot plus the page text, console errors and whether the page hydrated. Needs Playwright (`pip install playwright && python -m playwright install chromium`). |
+| `pyweb_db_schema` | Every Model (fields, types, rules, relations, policies), the tables the database has now, and the drift between them (what `pyweb db diff` would write). |
+| `pyweb_db_query` | One read-only SQL statement (`SELECT`, `WITH`, `EXPLAIN`) on the app's database, capped at 1,000 rows, with secrets redacted. Writes are refused, even hidden in a CTE, and the transaction is rolled back. |
+| `pyweb_migrations` | `status`, `diff` (write the next migration from the Models; removals go to a separate contract step) or `upgrade` (apply them to the development database). |
+| `pyweb_jobs` | Background jobs with their errors and counts; retry failed ones, or run what's queued now to test a job end to end. |
+| `pyweb_requests` | What the last `pyweb_render`/`pyweb_call` requests did: time, status, every SQL statement, N+1 warnings, spans, jobs queued, emails and errors. |
 | `pyweb_test` | Runs the app's pytest tests and returns pass/fail counts, the summary and the failure output. |
 
 The server also exposes the guide and every template as resources
@@ -79,12 +84,17 @@ The server also exposes the guide and every template as resources
 4. It confirms the result with `pyweb_render` (each page) and `pyweb_call`
    (each server function), and looks at the page with `pyweb_screenshot`,
    clicking and typing through the flow it built.
-5. It adds tests to `test_app.py` and runs them with `pyweb_test`.
-6. You run `pyweb dev app.pyweb` and try it.
+5. When it changes a Model, it writes and applies the migration with
+   `pyweb_migrations`, checks rows with `pyweb_db_query`, and looks at
+   `pyweb_requests` for slow or repeated queries.
+6. It adds tests to `test_app.py` (`client.login("ann@example.com")` signs
+   a test in) and runs them with `pyweb_test`.
+7. You run `pyweb dev app.pyweb` and try it.
 
-`pyweb_render`, `pyweb_call`, `pyweb_screenshot` and `pyweb_test` run
+`pyweb_render`, `pyweb_call`, `pyweb_screenshot`, `pyweb_jobs` and `pyweb_test` run
 your app's code, as `pyweb dev` or `pytest` would, and `pyweb_packages`
-writes files and downloads packages. Assistants generally ask before
+writes files and downloads packages, and `pyweb_migrations` writes and
+applies migrations to the development database. Assistants generally ask before
 calling them.
 
 ## AGENTS.md and CLAUDE.md

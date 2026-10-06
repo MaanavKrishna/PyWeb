@@ -1,5 +1,11 @@
 # Deployment
 
+The quickest way to production is `pyweb deploy`: it reads your app,
+prints a plan (database, worker, Redis, migrations, HTTPS) and writes the
+files for Docker, Compose, Kubernetes, Fly, Render or Railway. See
+[Scaling & deploying](25-scaling.md). This page covers what those files
+run: the build, the server, its settings and the proxy in front of it.
+
 ## Build
 
 ```bash

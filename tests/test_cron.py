@@ -184,3 +184,16 @@ def test_a_new_schedule_doesnt_backfill(schedules):
 def test_bad_catchup():
     with pytest.raises(ValueError):
         jobs.every(minutes=1, catchup="sometimes")
+
+
+def test_utc_needs_no_time_zone_database(monkeypatch):
+    """Windows and Pyodide have no tz database: importing pyweb (which schedules a UTC job) must work."""
+    import pyweb.jobs.schedule as S
+
+    def no_database(name):
+        raise Exception(f"No time zone found with key {name}")
+
+    monkeypatch.setattr(S, "ZoneInfo", no_database)
+    assert Cron("0 3 * * *").tz is UTC and Cron("0 3 * * *", "utc").tz is UTC
+    with pytest.raises(CronError, match="tzdata"):
+        Cron("0 3 * * *", "Europe/London")

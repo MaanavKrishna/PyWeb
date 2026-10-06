@@ -78,7 +78,7 @@ class Cron:
         self.dows = frozenset(d % 7 for d in dows)
         self.any_day = parts[2] == "*"
         self.any_dow = parts[4] == "*"
-        self.tz = ZoneInfo(tz) if isinstance(tz, str) else tz
+        self.tz = zone(tz) if isinstance(tz, str) else tz
         if not any(self._day_ok(dt.date(2000 + y, m, d)) for y in range(28) for m in self.months
                    for d in self.days if d <= 31 and _valid(2000 + y, m, d)):
             raise CronError(f"{expr!r} never fires")
@@ -125,6 +125,17 @@ class Cron:
                 break
             out.append(moment)
         return out
+
+
+def zone(name):
+    """A time zone by IANA name. UTC needs no time zone database (Windows and Pyodide ship none;
+    ``pip install tzdata`` provides one for the other zones)."""
+    if name.upper() in ("UTC", "Z", "ETC/UTC", "GMT"):
+        return UTC
+    try:
+        return ZoneInfo(name)
+    except Exception as exc:  # noqa: BLE001 - ZoneInfoNotFoundError, ValueError, OSError
+        raise CronError(f"unknown time zone {name!r} (no time zone data? pip install tzdata)") from exc
 
 
 def _valid(y, m, d):

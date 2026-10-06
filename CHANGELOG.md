@@ -158,6 +158,9 @@ Work towards 0.5.0: production apps in one Python file.
   in-memory SQLite file.
 
 ### Fixed
+- Schedules in UTC (including PyWeb's nightly cleanup) no longer need a
+  time zone database, which Windows and Pyodide (the playground) don't
+  ship; other zones explain that `pip install tzdata` provides one.
 - The server answered a refused connection (503) or a rejected request and
   closed at once; unread request bytes then made the kernel reset the
   connection, which could destroy the response. It now closes politely

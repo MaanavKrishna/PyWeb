@@ -140,9 +140,14 @@ def check_source(source, filename="<pyweb>"):
             findings.append({"kind": "command-injection", "line": i,
                              "message": "dangerous call (os.system/subprocess/eval/exec)"})
     try:
-        tree = ast.parse(source, filename=filename)
-    except SyntaxError:
-        return findings
+        from .compiler.parser import parse_source
+        tree = parse_source(source, filename=filename)[0]     # the Python of a .pyweb file, markup aside
+    except (SyntaxError, ValueError):
+        try:
+            tree = ast.parse(source, filename=filename)
+        except SyntaxError:
+            return findings
+    findings += _app_findings(tree, {f["line"] for f in findings if f["kind"] == "sql-injection"})
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             decos = [ast.unparse(d) if hasattr(ast, "unparse") else "" for d in node.decorator_list]
@@ -152,6 +157,68 @@ def check_source(source, filename="<pyweb>"):
                         findings.append({"kind": "secret-leak", "line": getattr(sub, "lineno", 0),
                                          "message": f"server secret {sub.id!r} referenced from @browser code"})
     return findings
+
+
+_SQL_CALLS = {"execute", "executemany", "run_sql", "raw", "sql", "fetch", "query_raw"}
+
+
+def _built_string(node):
+    """An expression that builds text from pieces (f-string, +, %, .format): SQL injection if it's a query."""
+    if isinstance(node, ast.JoinedStr):
+        return any(isinstance(v, ast.FormattedValue) for v in node.values)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+        return True
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format"
+
+
+def _decorator_calls(fn):
+    for d in fn.decorator_list:
+        call = d if isinstance(d, ast.Call) else None
+        target = d.func if call else d
+        name = ast.unparse(target)
+        yield name, ({k.arg: k.value for k in call.keywords} if call else {})
+
+
+def _app_findings(tree, already):
+    """Checks that need the app's structure: SQL built from strings, pages that assume a signed-in
+    visitor without asking for one, and Models owned by a user with no row policy."""
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _SQL_CALLS \
+                and node.args and _built_string(node.args[0]) and node.lineno not in already:
+            out.append({"kind": "sql-injection", "line": node.lineno,
+                        "message": f"SQL built from strings passed to .{node.func.attr}(): pass values as "
+                                   "parameters (?, %s) or use the query builder"})
+    for fn in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        decos = list(_decorator_calls(fn))
+        page = next((kw for name, kw in decos if name.endswith((".page", ".layout")) or name in ("page", "layout")), None)
+        if page is None or any(k in page and not (isinstance(page[k], ast.Constant) and not page[k].value)
+                               for k in ("login", "roles")):
+            continue
+        for sub in ast.walk(fn):
+            # auth.user().name: None for visitors who aren't signed in
+            if isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Call) \
+                    and ast.unparse(sub.value.func).endswith(("auth.user", "session.user")):
+                out.append({"kind": "page-needs-login", "line": sub.lineno,
+                            "message": f"{fn.name}() reads {ast.unparse(sub)} but visitors who aren't signed "
+                                       "in have no user (an error page): add login=True to the page"})
+                break
+    models, users = {}, {"User"}
+    for cls in (n for n in tree.body if isinstance(n, ast.ClassDef)):
+        if any(getattr(b, "id", getattr(b, "attr", "")) == "Model" for b in cls.bases):
+            owned = [i.target.id for i in cls.body if isinstance(i, ast.AnnAssign) and isinstance(i.target, ast.Name)
+                     and ast.unparse(i.annotation).replace(" | None", "") in users
+                     and i.target.id in ("owner", "user", "author", "created_by", "account")]
+            if owned:
+                models[cls.name] = (cls.lineno, owned[0])
+    policies = {ast.unparse(n.func.value) for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute) and n.func.attr == "policy"}
+    for name, (line, field) in models.items():
+        if name not in policies:
+            out.append({"kind": "missing-policy", "line": line,
+                        "message": f"{name} belongs to a user ({field}) but has no row policy: anyone who can "
+                                   f"guess an id can read or change another user's rows. Add {name}.policy(...)"})
+    return out
 
 
 def assert_browser_safe(source, filename="<pyweb>"):

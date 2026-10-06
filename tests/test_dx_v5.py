@@ -347,3 +347,151 @@ def test_db_check_for_ci(tmp_path, capsys):
     main(["db", "diff", "--app", str(app), "--database", "sqlite:///:memory:"])
     main(["db", "check", "--app", str(app)])
     assert "migrations match the Models" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ security pass
+
+def test_csp_allows_only_the_pages_own_inline_styles():
+    import base64
+    import hashlib
+    from pyweb.serve import DEFAULT_CSP, csp_for
+    assert "'unsafe-inline'" not in DEFAULT_CSP.split("style-src-attr")[0]
+    assert "form-action 'self'" in DEFAULT_CSP and "style-src-attr 'unsafe-inline'" in DEFAULT_CSP
+    css = b".card{color:red}"
+    html = b"<head><style>" + css + b"</style><style media='print'>p{}</style></head><style>" + css + b"</style>"
+    policy = csp_for(DEFAULT_CSP, html)
+    digest = base64.b64encode(hashlib.sha256(css).digest()).decode()
+    style = policy.split("style-src ")[1].split(";")[0]
+    assert style.count(f"'sha256-{digest}'") == 1 and style.count("'sha256-") == 2
+    custom = "default-src 'self'; style-src 'self' 'unsafe-inline'"
+    assert csp_for(custom, html) == custom          # a policy that allows inline styles stays as it is
+
+
+CHECK_APP = '''from pyweb import App, Field, Model, server
+from pyweb.authkit import User
+
+app = App(database="sqlite:///app.db")
+auth = app.use_auth()
+
+
+class Note(Model):
+    text: str = ""
+    owner: User = Field(readonly=True)
+
+
+class Tag(Model):
+    name: str = ""
+
+
+@server
+def search(q: str) -> list:
+    return db.execute(f"SELECT * FROM notes WHERE text = '{q}'").dicts()
+
+
+@server
+def safe(q: str) -> list:
+    return db.execute("SELECT * FROM notes WHERE text = ?", (q,)).dicts()
+
+
+@app.page("/me")
+def Me():
+    name = auth.user().name
+    <p>{name}</p>
+
+
+@app.page("/mine", login=True)
+def Mine():
+    name = auth.user().name
+    <p>{name}</p>
+'''
+
+
+def test_check_finds_app_level_risks(tmp_path, capsys):
+    from pyweb.cli import main
+    from pyweb.security import check_source
+    found = {(f["kind"], f["line"]) for f in check_source(CHECK_APP, "app.pyweb")}
+    lines = CHECK_APP.splitlines()
+    at = lambda text: next(i for i, l in enumerate(lines, 1) if text in l)  # noqa: E731
+    assert ("sql-injection", at('f"SELECT')) in found
+    assert not any(k == "sql-injection" and line == at('"SELECT * FROM notes WHERE text = ?"') for k, line in found)
+    assert ("page-needs-login", at("name = auth.user().name")) in found       # only the page without login=True
+    assert sum(1 for k, _ in found if k == "page-needs-login") == 1
+    assert ("missing-policy", at("class Note(Model)")) in found
+    assert not any(k == "missing-policy" and line == at("class Tag(Model)") for k, line in found)
+    fixed = CHECK_APP + "\nNote.policy(read=lambda user: Note.owner_id == (user.id if user else -1))\n"
+    assert not any(f["kind"] == "missing-policy" for f in check_source(fixed, "app.pyweb"))
+    (tmp_path / "app.pyweb").write_text(CHECK_APP.replace("db.execute", "app.db.execute"))
+    main(["check", str(tmp_path / "app.pyweb")])                              # warnings: still exit 0
+    with pytest.raises(SystemExit) as e:
+        main(["check", "--strict", str(tmp_path / "app.pyweb")])
+    assert e.value.code == 1 and "missing-policy" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------- upgrading
+
+OLD_APP = '''import os
+from pyweb import App, server, auth
+from pyweb.jobs import task
+from pyweb.models import Model, TextField
+
+Model.configure("shop.db")
+
+app = App(title="Old shop")
+
+
+class Item(Model):
+    name = TextField()
+
+
+@server
+def token() -> str:
+    return auth.issue_session({"sub": 1}, os.environ["PYWEB_AUTH_SECRET"])
+
+
+@app.page("/")
+def Home():
+    items = [i.name for i in Item.all()]
+    <ul id="items">
+        for name in items:
+            <li>{name}</li>
+    </ul>
+'''
+
+
+def test_upgrade_a_04_app_keeps_its_data(tmp_path, monkeypatch, capsys):
+    import sqlite3
+    from pyweb import upgrade as U
+    from pyweb.cli import main
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "app.pyweb").write_text(OLD_APP)
+    (tmp_path / "Procfile").write_text("release: pyweb db rollback\nweb: pyweb db migrate && pyweb serve dist\n")
+    (tmp_path / "deploy.sh").write_text("pyweb deploy --port 9000 --target k8s --out k8s\n")
+    db = sqlite3.connect(tmp_path / "shop.db")                     # rows written by the 0.4 app
+    db.execute("CREATE TABLE item (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")  # 0.4 naming
+    db.executemany("INSERT INTO item (name) VALUES (?)", [("pen",), ("cup",)])
+    db.commit()
+    codes = {f.code for f in U.check("app.pyweb")}
+    assert codes >= {"model-configure", "memory-jobs", "raw-secret", "db-command", "deploy-target"}
+    with pytest.raises(SystemExit):
+        main(["upgrade"])
+    changed = U.fix("app.pyweb")
+    assert set(changed) == {"app.pyweb", "Procfile", "deploy.sh"}
+    assert (tmp_path / "Procfile").read_text() == "release: pyweb db downgrade\nweb: pyweb db upgrade && pyweb serve dist\n"
+    assert (tmp_path / "deploy.sh").read_text() == "pyweb deploy k8s --port 9000 --out k8s\n"
+    source = (tmp_path / "app.pyweb").read_text()
+    assert 'App(database="sqlite:///shop.db", title="Old shop")' in source and "configure" not in source
+    assert {f.code for f in U.check("app.pyweb")} == {"memory-jobs", "raw-secret"}   # left to a person
+    page = TestClient("app.pyweb").get("/")
+    assert page.status == 200 and "<li>pen</li>" in page.text and "<li>cup</li>" in page.text
+
+
+def test_strict_deprecations(monkeypatch):
+    from pyweb.deprecation import PyWebDeprecationError, PyWebDeprecationWarning
+    with pytest.warns(PyWebDeprecationWarning, match="App\\(database="):
+        Model.configure(":memory:")
+    monkeypatch.setenv("PYWEB_STRICT_DEPRECATIONS", "1")
+    with pytest.raises(PyWebDeprecationError, match="PYWEB_STRICT_DEPRECATIONS"):
+        Model.configure(":memory:")
+    from pyweb.jobs import Queue
+    with pytest.raises(PyWebDeprecationError, match="app.job"):
+        Queue()

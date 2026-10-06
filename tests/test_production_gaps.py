@@ -12,6 +12,7 @@ from pyweb import build as _build
 from pyweb import serve as _serve
 from pyweb.compiler import compile_source
 from pyweb.db import migrate as _migrate
+from pyweb.keys import derive  # tokens are signed with purpose keys, never the raw secret
 
 
 def _dist(tmp, source=None):
@@ -73,7 +74,7 @@ def test_cookie_session_reaches_rpc_over_http(tmp_path):
     try:
         import urllib.request
         base = f"http://127.0.0.1:{httpd.server_address[1]}"
-        token = _auth.issue_session({"sub": "u1"}, secret)
+        token = _auth.issue_session({"sub": "u1"}, derive(secret, "session"))
 
         def post(cookie=None):
             req = urllib.request.Request(

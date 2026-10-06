@@ -7,7 +7,11 @@ pyweb new NAME [--template T]        create NAME/ with app.pyweb, test_app.py, A
 pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
                                      development server: recompile on save, live reload, error overlay,
                                      the dev toolbar, and background jobs in the same process
-pyweb check FILE [--production]      compile + security checks; --production also checks the environment
+pyweb check FILE [--production] [--strict]
+                                     compile + security checks; --production also checks the environment;
+                                     --strict fails on warnings too
+pyweb upgrade [FILE] [--fix]         what to change for this PyWeb version (file and line); --fix applies
+                                     the safe rewrites
 pyweb inspect FILE [--security]      where every name runs and why; RPC table; findings
 pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
                                      self-contained dist/; --production hashes and minifies

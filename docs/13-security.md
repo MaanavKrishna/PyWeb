@@ -75,10 +75,18 @@ reads, credential-like literals) and exits non-zero on findings.
 
   ```text
   default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self';
-  frame-ancestors 'self'; img-src 'self' data: https:;
-  style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:;
+  frame-ancestors 'self'; form-action 'self'; img-src 'self' data: https:;
+  style-src 'self' https:; style-src-attr 'unsafe-inline'; font-src 'self' data: https:;
   connect-src 'self'; worker-src 'self' blob:
   ```
+
+  No inline script runs, ever. A page's own inline `<style>` blocks are
+  allowed by their hashes, which are added per response, so markup
+  injected into a page can't add a stylesheet (CSS selectors can leak
+  values such as CSRF tokens). `style="..."` attributes stay allowed,
+  because `style={...}` in markup uses them. `form-action 'self'` stops an
+  injected form from posting to another site. If your app posts a form to
+  a payment provider, add its address with `PYWEB_CSP`.
 
   `worker-src ... blob:` lets npm packages that start Web Workers from
   generated code (canvas-confetti, PDF and map libraries) do so; only

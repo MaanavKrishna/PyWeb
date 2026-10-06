@@ -5,6 +5,7 @@ import json
 from pyweb import auth, rpc
 from pyweb.compiler import compile_source
 from pyweb.runtime.server import Request, Server
+from pyweb.keys import derive  # tokens are signed with purpose keys, never the raw secret
 
 APP = ("from pyweb import App\napp=App()\n@app.page('/')\n"
        "def H():\n    v = 1\n    <p>{v}</p>\n")
@@ -71,7 +72,7 @@ def test_auth_gate_blocks_anonymous():
         return "classified"
     s.register_rpc(secret_fn)
     assert _post(s, "secret_fn").status == 401
-    token = auth.issue_session({"sub": "u1"}, "s3cret")
+    token = auth.issue_session({"sub": "u1"}, derive("s3cret", "session"))
     res = _post(s, "secret_fn", headers={"Authorization": f"Bearer {token}"})
     assert res.status == 200
 
@@ -83,7 +84,7 @@ def test_csrf_gate_blocks_cookie_calls_without_token():
     def mut():
         return "ok"
     s.register_rpc(mut)
-    token = auth.issue_session({"sub": "u1", "sid": "sess1"}, "s3cret")
+    token = auth.issue_session({"sub": "u1", "sid": "sess1"}, derive("s3cret", "session"))
     denied = _post(s, "mut", cookies={"pyweb_session": token})
     assert denied.status == 403
     assert json.loads(denied.body)["error"]["code"] == "csrf_failed"

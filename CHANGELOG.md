@@ -230,6 +230,19 @@ Work towards 0.5.0: production apps in one Python file.
   database. New examples: the blog (on Models) and the saas template.
 - `Worker.run_inline()` runs due jobs on the calling thread (no thread pool).
 
+- **`pyweb upgrade --check/--fix`** lists what an app needs to change for
+  0.5, with file and line, and applies the safe rewrites:
+  `Model.configure(...)` → `App(database=...)`, and `pyweb db
+  migrate/rollback` and `pyweb deploy --target X` in Procfiles, scripts,
+  Dockerfiles and CI files.
+- `PYWEB_STRICT_DEPRECATIONS=1` turns deprecation warnings into errors.
+  Deprecated in 0.5: `Model.configure()`, the in-memory `Queue`,
+  `RedisQueue` and `@task` (use `@app.job`), and `pyweb deploy
+  --target/--compose`.
+- `pyweb check` warns about SQL built from strings passed to `execute()`,
+  pages that read `auth.user().x` without `login=True`, and Models owned by
+  a user without a row policy; `--strict` fails on any warning.
+
 ### Changed
 - The blog template and example use a Model instead of raw SQL.
 - `PYWEB_MAX_CONNECTIONS` defaults to 10,000 per process (it was 256 for
@@ -241,6 +254,14 @@ Work towards 0.5.0: production apps in one Python file.
   dicts: `row["name"]`).
 - In production, a Model with no database is an error instead of an
   in-memory SQLite file.
+
+### Security
+- Sessions and feed tokens are verified only with keys derived per purpose.
+  The raw secret, still accepted in 0.4.4 for tokens from older versions,
+  is no longer a key.
+- The default Content-Security-Policy allows inline `<style>` blocks by
+  their hashes instead of `'unsafe-inline'` (so injected markup can't add
+  a stylesheet that leaks page content), and adds `form-action 'self'`.
 
 ### Fixed
 - Rules on server function parameters (`Annotated[str, Field(max=40)]`) were

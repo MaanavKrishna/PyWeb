@@ -38,7 +38,6 @@ import os
 import sys
 import threading
 import typing
-import warnings
 import weakref
 from typing import ClassVar
 
@@ -881,8 +880,8 @@ class Model(metaclass=ModelMeta):
     @classmethod
     def configure(cls, path=":memory:"):
         """0.4: keep every Model in the SQLite file ``path``. Use ``App(database=...)`` instead."""
-        warnings.warn("Model.configure() is deprecated: use App(database='sqlite:///app.db') or DATABASE_URL",
-                      DeprecationWarning, stacklevel=2)
+        from pyweb.deprecation import deprecated
+        deprecated("Model.configure() is deprecated: use App(database='sqlite:///app.db') or DATABASE_URL")
         from pyweb.db import SQLiteDB
         use_database(SQLiteDB(path), auto_create=True)
 

@@ -42,10 +42,11 @@ def test_each_purpose_has_its_own_key():
     assert auth.verify_session(raw, keys.derive(SECRET, "feed"), 3600) is None
 
 
-def test_sessions_from_before_the_upgrade_still_work():
+def test_the_raw_secret_is_never_a_signing_key():
     old = auth.issue_session({"sub": 3}, SECRET)                         # how 0.4.3 signed it
     user, _ = in_request(lambda: ctx.session.user(), cookies={auth.SESSION_COOKIE: old})
-    assert user["sub"] == 3
+    assert user is None                                                   # 0.5: purpose keys only
+    assert SECRET not in keys.verify_keys(SECRET, "session")
 
 
 def test_rotating_the_secret_keeps_people_signed_in(monkeypatch):

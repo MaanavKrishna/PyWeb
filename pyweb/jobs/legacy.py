@@ -43,7 +43,11 @@ class Queue:
     then forgotten.
     """
 
-    def __init__(self, workers=8, keep_seconds=3600):
+    def __init__(self, workers=8, keep_seconds=3600, *, _internal=False):
+        if not _internal:
+            from pyweb.deprecation import deprecated
+            deprecated(f"{type(self).__name__} keeps jobs in memory (a restart loses them) and is deprecated: "
+                       "use @app.job and .enqueue(...) (durable, retried; see the jobs docs)")
         self.jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
         self.workers = workers
@@ -267,10 +271,13 @@ class RedisQueue(Queue):
                 "error": rec.get("error") or None}
 
 
-_default_queue = Queue()
+_default_queue = Queue(_internal=True)
 
 
 def task(_fn=None, *, retries=0, queue=None):
+    from pyweb.deprecation import deprecated
+    deprecated("@task keeps jobs in memory (a restart loses them) and is deprecated: use @app.job "
+               "(or pyweb.jobs.job) and .enqueue(...)")
     q = queue or _default_queue
 
     def deco(fn):

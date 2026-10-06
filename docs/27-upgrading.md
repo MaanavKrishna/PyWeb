@@ -88,6 +88,25 @@ processes). See [Background jobs](24-jobs.md).
 - Logs are JSON lines in production (`PYWEB_LOG_FORMAT=text` keeps
   readable lines). The older `pyweb.observability` classes still work.
 
+## Security changes
+
+- **Tokens are signed with purpose keys only.** 0.4.4 still accepted
+  sessions and feed tokens signed with the raw `PYWEB_AUTH_SECRET`, so that
+  upgrading from 0.4.3 signed nobody out. 0.5 doesn't. Visitors whose
+  session cookie dates from 0.4.3 or earlier sign in once more. If your
+  code calls `auth.issue_session(data, secret)` itself, pass
+  `pyweb.keys.derive(secret, "session")` instead (or use
+  `session.login()`). `pyweb upgrade --check` points at those calls.
+- **Stricter Content-Security-Policy.** Inline `<style>` blocks are
+  allowed by their hash instead of `'unsafe-inline'`, and forms may post
+  only to your own site (`form-action 'self'`). `style="..."` attributes
+  still work. If a page posts a form to another site (a payment provider,
+  say), add that site to `PYWEB_CSP`.
+- **`pyweb check`** also warns about SQL built from strings, pages that
+  read `auth.user().name` without `login=True`, and Models that belong to
+  a user but have no row policy. `pyweb check --strict` fails on any
+  warning.
+
 ## Accounts
 
 Apps that keep their own login code (like the 0.4 `auth` example) are

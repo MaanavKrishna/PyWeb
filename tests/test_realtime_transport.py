@@ -9,6 +9,7 @@ from pyweb import context as ctx
 from pyweb import realtime as rt
 from pyweb.compiler import compile_source
 from pyweb.runtime.server import Request, Server
+from pyweb.keys import derive  # tokens are signed with purpose keys, never the raw secret
 
 APP = "from pyweb import App\napp=App()\n@app.page('/')\ndef H():\n    <h1>Chat</h1>\n"
 SECRET = "test-secret"
@@ -21,7 +22,7 @@ def _server():
 
 
 def _feed(name="chat"):
-    return rt.make_feed(name, SECRET)
+    return rt.make_feed(name, derive(SECRET, "feed"))
 
 
 def test_bus_publish_and_since():

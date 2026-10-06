@@ -59,7 +59,8 @@ def cmd_check(args):
         print(f"production: {p}")
     if getattr(args, "production", False) and not problems:
         print("production: ready")
-    if problems or any(f["kind"] in ("secret-leak", "compile-error") for f in findings):
+    if problems or any(f["kind"] in ("secret-leak", "compile-error") for f in findings) \
+            or (getattr(args, "strict", False) and findings):
         raise SystemExit(1)
 
 
@@ -629,6 +630,9 @@ def cmd_deploy(args):
     target = (args.target_pos or args.target or "docker").lower()
     if target == "docker" and args.compose:
         target = "compose"
+    if args.target or args.compose:
+        from pyweb.deprecation import deprecated
+        deprecated(f"`pyweb deploy --target/--compose` is deprecated: use `pyweb deploy {target}`", stacklevel=2)
     if target not in D.TARGETS:
         raise SystemExit(f"unknown deploy target {target!r} (one of: {', '.join(D.TARGETS)})")
     facts = D.read_app(args.file)
@@ -701,6 +705,27 @@ def cmd_new(args):
     print(f"next: cd {args.name} && pyweb dev app.pyweb")
 
 
+def cmd_upgrade(args):
+    """What the app needs to change for this version of PyWeb (and, with --fix, the safe rewrites)."""
+    from pyweb import upgrade as U
+    if args.fix:
+        for path, notes in U.fix(args.file).items():
+            for note in notes:
+                print(f"fixed {path}: {note}")
+    findings = U.check(args.file)
+    if args.json:
+        print(json.dumps([f.as_dict() for f in findings]))
+    else:
+        for f in findings:
+            where = f"{f.file}:{f.line}" if f.line else f.file
+            print(f"{'change' if f.action else 'note'} {where}: {f.message}"
+                  + (f"  (pyweb upgrade --fix: {f.fix})" if f.fix and not args.fix else ""))
+        todo = [f for f in findings if f.action]
+        print(f"{len(todo)} change(s) to make" if todo else "nothing to change for this version")
+    if [f for f in findings if f.action]:
+        raise SystemExit(1)
+
+
 def cmd_lsp(args):
     """Language server for editors (stdio)."""
     from pyweb.lsp import serve_stdio
@@ -739,6 +764,12 @@ def main(argv=None):
     p.add_argument("--seeds", default=None, help="seed: the seeds file (default: seeds.py next to the app)")
     p.add_argument("--json", action="store_true", help="check: machine-readable output")
     p.set_defaults(fn=cmd_db)
+    p = sub.add_parser("upgrade", help="what to change for this PyWeb version; --fix applies the safe rewrites")
+    p.add_argument("file", nargs="?", default="app.pyweb")
+    p.add_argument("--check", action="store_true", help="only report (the default)")
+    p.add_argument("--fix", action="store_true", help="apply the rewrites that can't change behaviour")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_upgrade)
     p = sub.add_parser("worker", help="run background jobs and schedules")
     p.add_argument("app", nargs="?", default="app.pyweb", help="app.pyweb or a built dist/ (default: app.pyweb)")
     p.add_argument("--queues", default="", help="comma-separated queues (default: every queue the app uses)")
@@ -764,7 +795,7 @@ def main(argv=None):
     p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=list(__import__("pyweb.mcp", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (saas: accounts, data, jobs, admin)"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
-    p = sub.add_parser("check"); p.add_argument("file")
+    p = sub.add_parser("check"); p.add_argument("file"); p.add_argument("--strict", action="store_true", help="exit 1 on any finding (security warnings too)")
     p.add_argument("--production", action="store_true", help="also check the environment is ready for production")
     p.set_defaults(fn=cmd_check)
     p = sub.add_parser("dts", help="generate Python stubs from a TypeScript .d.ts file (experimental)")

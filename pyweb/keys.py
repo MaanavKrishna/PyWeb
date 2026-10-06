@@ -36,15 +36,14 @@ def signing_key(root, purpose: str) -> str:
 
 
 def verify_keys(root, purpose: str) -> list[str]:
-    """Keys a token for ``purpose`` may be signed with, newest first.
+    """Keys a token for ``purpose`` may be signed with, newest first (the current
+    secret, then each of ``PYWEB_AUTH_SECRET_PREVIOUS``), each derived for ``purpose``.
 
-    The undecorated roots come last: tokens issued before 0.4.4 were signed
-    with the secret itself, and stay valid so upgrading logs nobody out.
-    (This fallback goes away in 0.5.0.)
+    A token signed for one purpose never verifies for another, and the raw secret
+    itself is never a key (0.4.4 accepted it for tokens from older versions).
     """
     roots = [root, *previous_secrets()]
     out = [derive(r, purpose) for r in roots]
-    out += [r if isinstance(r, str) else r.decode() for r in roots]
     seen, unique = set(), []
     for k in out:
         if k not in seen:

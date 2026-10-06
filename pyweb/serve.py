@@ -126,9 +126,12 @@ MAX_BODY = 1_048_576
 #: on conflict (merged with ``setdefault`` semantics per header).
 #: Content-Security-Policy for HTML responses (override with PYWEB_CSP).
 #: Scripts only from this origin; the page-state JSON block is data, not code.
+# No inline script ever runs; inline <style> blocks only by their hash (csp_for), so injected
+# markup can't add a stylesheet (CSS can leak a page's secrets). style="..." attributes stay
+# allowed: markup's style={...} and components use them.
 DEFAULT_CSP = ("default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; "
-               "frame-ancestors 'self'; img-src 'self' data: https:; "
-               "style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; "
+               "frame-ancestors 'self'; form-action 'self'; img-src 'self' data: https:; "
+               "style-src 'self' https:; style-src-attr 'unsafe-inline'; font-src 'self' data: https:; "
                "connect-src 'self'; worker-src 'self' blob:")
 
 def _security_headers():
@@ -140,15 +143,27 @@ SECURITY_HEADERS = _security_headers()
 
 
 def csp_for(csp, html):
-    """``csp`` allowing the page's inline import map (npm packages) by its hash."""
+    """``csp`` allowing the page's own inline import map (npm packages) and ``<style>`` blocks by
+    their hashes: exactly those, so anything injected into the page still doesn't run."""
     import base64
     import hashlib
+
+    def sha(data):
+        return "'sha256-" + base64.b64encode(hashlib.sha256(data).digest()).decode() + "'"
+
+    def add(policy, directive, hashes):
+        if not hashes or not re.search(rf"(^|;)\s*{directive}\s", policy):
+            return policy
+        if "'unsafe-inline'" in re.search(rf"{directive} ([^;]*)", policy).group(1):
+            return policy                  # hashes would switch 'unsafe-inline' off: leave a custom policy be
+        return re.sub(rf"{directive} ([^;]*)", lambda x: f"{directive} {x.group(1)} {' '.join(hashes)}",
+                      policy, count=1)
+
     body = html if isinstance(html, bytes) else html.encode()
     m = re.search(rb'<script type="importmap">(.*?)</script>', body, re.S)
-    if not m or "script-src" not in csp:
-        return csp
-    digest = base64.b64encode(hashlib.sha256(m.group(1)).digest()).decode()
-    return re.sub(r"script-src ([^;]*)", lambda x: f"script-src {x.group(1)} 'sha256-{digest}'", csp, count=1)
+    csp = add(csp, "script-src", [sha(m.group(1))] if m else [])
+    styles = list(dict.fromkeys(sha(s) for s in re.findall(rb"<style(?:\s[^>]*)?>(.*?)</style>", body, re.S)))
+    return add(csp, "style-src", styles)
 
 
 def make_handler(*, static_dir, server_runtime=None, logger=None,

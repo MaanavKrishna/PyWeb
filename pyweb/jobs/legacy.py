@@ -1,4 +1,4 @@
-"""Background jobs: @task decorator, in-memory queue, retries, progress."""
+"""0.4 background jobs: @task, an in-memory queue, a basic RedisQueue (kept for compatibility)."""
 
 from __future__ import annotations
 

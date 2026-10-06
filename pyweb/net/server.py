@@ -360,18 +360,25 @@ def _simple(status, message, *, close=False, extra=()):
 
 # ------------------------------------------------------------------- running
 
-def bind(host, port, *, backlog=2048):
-    """A listening socket (shared by every worker)."""
+REUSEPORT = hasattr(socket, "SO_REUSEPORT") and os.name == "posix" and os.uname().sysname == "Linux"
+
+
+def bind(host, port, *, backlog=2048, reuse_port=False, listen=True):
+    """A listening socket. With ``reuse_port`` several sockets share the port and the kernel
+    spreads new connections evenly across them (one per worker process)."""
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     sock = socket.socket(family, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if reuse_port:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     if family == socket.AF_INET6:
         try:
             sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
         except (AttributeError, OSError):
             pass
     sock.bind((host, port))
-    sock.listen(backlog)
+    if listen:
+        sock.listen(backlog)
     sock.setblocking(False)
     return sock
 
@@ -379,19 +386,24 @@ def bind(host, port, *, backlog=2048):
 def run(make_site, *, host="0.0.0.0", port=8000, workers=1, logger=None, sock=None, ready=None):
     """Serve until SIGTERM/SIGINT. ``make_site()`` builds the :class:`pyweb.hosting.Site` (per worker).
 
-    With ``workers > 1`` the parent forks that many processes sharing the
-    socket, replaces any that die, and passes SIGTERM on for a graceful drain.
+    With ``workers > 1`` the parent forks that many processes, replaces any
+    that die, and passes SIGTERM on for a graceful drain. On Linux each worker
+    listens on its own ``SO_REUSEPORT`` socket, so the kernel balances
+    connections between them; elsewhere they share one socket.
     """
-    sock = sock or bind(host, port)
     if workers <= 1 or not hasattr(os, "fork"):
-        return _worker(make_site, sock, logger, ready)
+        return _worker(make_site, sock or bind(host, port), logger, ready)
+    split = sock is None and REUSEPORT
+    # With SO_REUSEPORT the parent only holds the port (bound, not listening, so it gets no connections).
+    sock = sock or bind(host, port, reuse_port=split, listen=not split)
     children = {}
 
     def spawn():
         pid = os.fork()
         if pid == 0:                                       # pragma: no cover - runs in the child
             try:
-                _worker(make_site, sock, logger, None)
+                mine = bind(host, sock.getsockname()[1], reuse_port=True) if split else sock
+                _worker(make_site, mine, logger, None)
             finally:
                 os._exit(0)
         children[pid] = time.monotonic()
@@ -431,6 +443,13 @@ def run(make_site, *, host="0.0.0.0", port=8000, workers=1, logger=None, sock=No
 
 def _worker(make_site, sock, logger, ready):
     site = make_site()
+    if getattr(site, "start_jobs", True):
+        from pyweb import jobs
+        try:
+            jobs.start_embedded()          # PYWEB_WORKER=0 when `pyweb worker` processes run the jobs
+        except Exception as exc:  # noqa: BLE001 - serving pages matters more than running jobs here
+            if logger is not None:
+                logger.info(f"background jobs not started: {exc}")
 
     async def main():
         server = Server(site, logger=logger)

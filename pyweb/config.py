@@ -22,6 +22,8 @@ Variable                       Default      Meaning
 ``PYWEB_MAX_STREAMS_PER_CLIENT`` 20         open live connections per client address
 ``PYWEB_RENDER_TIMEOUT``       30           seconds a page may take to render (504 after)
 ``PYWEB_MAX_UPLOAD``           10MB         largest form submit with files (413 beyond it)
+``PYWEB_JOBS``                 db           where background jobs are stored: db, redis or memory
+``PYWEB_WORKER``               1            0: don't run jobs inside ``pyweb serve``/``dev``
 =============================  ===========  =====================================================
 """
 

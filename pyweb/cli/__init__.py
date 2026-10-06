@@ -230,6 +230,8 @@ def cmd_dev(args):
         print(f"PyWeb dev server: http://{host}:{port}/  ({args.file})", flush=True)
         if not getattr(args, "no_reload", False):
             _watch_and_reload(state, Site)
+        from pyweb import jobs
+        jobs.start_embedded()
 
     _net.run(lambda: _DevSite(state), host=host, port=args.port, ready=ready)
 
@@ -423,6 +425,66 @@ def _db_context(args, *, need_models=False):
     return db, migrations, models
 
 
+def _load_app_for_jobs(target):
+    """Load the app (a ``.pyweb`` file or a built ``dist/``) so its database and jobs are set up."""
+    from pyweb import config
+    from pyweb.app_loader import LoadedApp
+    config.startup()
+    path = os.path.join(target, "app.pyweb") if os.path.isdir(target) else target
+    if not os.path.isfile(path):
+        raise SystemExit(f"no app at {target} (pass app.pyweb or a built dist/)")
+    return LoadedApp(path)
+
+
+def cmd_worker(args):
+    """Run jobs (and schedules) until SIGTERM/SIGINT; then finish or hand back running jobs."""
+    import signal
+    import threading
+    from pyweb import jobs
+    _load_app_for_jobs(args.app)
+    queues = [q.strip() for q in (args.queues or "").split(",") if q.strip()] or None
+    worker = jobs.Worker(queues=queues, concurrency=args.concurrency, schedule=not args.no_schedule)
+    stop = threading.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, lambda *_: stop.set())
+        except ValueError:
+            pass
+    worker.start()
+    print(f"worker {worker.name}: queues {', '.join(worker.queue_names())}, concurrency {worker.concurrency}"
+          f", store {type(jobs.backend()).__name__}", flush=True)
+    while not stop.wait(0.5):
+        pass
+    left = worker.stop(args.grace)
+    print(f"worker stopped ({left} job(s) handed back)", flush=True)
+
+
+def cmd_jobs(args):
+    import datetime as _dt
+    from pyweb import jobs
+    _load_app_for_jobs(args.app)
+    store = jobs.backend()
+    if args.jobs_action == "list":
+        rows = store.list(state=args.state, limit=args.limit, name=args.name)
+        for r in rows:
+            when = _dt.datetime.fromtimestamp(r["created_at"] or 0).strftime("%Y-%m-%d %H:%M:%S")
+            err = (r["last_error"] or "").splitlines()[0][:60] if r["last_error"] else ""
+            print(f"{r['id']}  {r['state']:<7} {r['attempts']}/{r['max_attempts']}  {when}  {r['name']}  {err}")
+        if not rows:
+            print("no jobs")
+    elif args.jobs_action == "retry":
+        if not args.ids:
+            raise SystemExit("pyweb jobs retry ID [ID ...]")
+        for job_id in args.ids:
+            print(f"{job_id}: " + ("queued again" if store.retry(job_id) else "not found, or not failed/dead"))
+    elif args.jobs_action == "purge":
+        import time as _time
+        print(f"removed {store.purge(_time.time() - args.days * 86400)} finished job(s)")
+    elif args.jobs_action == "run":
+        n = jobs.Worker(concurrency=4, schedule=False).drain(timeout=args.timeout)
+        print(f"ran {n} job(s)")
+
+
 def cmd_db(args):
     from pyweb.db import migrate as _migrate
     action = {"migrate": "upgrade", "rollback": "downgrade"}.get(args.db_action, args.db_action)
@@ -590,6 +652,23 @@ def main(argv=None):
     p.add_argument("--allow-destructive", action="store_true", help="diff: put removals in the same migration")
     p.add_argument("--seeds", default=None, help="seed: the seeds file (default: seeds.py next to the app)")
     p.set_defaults(fn=cmd_db)
+    p = sub.add_parser("worker", help="run background jobs and schedules")
+    p.add_argument("app", nargs="?", default="app.pyweb", help="app.pyweb or a built dist/ (default: app.pyweb)")
+    p.add_argument("--queues", default="", help="comma-separated queues (default: every queue the app uses)")
+    p.add_argument("--concurrency", type=int, default=8, help="jobs at once (default 8)")
+    p.add_argument("--grace", type=float, default=25.0, help="seconds running jobs get on shutdown")
+    p.add_argument("--no-schedule", action="store_true", help="don't queue cron/interval jobs from this worker")
+    p.set_defaults(fn=cmd_worker)
+    p = sub.add_parser("jobs", help="list, retry and purge background jobs")
+    p.add_argument("jobs_action", choices=["list", "retry", "purge", "run"])
+    p.add_argument("ids", nargs="*", help="retry: job ids")
+    p.add_argument("--app", default="app.pyweb")
+    p.add_argument("--state", choices=["queued", "running", "done", "failed", "dead"], default=None)
+    p.add_argument("--name", default=None)
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--days", type=float, default=7, help="purge: finished more than this many days ago")
+    p.add_argument("--timeout", type=float, default=60, help="run: give up after this many seconds")
+    p.set_defaults(fn=cmd_jobs)
     p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=["blank", "counter", "todo", "blog", "auth", "chat", "ai-chat"], help="starter app"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)

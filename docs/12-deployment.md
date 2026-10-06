@@ -177,8 +177,9 @@ required. Shared state belongs in your database.
 With more than one process, set `PYWEB_REDIS_URL` (and
 `pip install redis`): rate limits are then shared, so the limit applies
 to the whole site rather than per process, and live updates, live
-queries and presence in one process reach browsers connected to another. For job queues and
-caches across processes use `RedisQueue` and `RedisCache`, and for
+queries and presence in one process reach browsers connected to another. Background jobs are
+stored in the database, so every process shares them already. For caches
+across processes use `RedisCache`, and for
 "sign out everywhere" `auth.use_session_versions(auth.RedisSessionVersions(url))`.
 
 ## Environment variables
@@ -197,6 +198,8 @@ caches across processes use `RedisQueue` and `RedisCache`, and for
 | `PYWEB_THREADS` | `32` | threads per process rendering pages and running server functions |
 | `PYWEB_ALLOWED_ORIGINS` | unset | other origins allowed to open the pages' WebSocket (comma-separated); by default only the site itself |
 | `WEB_CONCURRENCY` | `1` | worker processes for `pyweb serve` (same as `--workers`) |
+| `PYWEB_WORKER` | `1` | `0`: don't run background jobs inside the web server (run `pyweb worker` processes; see [Background jobs](24-jobs.md)) |
+| `PYWEB_JOBS` | `db` | where jobs are stored: `db`, `redis` or `memory` |
 | `PYWEB_SOCKET_TIMEOUT` | `30` | seconds before a stalled client is dropped |
 | `PYWEB_MAX_STREAMS_PER_CLIENT` | `20` | open live connections per client address (`429` beyond) |
 | `PYWEB_RENDER_TIMEOUT` | `30` | seconds a page may take to render (`504` beyond) |

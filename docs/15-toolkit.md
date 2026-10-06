@@ -20,6 +20,12 @@ store.invalidate_tag("user:7")
 
 ## Background jobs
 
+Use durable jobs: `@app.job` and `fn.enqueue(...)`, `@app.cron(...)`,
+`pyweb worker`. See [Background jobs](24-jobs.md).
+
+The 0.4 in-memory `@task` still works (it runs in a thread of the process
+that called it, and is lost on restart):
+
 ```python
 from pyweb.jobs import task
 
@@ -30,10 +36,6 @@ def send_report(email, _job=None):     # accept _job to report progress
 
 job = send_report("ada@example.com")   # returns immediately; runs in a worker thread
 ```
-
-`pyweb.jobs.RedisQueue(url)` distributes jobs across processes: one
-process submits, any process calling `queue.drain()` runs them, and
-`queue.status(job_id)` reads the result from any process.
 
 ## Realtime fan-out
 

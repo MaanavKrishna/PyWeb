@@ -9,6 +9,10 @@
 
 ``PYWEB_MAIL_FROM`` is the sender (``Acme <no-reply@acme.dev>``).
 
+With durable jobs, :func:`send` queues the email (the "outbox"): it leaves
+only if the request's database writes commit, and a failing mail server is
+retried with backoff (job ``pyweb.mail.deliver``, queue ``mail``).
+
 In production with no ``PYWEB_MAIL_URL``, sending raises: a password reset
 that silently goes nowhere is worse than an error.
 """
@@ -57,6 +61,14 @@ class Message:
 
     def __repr__(self):
         return f"<Message to={self.to} subject={self.subject!r}>"
+
+    def to_dict(self):
+        return {"to": self.to, "subject": self.subject, "text": self.text, "html": self.html,
+                "sender": self.sender, "reply_to": self.reply_to}
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(d["to"], d["subject"], d["text"], d.get("html"), d.get("sender"), d.get("reply_to"))
 
 
 class ConsoleSender:
@@ -114,9 +126,42 @@ def use_sender(obj):
     _sender = obj
 
 
+def outbox_enabled():
+    """Whether emails go through the job queue: ``PYWEB_MAIL_OUTBOX=1``/``0``, or by default when a
+    worker runs in this process or workers run elsewhere (``PYWEB_WORKER=0``), with a durable store."""
+    flag = os.environ.get("PYWEB_MAIL_OUTBOX", "").strip().lower()
+    if flag in ("0", "false", "no", "off"):
+        return False
+    from . import jobs
+    from .jobs import worker as _worker
+    if flag not in ("1", "true", "yes", "on") and not (
+            _worker.local_worker_running() or not _worker.worker_enabled()):
+        return False
+    try:
+        return jobs.durable()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def send(to, subject, text, *, html=None, sender_address=None, reply_to=None):
-    """Send an email now. Returns the :class:`Message`."""
+    """Send an email. Returns the :class:`Message`.
+
+    With durable jobs (a database or Redis, and a worker), the email is queued
+    as a job: it's sent only if the current request's writes commit, and
+    retried if the mail server is down. Otherwise it's sent now.
+    """
     message = Message(to, subject, text, html, sender_address, reply_to)
+    current = sender()
+    if not isinstance(current, ConsoleSender) and outbox_enabled():
+        from .jobs.builtin import deliver
+        deliver.enqueue(message.to_dict())
+        return message
+    current.send(message)
+    return message
+
+
+def deliver_now(message):
+    """Send ``message`` with the configured sender right away (what the outbox job does)."""
     sender().send(message)
     return message
 

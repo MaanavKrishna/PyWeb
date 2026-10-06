@@ -117,6 +117,26 @@ Work towards 0.5.0: production apps in one Python file.
   everyone else in the room, across processes with Redis.
 - Feeds made while someone is signed in only work for that session.
 - `live.js`: live-update code loads only on pages that use it.
+- **Durable background jobs.** `@app.job(retries=, timeout=, queue=,
+  unique_for=)` and `fn.enqueue(..., delay=, at=, key=)`. Jobs are stored
+  in the app's database (`pyweb_jobs`), Redis (`PYWEB_JOBS=redis`) or memory,
+  and queued inside the request's transaction (a rollback queues nothing).
+  Workers claim with leases (`FOR UPDATE SKIP LOCKED` on Postgres/MySQL), so
+  a crashed or killed worker's job runs again elsewhere; failures retry with
+  jittered exponential backoff, then go `dead` (retry from `/admin` or
+  `pyweb jobs retry`); timeouts; graceful SIGTERM hands running jobs back.
+  `pyweb worker`, `pyweb jobs list|retry|purge|run`, and a worker inside
+  `pyweb dev`/`pyweb serve` (`PYWEB_WORKER=0` to run them separately).
+- **Schedules.** `@app.cron("0 3 * * *", tz=..., catchup=...)` with PyWeb's
+  own cron parser (daylight saving handled) and `@app.every(minutes=5)`.
+  Every server runs the scheduler and each slot is queued exactly once,
+  with no leader election.
+- **Email outbox.** With durable jobs, `pyweb.mail.send` queues delivery as
+  a retried job that only leaves if the request committed.
+- **Nightly cleanup** of finished jobs, expired sign-in links and old audit
+  entries.
+- `db.after_commit(fn)`: run code once the current transaction commits
+  (dropped on rollback, including a rolled-back savepoint).
 - **Read replicas** with `DATABASE_REPLICA_URL` (read-your-writes inside a
   request), slow query logging with query plans (`PYWEB_SLOW_QUERY_MS`),
   `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and

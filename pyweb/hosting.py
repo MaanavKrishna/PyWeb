@@ -137,7 +137,7 @@ def shutdown(timeout=10.0, logger=None):
     from . import jobs, realtime
     from .net import live
     closed = realtime.close_streams() + live.close_all()
-    unfinished = jobs._default_queue.shutdown(timeout)
+    unfinished = jobs._default_queue.shutdown(timeout) + jobs.stop_all(timeout)
     if logger is not None:
         logger.info(f"shutdown: closed {closed} live connection(s); {unfinished} job(s) unfinished")
     return closed, unfinished

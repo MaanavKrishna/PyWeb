@@ -338,10 +338,37 @@ class _PooledDB:
                     pass
             self._local.conn = None
             pending, self._local.pending = getattr(self._local, "pending", None), None
+            callbacks, self._local.callbacks = getattr(self._local, "callbacks", None), None
             self._pool.put(conn)
         if commit and pending:
             from pyweb import livedata
             livedata.table_changed(self, *pending)
+        if commit and callbacks:
+            for _depth, fn in callbacks:
+                try:
+                    fn()
+                except Exception:  # noqa: BLE001 - the transaction already committed
+                    log.exception("after_commit callback failed")
+
+    def after_commit(self, fn):
+        """Call ``fn()`` once the current transaction commits (at once outside a transaction).
+
+        A rollback (of the transaction, or of the savepoint the call was made in) drops it.
+        """
+        if self._current() is None:
+            fn()
+            return
+        callbacks = getattr(self._local, "callbacks", None)
+        if callbacks is None:
+            callbacks = self._local.callbacks = []
+        callbacks.append((getattr(self._local, "depth", 0), fn))
+
+    def _join_scope(self):
+        """Inside a request scope, start its transaction on this database now (before the first write)."""
+        if self._current() is None:
+            scope = _scope.get()
+            if scope is not None:
+                scope.begin(self)
 
     def __init__(self, pool_size=5, timeout=10.0, statement_cache=128,
                  connect_kwargs=None):
@@ -560,6 +587,9 @@ class _PooledDB:
             except BaseException:
                 self._raw(conn, f"ROLLBACK TO SAVEPOINT {name}")
                 self._raw(conn, f"RELEASE SAVEPOINT {name}")
+                callbacks = getattr(self._local, "callbacks", None)
+                if callbacks:
+                    self._local.callbacks = [(d, f) for d, f in callbacks if d < depth]
                 raise
             else:
                 self._raw(conn, f"RELEASE SAVEPOINT {name}")
@@ -576,6 +606,7 @@ class _PooledDB:
             yield self
         except BaseException:
             self._local.pending = None
+            self._local.callbacks = None
             self._end(conn, prev, commit=False)
             raise
         self._end(conn, prev, commit=True)
@@ -656,6 +687,7 @@ class SQLiteDB(_PooledDB):
                     raise RuntimeError(f"migration left rows pointing at missing rows: {problems[:5]}")
             except BaseException:
                 self._local.pending = None
+                self._local.callbacks = None
                 self._local.conn = None
                 conn.rollback()
                 raise

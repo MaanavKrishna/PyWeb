@@ -25,7 +25,15 @@ FRESH = 60 * 60
 def _models(server):
     app = getattr(server, "app", None)
     found = app.models() if app is not None and hasattr(app, "models") else []
-    return {m._meta.table: m for m in found}
+    out = {m._meta.table: m for m in found}
+    from pyweb import models as M
+    db = M.database()
+    if db is not None:
+        from pyweb.db import schema as S
+        from pyweb.jobs.db import JobRecord
+        if JobRecord._meta.table in S.table_names(db):
+            out[JobRecord._meta.table] = JobRecord          # background jobs: see, retry, delete
+    return out
 
 
 def _label(model):
@@ -176,6 +184,11 @@ def _edit(c, model, row):
     kit = c.kit
     table = model._meta.table
     errors = {}
+    if c.method == "POST" and c.get("action") == "retry" and row is not None and model._meta.table == "pyweb_jobs":
+        from pyweb import jobs
+        if jobs.retry(row.pk):
+            kit.event("admin_change", user=kit.user(), detail=f"retried job {row.pk}")
+        return redirect(f"/admin/{table}/{row.pk}")
     if c.method == "POST":
         if c.get("action") == "delete":
             if c.get("confirm") != "yes":
@@ -222,6 +235,10 @@ def _edit(c, model, row):
     body = f'<p class="pw-nav"><a href="/admin/{table}">Back to {H.esc(_label(model))}</a></p>'
     body += H.notice(errors.get("__all__", ""), "error")
     body += H.form(action, fields + H.button("Save", kind="primary pw-inline"), csrf=c.csrf)
+    if row is not None and model._meta.table == "pyweb_jobs" and getattr(row, "state", "") in ("dead", "failed"):
+        body += "<h2>Run again</h2>" + H.form(
+            action, '<input type="hidden" name="action" value="retry">' +
+            H.button("Retry this job", kind="primary pw-inline"), csrf=c.csrf)
     if row is not None and row.pk is not None:
         body += "<h2>Delete</h2>" + H.form(
             action, '<input type="hidden" name="action" value="delete"><label class="pw-check">'

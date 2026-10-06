@@ -203,6 +203,12 @@ def Item(item_id: int):
   ownership by hand in every function. OAuth: `use_auth(providers=["github"])`
   plus `PYWEB_OAUTH_GITHUB_ID/SECRET`. Production needs `PYWEB_ORIGIN` and
   `PYWEB_MAIL_URL`; while developing, emailed links are printed in the terminal.
+- Background work: `@app.job(retries=5)` then `fn.enqueue(id)` from a
+  server function (queued only if its writes commit; pass ids, not objects;
+  make jobs safe to run twice). Schedules: `@app.cron("0 3 * * *")`,
+  `@app.every(minutes=5)`. Don't start threads or `time.sleep` loops in
+  server code, and don't send email inline: `pyweb.mail.send` already goes
+  through the job queue.
 - Raw SQL when needed: `from pyweb.db import connect; db = connect(url)`;
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
   parameters; `with db.transaction(): ...`.

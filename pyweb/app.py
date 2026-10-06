@@ -36,7 +36,16 @@ class App:
             self.db = _models.use_database(database)
         self.cache = cache
         self.auth = auth
-        self.models: list = []           # Models added by plugins (use_auth, jobs) for migrations
+        self.models: list = []           # Models added by plugins (use_auth) for migrations
+        if self.db is not None:
+            # The job queue lives in the app's database: PyWeb's own tables (like the migrations
+            # journal), created here and left out of the app's migrations.
+            try:
+                from pyweb import models as _m
+                from pyweb.jobs.db import MODELS as _job_models
+                _m.ensure_tables(self.db, _job_models)   # PyWeb's own tables, like the migrations journal
+            except Exception:  # noqa: BLE001 - unreachable now: workers create them later
+                pass
         self.pages: list[tuple[str, str, dict]] = []
         self.layouts: list[tuple[str, str]] = []
         self.errors: dict[int, str] = {}
@@ -86,6 +95,23 @@ class App:
             return fn
 
         return deco
+
+    # ------------------------------------------------------------------ jobs
+    def job(self, fn=None, **options):
+        """A durable background job: ``@app.job(retries=5, timeout=300, queue="default")``,
+        then ``fn.enqueue(...)``. See :mod:`pyweb.jobs`."""
+        from .jobs import job
+        return job(fn, **options) if fn is not None else job(**options)
+
+    def cron(self, expr, **options):
+        """Run the decorated function on a cron schedule: ``@app.cron("0 3 * * *", tz="Europe/London")``."""
+        from .jobs import cron
+        return cron(expr, **options)
+
+    def every(self, **options):
+        """Run the decorated function at a fixed interval: ``@app.every(minutes=5)``."""
+        from .jobs import every
+        return every(**options)
 
     def use_auth(self, db=None, **options):
         """Accounts and sign-in: see :mod:`pyweb.authkit`. Returns the kit (``auth.user()`` ...)."""

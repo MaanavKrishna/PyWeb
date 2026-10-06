@@ -52,6 +52,7 @@ DOCS = [
     ("20-ai-apps.md", "ai-apps", "Building AI apps", "Server"),
     ("09-data.md", "data", "Data & databases", "Server"),
     ("23-forms.md", "forms", "Forms & uploads", "Server"),
+    ("24-jobs.md", "jobs", "Background jobs", "Server"),
     ("10-auth.md", "auth", "Authentication", "Server"),
     ("11-testing.md", "testing", "Testing", "Ship"),
     ("12-deployment.md", "deployment", "Deployment", "Ship"),

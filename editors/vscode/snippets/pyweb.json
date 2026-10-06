@@ -142,5 +142,87 @@
       "def on_unmount():",
       "    ${2:pass}$0"
     ]
+  },
+  "Model": {
+    "prefix": "model",
+    "description": "A database table (migrate with pyweb db diff)",
+    "body": [
+      "class ${1:Post}(Model):",
+      "    ${2:title}: str = Field(min=${3:1}, max=${4:120})",
+      "    $0"
+    ]
+  },
+  "Relation": {
+    "prefix": "fk",
+    "description": "A foreign key to another Model",
+    "body": [
+      "${1:author}: ${2:User} = Field(readonly=True)$0"
+    ]
+  },
+  "Form page": {
+    "prefix": "formpage",
+    "description": "A page with a <Form> that saves a Model",
+    "body": [
+      "@server(login=True)",
+      "def save_${1:post}(${1:post}: ${2:Post}):",
+      "    ${1:post}.save()",
+      "    return ${1:post}",
+      "",
+      "",
+      "@app.page(\"/${1:post}s/new\", login=True)",
+      "def New${2:Post}():",
+      "    <Form action={save_${1:post}} redirect=\"/${1:post}s/{id}\">",
+      "        <Input name=\"${3:title}\" />",
+      "        <Submit>Save</Submit>",
+      "    </Form>$0"
+    ]
+  },
+  "Live list page": {
+    "prefix": "livepage",
+    "description": "A page whose rows update by themselves",
+    "body": [
+      "@app.page(\"/${1:posts}\")",
+      "def ${2:Posts}():",
+      "    rows = ${3:Post}.query().order(\"-id\").limit(${4:50}).live()",
+      "    <ul>",
+      "        for row in rows:",
+      "            <li>{row[\"${5:title}\"]}</li>",
+      "    </ul>$0"
+    ]
+  },
+  "Background job": {
+    "prefix": "job",
+    "description": "A durable background job",
+    "body": [
+      "@app.job(retries=${1:5})",
+      "def ${2:send_receipt}(${3:order_id}: int):",
+      "    ${0:pass}",
+      "",
+      "# ${2:send_receipt}.enqueue(order.id)  # runs after the request's writes commit"
+    ]
+  },
+  "Schedule": {
+    "prefix": "cron",
+    "description": "Run a function on a schedule",
+    "body": [
+      "@app.cron(\"${1:0 3 * * *}\", tz=\"${2:UTC}\")",
+      "def ${3:nightly}():",
+      "    ${0:pass}"
+    ]
+  },
+  "Row policy": {
+    "prefix": "policy",
+    "description": "Each user sees and changes only their rows",
+    "body": [
+      "${1:Note}.policy(read=lambda user: ${1:Note}.owner_id == (user.id if user else -1),",
+      "            write=lambda user, row: user is not None and row.owner_id == user.id)$0"
+    ]
+  },
+  "Auth": {
+    "prefix": "useauth",
+    "description": "Accounts, sign-in pages and /admin",
+    "body": [
+      "auth = app.use_auth(${1:providers=[\"github\"]})$0"
+    ]
   }
 }

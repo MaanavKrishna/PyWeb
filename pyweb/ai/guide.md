@@ -430,8 +430,10 @@ def Todos():
 
 ## 13. Workflow for agents
 
-1. Start from a template: `pyweb new NAME --template todo` (or the
-   `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, auth, chat, ai-chat.
+1. Start from a template: `pyweb new NAME --template saas` (or the
+   `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, saas
+   (accounts, Models, forms, jobs, admin: the best start for a product),
+   auth, chat, ai-chat.
 2. Edit `app.pyweb`. After every edit run `pyweb check app.pyweb`
    (MCP: `pyweb_check`) and fix errors by line number.
 3. Need a JavaScript library? `pyweb add NAME` (MCP: `pyweb_packages`).
@@ -440,9 +442,14 @@ def Todos():
 4. Verify behaviour: list pages, layouts and parameters (`pyweb_routes`),
    render pages (`pyweb_render`) and call server functions (`pyweb_call`). See the page and try interactions in a real
    browser with `pyweb_screenshot` (steps: click, fill, press, ...).
-5. Test: new apps include `test_app.py` (`pyweb.testing.TestClient`); add
+5. Data: after changing a Model, `pyweb db diff` then `pyweb db upgrade`
+   (MCP: `pyweb_migrations`). Look at tables and rows with
+   `pyweb_db_schema` / `pyweb_db_query` (read-only), at jobs with
+   `pyweb_jobs`, and at each request's SQL with `pyweb_requests`.
+6. Test: new apps include `test_app.py` (`pyweb.testing.TestClient`); add
    tests for what you change and run `pytest` (MCP: `pyweb_test`).
-6. Ship: `pyweb build app.pyweb --out dist --production` then
-   `pyweb serve dist` (set `PYWEB_AUTH_SECRET` in production).
+   `client.login("ann@example.com", roles=["admin"])` signs a test in.
+7. Ship: `pyweb deploy compose` (or docker, k8s, fly, render, railway)
+   writes everything and explains it; never hand-write Dockerfiles.
 
 Full docs: https://maanavkrishna.github.io/PyWeb/

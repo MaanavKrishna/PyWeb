@@ -1,7 +1,7 @@
 {
   "name": "pyweb",
   "displayName": "PyWeb",
-  "description": "PyWeb (.pyweb) support: highlighting, errors as you type, hover that shows what runs in the browser or on the server, completion, go to definition, tag closing, Emmet, and commands to create and run apps.",
+  "description": "PyWeb (.pyweb) support: highlighting, errors as you type, hover that shows what runs in the browser or on the server, completion for Models, queries and forms, N+1 and migration warnings with a one-click fix, go to definition, tag closing, Emmet, and commands to create and run apps.",
   "version": "0.4.4",
   "publisher": "maanavkrishna",
   "license": "MIT",
@@ -80,6 +80,16 @@
       {
         "command": "pyweb.check",
         "title": "Check App",
+        "category": "PyWeb"
+      },
+      {
+        "command": "pyweb.makeMigration",
+        "title": "Create Migration from Model Changes",
+        "category": "PyWeb"
+      },
+      {
+        "command": "pyweb.upgradeDatabase",
+        "title": "Apply Migrations (dev database)",
         "category": "PyWeb"
       },
       {

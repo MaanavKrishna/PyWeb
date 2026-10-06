@@ -204,3 +204,146 @@ def test_seeds_see_the_apps_models(tmp_path, capsys):
     assert sqlite3.connect(tmp_path / "s.db").execute("SELECT COUNT(*) FROM fruits").fetchone()[0] == 2
     with pytest.raises(LookupError, match="no Model named 'Nope'"):
         M.model("Nope")
+
+
+# ------------------------------------------------------------------- MCP
+
+def test_mcp_data_tools(tmp_path, monkeypatch):
+    from pyweb import mcp
+    scaffold(str(tmp_path / "team"), template="saas")
+    monkeypatch.chdir(tmp_path / "team")
+    monkeypatch.setattr(mcp, "APPS", mcp._Apps())
+    p = {"path": "app.pyweb"}
+    schema = mcp.tool_db_schema(p)
+    project = next(m for m in schema["models"] if m["model"] == "Project")
+    owner = next(f for f in project["fields"] if f["name"] == "owner_id")
+    assert owner["references"] == "User" and owner["readonly"] and project["policy"]
+    assert "projects" in schema["tables"] and schema["drift"] == []
+
+    client = mcp.APPS.client("app.pyweb")
+    client.login("ann@example.com")
+    made = client.rpc("create_project", project={"name": "Docs"})
+    got = mcp.tool_db_query({**p, "sql": "SELECT name FROM projects WHERE id = ?", "params": [made["id"]]})
+    assert got == {"columns": ["name"], "rows": [["Docs"]], "truncated": False}
+    users = mcp.tool_db_query({**p, "sql": "SELECT email, password_hash FROM users"})
+    assert users["rows"] == [["ann@example.com", "[redacted]"]]
+    assert mcp.tool_db_query({**p, "sql": "SELECT * FROM tasks", "limit": 1})["truncated"] is False
+    for bad in ("DELETE FROM users", "SELECT 1; DROP TABLE users", "UPDATE users SET name = 'x'",
+                "WITH gone AS (DELETE FROM users RETURNING *) SELECT * FROM gone", "PRAGMA writable_schema = 1"):
+        with pytest.raises(ValueError, match="read-only"):
+            mcp.tool_db_query({**p, "sql": bad})
+    assert mcp.tool_db_query({**p, "sql": "SELECT count(*) FROM users WHERE name = 'drop table'"})["rows"] == [[0]]
+
+    jobs_ = mcp.tool_jobs(p)
+    assert jobs_["counts"] == {"queued": 1} and jobs_["jobs"][0]["name"] == "welcome_tasks"
+    assert mcp.tool_jobs({**p, "run": True}) == {"ran": 1}
+    reqs = mcp.tool_requests({"limit": 5})["requests"]
+    assert reqs[-1]["route"] == "rpc:create_project" and reqs[-1]["events"][0]["kind"] == "job"
+
+    status = mcp.tool_migrations(p)
+    assert status["migrations"] == [{"label": "0001_initial", "applied": True}]
+    app = (tmp_path / "team" / "app.pyweb")
+    app.write_text(app.read_text().replace('    done: bool = False\n', '    done: bool = False\n    notes: str = ""\n'))
+    diff = mcp.tool_migrations({**p, "action": "diff", "name": "task notes"})
+    assert diff["written"] and any("notes" in c for c in diff["changes"])
+    assert mcp.tool_migrations({**p, "action": "upgrade"})["applied"] == ["0002_task_notes"]
+    names = {t["name"] for t in mcp.TOOLS}
+    assert {"pyweb_db_schema", "pyweb_db_query", "pyweb_migrations", "pyweb_jobs", "pyweb_requests"} <= names
+
+
+# --------------------------------------------------------------- language server
+
+LSP_APP = '''from pyweb import App, Field, Form, Input, Model, Submit, server
+from pyweb.authkit import User
+
+app = App(database="sqlite:///app.db")
+
+
+class Post(Model):
+    title: str = Field(max=120)
+    author: User = Field(readonly=True)
+    tags: list["Tag"] = []
+
+
+class Tag(Model):
+    name: str = ""
+
+
+@server
+def save(post: Post):
+    post.save()
+
+
+@app.page("/")
+def Home():
+    posts = Post.query().order("-id")
+    shown = Post.query().include("author")
+    <ul>
+        for p in posts:
+            <li>{p.title} by {p.author.name}</li>
+        for p in shown:
+            <li>{p.author.name}</li>
+    </ul>
+    <Form action={save}>
+        <Input name="titel" />
+        <Submit>Save</Submit>
+    </Form>
+'''
+
+
+def test_lsp_knows_the_data():
+    from pyweb import lsp
+    from pyweb import lsp_data as D
+    tree, ui = D.parse(LSP_APP)
+    known = D.models(tree)
+    assert known["Post"]["relations"] == {"author": "User"} and known["Post"]["m2m"] == {"tags": "Tag"}
+    assert "email" in known["User"]["fields"]                   # the auth kit's User, without running it
+    labels = lambda items: [i["label"] for i in items]  # noqa: E731
+    assert {"title", "author", "tags", "where", "include"} <= set(labels(D.complete("    x = Post.", tree)))
+    assert labels(D.complete('    x = Post.where(title="a").include("', tree)) == ["author", "tags"]
+    assert "-title" in labels(D.complete('    x = Post.query().order("-', tree))
+    assert "title=" in labels(D.complete("    x = Post.where(ti", tree))
+    assert "title__icontains=" in labels(D.complete("    x = Post.where(ti", tree))
+    assert "max=" in labels(D.complete("    name: str = Field(m", tree))
+    assert labels(D.form_completion('        <Input name="', tree, ui, 999)) == ["tags", "title"]  # no readonly
+    found = {d.get("code"): d for d in lsp.diagnostics(LSP_APP, "app.pyweb")}
+    assert "has no field 'titel'" in found["unknown-form-field"]["message"]
+    n1 = [d for d in lsp.diagnostics(LSP_APP, "app.pyweb") if d.get("code") == "missing-include"]
+    assert len(n1) == 1 and "include('author')" in n1[0]["message"]        # the included loop is fine
+    assert n1[0]["range"]["start"]["line"] == LSP_APP.splitlines().index(
+        "            <li>{p.title} by {p.author.name}</li>")
+
+
+def test_lsp_migration_lens(tmp_path):
+    from pyweb import lsp
+    app = tmp_path / "app.pyweb"
+    app.write_text(LSP_APP.replace('sqlite:///app.db', f'sqlite:///{tmp_path / "x.db"}'))
+    (tmp_path / "migrations").mkdir()
+    sent = []
+    server = lsp.LanguageServer(sent.append)
+    uri = lsp._uri(str(app))
+    server.dispatch("textDocument/didOpen", {"textDocument": {"uri": uri, "text": app.read_text()}})
+    server.check_migrations(uri, wait=True)
+    lens = server.code_lenses(uri)
+    assert lens and lens[0]["command"]["command"] == "pyweb.makeMigration"
+    assert "needs a migration" in lens[0]["command"]["title"]
+    warned = [d for m in sent if m.get("method") == "textDocument/publishDiagnostics"
+              for d in m["params"]["diagnostics"] if d.get("code") == "migration-needed"]
+    assert warned and "create table posts" in warned[-1]["message"]
+    from pyweb.cli import main
+    main(["db", "diff", "--app", str(app), "--database", "sqlite:///:memory:"])
+    server.check_migrations(uri, wait=True)
+    assert "up to date" in server.code_lenses(uri)[0]["command"]["title"]
+
+
+def test_db_check_for_ci(tmp_path, capsys):
+    from pyweb.cli import main
+    app = tmp_path / "app.pyweb"
+    app.write_text(f'from pyweb import App, Model\napp = App(database="sqlite:///{tmp_path / "c.db"}")\n\n'
+                   'class Note(Model):\n    text: str = ""\n')
+    with pytest.raises(SystemExit) as e:
+        main(["db", "check", "--app", str(app)])
+    assert e.value.code == 1 and "create table notes" in capsys.readouterr().out
+    main(["db", "diff", "--app", str(app), "--database", "sqlite:///:memory:"])
+    main(["db", "check", "--app", str(app)])
+    assert "migrations match the Models" in capsys.readouterr().out

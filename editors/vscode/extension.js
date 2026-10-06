@@ -237,6 +237,29 @@ async function check(uri) {
   if (pyweb) runInTerminal("PyWeb check", path.dirname(file), pyweb.command, [...pyweb.args, "check", path.basename(file)]);
 }
 
+/** Write the migration for Model changes (the code lens above the first Model runs this). */
+async function makeMigration(file) {
+  file = typeof file === "string" ? file : await appFile(file);
+  const pyweb = file && await cli();
+  if (!pyweb) return;
+  const name = await vscode.window.showInputBox({
+    prompt: "Name the migration (optional)", placeHolder: "e.g. add task due dates" });
+  if (name === undefined) return;
+  const args = [...pyweb.args, "db", "diff", "--app", path.basename(file)];
+  if (name.trim()) args.push("--name", name.trim());
+  runInTerminal("PyWeb migration", path.dirname(file), pyweb.command, args);
+}
+
+/** Apply pending migrations to the development database. */
+async function upgradeDatabase(uri) {
+  const file = await appFile(uri);
+  const pyweb = file && await cli();
+  if (pyweb) {
+    runInTerminal("PyWeb migrate", path.dirname(file), pyweb.command,
+      [...pyweb.args, "db", "upgrade", "--app", path.basename(file)]);
+  }
+}
+
 async function newApp() {
   const pyweb = await cli();
   if (!pyweb) return;
@@ -379,6 +402,8 @@ async function activate(context) {
     vscode.commands.registerCommand("pyweb.addPackage", addPackage),
     vscode.commands.registerCommand("pyweb.installPyweb", installPyweb),
     vscode.commands.registerCommand("pyweb.setUpMcp", setUpMcp),
+    vscode.commands.registerCommand("pyweb.makeMigration", makeMigration),
+    vscode.commands.registerCommand("pyweb.upgradeDatabase", upgradeDatabase),
     vscode.workspace.onDidChangeConfiguration(async (e) => {
       if (e.affectsConfiguration("pyweb.server.command")) await restart();
     }),

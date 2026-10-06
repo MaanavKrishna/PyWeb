@@ -476,6 +476,26 @@ def make_migration(db_or_url, models, outdir="migrations", name=None, *, renames
     return paths, plan
 
 
+def missing(models, outdir="migrations"):
+    """What the Models change that no migration does yet: ``[description, ...]`` (empty when up to date).
+
+    Every migration in ``outdir`` is applied to a scratch in-memory database and the result is
+    compared with the Models, so the answer doesn't depend on any real database's state. For CI
+    (``pyweb db check``) and editors.
+    """
+    from . import connect
+    scratch = connect("sqlite:///:memory:")
+    try:
+        if discover(outdir):
+            upgrade(scratch, outdir, contract=True, use_lock=False)
+        plan = S.diff(S.introspect(scratch), S.from_models(models), dialect_of(scratch))
+        return [op.describe() for op in plan.ops] if plan else []
+    finally:
+        close = getattr(scratch, "close", None)
+        if close:
+            close()
+
+
 def _auto_name(plan):
     ops = plan.ops
     if ops and all(isinstance(op, S.CreateTable) for op in ops):

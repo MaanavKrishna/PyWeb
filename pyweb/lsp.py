@@ -14,7 +14,13 @@ and gives editors, for ``.pyweb`` files:
   a module's exports after ``name.``;
 * go to definition for components, server functions and helpers, across
   files;
-* an outline of pages, components and server functions.
+* an outline of pages, components and server functions;
+* data (see :mod:`pyweb.lsp_data`): Model fields and query methods after
+  ``Post.``, keyword fields in ``where(``/``create(``, relations in
+  ``include("``, a ``<Form>``'s fields in ``name="``; errors for form fields
+  the action lacks, warnings for loops that read a relation the query didn't
+  include (N+1), and "the Models changed without a migration" (with a code
+  lens that writes it), checked with ``pyweb db check`` when the file is saved.
 
 The analysis functions are pure (source text in, plain data out) so they
 can be tested without a transport.
@@ -119,6 +125,17 @@ def diagnostics(text, path=None, analysis=None):
         sev = 1 if f["kind"] == "secret-leak" else 2
         out.append({"range": _range(line, text=text), "severity": sev, "source": "pyweb",
                     "code": f["kind"], "message": f["message"]})
+    from . import lsp_data as D
+    tree, ui = D.parse(text, path)
+    if tree is not None:
+        known = D.models(tree)
+        if a.error is None:      # the compiler already reports a bad field; say it once
+            for line, msg in D.form_problems(tree, ui, known):
+                out.append({"range": _range(line - 1, text=text), "severity": 1, "source": "pyweb",
+                            "code": "unknown-form-field", "message": msg})
+        for line, msg in D.n_plus_one(tree, ui, known):
+            out.append({"range": _range(line - 1, text=text), "severity": 2, "source": "pyweb",
+                        "code": "missing-include", "message": msg})
     return out
 
 
@@ -239,10 +256,21 @@ def _open_tag(prefix):
     return m.group(1), attrs
 
 
-def completions(text, path, line, col, analysis=None):
-    """LSP completion items for the position."""
+def completions(text, path, line, col, analysis=None, parsed=None):
+    """LSP completion items for the position (``parsed``: the last ``(tree, ui)`` that parsed)."""
     lines = text.splitlines()
     prefix = lines[line][:col] if 0 <= line < len(lines) else ""
+    from . import lsp_data as D
+    tree, ui = D.parse(text, path)
+    if tree is None and parsed:
+        tree, ui = parsed
+    if tree is not None:
+        known = D.models(tree)
+        found = D.form_completion(prefix, tree, ui, line + 1, known)
+        if found is None:
+            found = D.complete(prefix, tree, known)
+        if found is not None:
+            return found
     if re.search(r"^\s*from\s+pyweb\s+import\s+[\w\s,]*$", prefix):
         return [{"label": n, "kind": 9} for n in PYWEB_EXPORTS]
     if re.search(r"""\bnpm\(\s*["'][^"']*$""", prefix):
@@ -334,15 +362,101 @@ class LanguageServer:
         self.docs = {}       # uri -> text
         self.analyses = {}   # uri -> last Analysis
         self.good = {}       # uri -> last Analysis that compiled (for completion while typing)
+        self.parsed = {}     # uri -> last (tree, ui) that parsed
+        self.migrations = {} # uri -> [missing change, ...] from `pyweb db check` (None: not checked)
+        self._checking = set()
+        self._threads = {}
+        self._requests = 0
 
     def _analyse(self, uri):
+        from . import lsp_data as D
         a = Analysis(self.docs[uri], _path(uri))
         self.analyses[uri] = a
         if a.ok:
             self.good[uri] = a
-        self.send({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
-                   "params": {"uri": uri, "diagnostics": diagnostics(a.text, a.path, a)}})
+        tree, ui = D.parse(a.text, a.path)
+        if tree is not None:
+            self.parsed[uri] = (tree, ui)
+        self._publish(uri, a)
         return a
+
+    def _publish(self, uri, a=None):
+        a = a or self.analyses.get(uri)
+        if a is None:
+            return
+        found = diagnostics(a.text, a.path, a) + self._migration_diagnostics(uri)
+        self.send({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
+                   "params": {"uri": uri, "diagnostics": found}})
+
+    # ------------------------------------------------- migrations out of date
+    def _model_lines(self, uri):
+        from . import lsp_data as D
+        tree = (self.parsed.get(uri) or (None, None))[0]
+        return {} if tree is None else {n: m["line"] for n, m in D.models(tree).items() if m["line"]}
+
+    def _migration_diagnostics(self, uri):
+        missing = self.migrations.get(uri)
+        lines = self._model_lines(uri)
+        if not missing or not lines:
+            return []
+        first = min(lines.values()) - 1
+        text = self.docs.get(uri, "")
+        return [{"range": _range(first, text=text), "severity": 2, "source": "pyweb", "code": "migration-needed",
+                 "message": "The Models changed without a migration:\n" + "\n".join(f"- {m}" for m in missing)
+                            + "\nRun `pyweb db diff` (or use the code lens) to write it."}]
+
+    def check_migrations(self, uri, *, wait=False):
+        """Run ``pyweb db check`` for the app (in the background) when it has a migrations folder."""
+        import subprocess
+        import threading
+        path = _path(uri)
+        if not path or not os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(path)), "migrations")):
+            self.migrations[uri] = None
+            return
+        running = self._threads.get(uri)
+        if running is not None and running.is_alive():
+            if wait:
+                running.join(90)
+            return
+        self._checking.add(uri)
+
+        def run():
+            try:
+                done = subprocess.run([sys.executable, "-m", "pyweb.cli", "db", "check", "--app", path, "--json"],
+                                      cwd=os.path.dirname(os.path.abspath(path)), capture_output=True, text=True,
+                                      timeout=60, env={**os.environ, "PYWEB_WORKER": "0"})
+                last = (done.stdout.strip().splitlines() or ["{}"])[-1]
+                result = json.loads(last) if last.startswith("{") else {}
+                self.migrations[uri] = list(result.get("missing") or []) if "ok" in result else None
+            except Exception:  # noqa: BLE001 - an app that doesn't load yet: say nothing
+                self.migrations[uri] = None
+            finally:
+                self._checking.discard(uri)
+            self._publish(uri)
+            self._requests += 1
+            self.send({"jsonrpc": "2.0", "id": f"pyweb-{self._requests}", "method": "workspace/codeLens/refresh"})
+        thread = threading.Thread(target=run, name="pyweb-db-check", daemon=True)
+        self._threads[uri] = thread
+        thread.start()
+        if wait:
+            thread.join(90)
+
+    def code_lenses(self, uri):
+        lines = self._model_lines(uri)
+        missing = self.migrations.get(uri)
+        if not lines or missing is None:
+            return []
+        lenses = []
+        for name, line in sorted(lines.items(), key=lambda kv: kv[1]):
+            if missing:
+                title = f"$(warning) needs a migration ({len(missing)} change{'s' if len(missing) != 1 else ''}): " \
+                        "Create migration"
+                cmd = {"title": title, "command": "pyweb.makeMigration", "arguments": [_path(uri)]}
+            else:
+                cmd = {"title": "$(check) migrations up to date", "command": ""}
+            lenses.append({"range": _range(line - 1, 0, 0), "command": cmd})
+            break                       # one lens, on the first Model, is enough
+        return lenses
 
     def handle(self, msg):
         method, params, mid = msg.get("method"), msg.get("params") or {}, msg.get("id")
@@ -364,11 +478,13 @@ class LanguageServer:
             return {"capabilities": {
                 "textDocumentSync": {"openClose": True, "change": 1, "save": True},
                 "hoverProvider": True, "definitionProvider": True, "documentSymbolProvider": True,
-                "completionProvider": {"triggerCharacters": ["<", " "]},
+                "completionProvider": {"triggerCharacters": ["<", " ", ".", "(", "\"", "'", ","]},
+                "codeLensProvider": {"resolveProvider": False},
             }, "serverInfo": {"name": "pyweb", "version": __version__}}
         if method == "textDocument/didOpen":
             self.docs[uri] = doc.get("text", "")
             self._analyse(uri)
+            self.check_migrations(uri)
         elif method == "textDocument/didChange":
             changes = p.get("contentChanges") or []
             if changes:
@@ -377,8 +493,11 @@ class LanguageServer:
         elif method == "textDocument/didSave":
             if uri in self.docs:
                 self._analyse(uri)
+                self.check_migrations(uri)
+        elif method == "textDocument/codeLens":
+            return self.code_lenses(uri)
         elif method == "textDocument/didClose":
-            for table in (self.docs, self.analyses, self.good):
+            for table in (self.docs, self.analyses, self.good, self.parsed, self.migrations):
                 table.pop(uri, None)
             self.send({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
                        "params": {"uri": uri, "diagnostics": []}})
@@ -388,7 +507,8 @@ class LanguageServer:
             return {"contents": {"kind": "markdown", "value": text}} if text else None
         elif method == "textDocument/completion":
             a = self.good.get(uri)
-            return completions(self.docs.get(uri, ""), _path(uri), pos["line"], pos["character"], a)
+            return completions(self.docs.get(uri, ""), _path(uri), pos["line"], pos["character"], a,
+                               self.parsed.get(uri))
         elif method == "textDocument/definition":
             found = definition(self.docs.get(uri, ""), _path(uri), pos["line"], pos["character"],
                                self.good.get(uri))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -553,6 +554,20 @@ def cmd_db(args):
                     else _migrate.new_migration(migrations, args.name))
             print(f"created {path}")
             return
+        if action == "check":
+            # Do the migrations cover the Models? (no database needed; for CI and editors)
+            _, migrations, models = _db_context(args, need_models=True)
+            gaps = _migrate.missing(models, migrations)
+            if args.json:
+                print(json.dumps({"ok": not gaps, "missing": gaps, "migrations": migrations}))
+            elif gaps:
+                print("the Models changed without a migration:\n" + "\n".join(f"  - {g}" for g in gaps)
+                      + "\nrun `pyweb db diff` to write it")
+            else:
+                print("migrations match the Models")
+            if gaps:
+                raise SystemExit(1)
+            return
         db, migrations, models = _db_context(args, need_models=action == "diff")
         if action == "upgrade":
             if args.db_action == "migrate" and not args.contract:
@@ -707,7 +722,8 @@ def main(argv=None):
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 8000), help="default: $PORT, else 8000"); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db", help="migrations and seed data")
-    p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "new", "adopt", "squash", "seed", "migrate", "rollback"])
+    p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "check", "new", "adopt", "squash", "seed", "migrate",
+                                              "rollback"])
     p.add_argument("--app", default=None, help="the app whose Models to use (default: ./app.pyweb)")
     p.add_argument("--database", default=None, help="database URL (default: DATABASE_URL, then the app's)")
     p.add_argument("--migrations", default=None, help="migrations folder (default: next to the app)")
@@ -721,6 +737,7 @@ def main(argv=None):
     p.add_argument("--rename-table", action="append", default=[], metavar="OLD=NEW", help="diff: a table rename")
     p.add_argument("--allow-destructive", action="store_true", help="diff: put removals in the same migration")
     p.add_argument("--seeds", default=None, help="seed: the seeds file (default: seeds.py next to the app)")
+    p.add_argument("--json", action="store_true", help="check: machine-readable output")
     p.set_defaults(fn=cmd_db)
     p = sub.add_parser("worker", help="run background jobs and schedules")
     p.add_argument("app", nargs="?", default="app.pyweb", help="app.pyweb or a built dist/ (default: app.pyweb)")

@@ -204,6 +204,23 @@ Work towards 0.5.0: production apps in one Python file.
   page sets with `values=`); `label=""` hides a field's label but keeps it as
   the input's `aria-label`.
 
+- **Editors know your data.** The language server completes Model fields
+  and query methods after `Post.`, keyword fields in `where(`/`create(`,
+  relations in `include("`, columns in `order("`, `Field(` options and a
+  `<Form>`'s fields in `name="`. It flags form fields the action doesn't
+  have, loops that read a relation their query didn't `include()` (N+1,
+  pointing at the line), and Models changed without a migration, with a
+  code lens that writes it. VS Code: "Create Migration from Model Changes",
+  "Apply Migrations", and snippets for Models, relations, form pages, live
+  pages, jobs, schedules, row policies and `use_auth`.
+- **`pyweb db check`**: fails (exit 1) when the Models changed without a
+  migration, by applying the migrations to a scratch database, so it needs
+  no real database. For CI.
+- **MCP tools for data**: `pyweb_db_schema` (Models, tables, drift),
+  `pyweb_db_query` (read-only SQL, capped, secrets redacted),
+  `pyweb_migrations` (status, diff, upgrade), `pyweb_jobs` (list, retry,
+  run) and `pyweb_requests` (each request's SQL, N+1 warnings, jobs, errors).
+
 ### Changed
 - `PYWEB_MAX_CONNECTIONS` defaults to 10,000 per process (it was 256 for
   the threaded server, which `pyweb serve --app module:factory` still uses).

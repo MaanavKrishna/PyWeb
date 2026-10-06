@@ -43,8 +43,11 @@ INSTRUCTIONS = (
     "errors by line number using the hints. Use pyweb_inspect to see what runs in the browser "
     "vs the server, pyweb_routes for the map of pages and layouts, pyweb_render / pyweb_call to verify "
     "behaviour, pyweb_screenshot to see the page and try interactions in a real browser, and pyweb_test "
-    "to run the app's tests. Use pyweb_packages to add npm libraries (no Node.js). For pages that must "
-    "follow the database use live(); for AI replies use a @server function that yields."
+    "to run the app's tests. Use pyweb_packages to add npm libraries (no Node.js). For data: pyweb_db_schema "
+    "shows the Models and tables, pyweb_db_query runs read-only SQL, pyweb_migrations writes and applies "
+    "migrations after you change a Model, pyweb_jobs inspects and runs background jobs, and pyweb_requests "
+    "shows each request's SQL (fix 'N+1' warnings with include()). For pages that must follow the database "
+    "use .live(); for AI replies use a @server function that yields."
 )
 
 ERROR_HINTS = [
@@ -622,6 +625,155 @@ def tool_test(args):
     return res
 
 
+# ------------------------------------------------------------- data, jobs, requests
+
+_READ_ONLY_SQL = re.compile(r"^\s*(select|with|explain|values|show|describe|pragma\s+table_info)\b", re.I)
+_WRITE_WORDS = re.compile(r"\b(insert|update|delete|replace|merge|drop|alter|create|truncate|grant|revoke|attach|"
+                          r"detach|vacuum|reindex|copy|call|do|lock|set|begin|commit|rollback|savepoint)\b", re.I)
+
+
+def _app_db(args):
+    """``(client, database, models)`` for the app at ``path`` (loaded like the dev server loads it)."""
+    from . import models as M
+    client = APPS.client(args.get("path") or "app.pyweb")
+    db = M.database()
+    if db is None:
+        raise RuntimeError("this app has no database (App(database=...) or DATABASE_URL)")
+    return client, db, client.site.app.models()
+
+
+def _model_info(model):
+    meta = model._meta
+    fields = []
+    for name, f in meta.fields.items():
+        rel = getattr(f, "relation", None)
+        entry = {"name": name, "type": f.kind, "nullable": bool(f.nullable)}
+        for key in ("unique", "private", "readonly"):
+            if getattr(f, key, False):
+                entry[key] = True
+        if rel is not None:
+            entry["references"] = rel.to.__name__ if isinstance(rel.to, type) else str(rel.to)
+        rules = getattr(f, "rules", None)
+        if rules is not None:
+            entry.update({k: v for k, v in rules.schema().items() if k not in ("kind",)})
+        fields.append(entry)
+    return {"model": model.__name__, "table": meta.table, "fields": fields,
+            "many_to_many": sorted(meta.m2m), "reverse": sorted(meta.reverse),
+            "policy": bool(getattr(model, "__pyweb_policy__", None) or getattr(meta, "policy", None))}
+
+
+def tool_db_schema(args):
+    from .db import schema as S
+    from .db.dialect import dialect_of
+    _, db, models = _app_db(args)
+    live = S.introspect(db)
+    plan = S.diff(live, S.from_models(models), dialect_of(db))
+    return {"dialect": dialect_of(db).name,
+            "models": [_model_info(m) for m in models],
+            "tables": {name: [{"name": c.name, "type": c.kind, "nullable": c.nullable,
+                               **({"primary_key": True} if c.primary_key else {}),
+                               **({"references": c.references[0]} if c.references else {})}
+                              for c in t.columns] for name, t in sorted(live.items())},
+            "drift": [op.describe() for op in plan.ops] if plan else [],
+            "hint": "drift lists what `pyweb db diff` would write" if plan else "the database matches the Models"}
+
+
+def tool_db_query(args):
+    """Read-only SQL with a row cap; any write is refused and everything is rolled back."""
+    sql = (args.get("sql") or "").strip().rstrip(";").strip()
+    if not sql:
+        raise ValueError("pass sql, e.g. SELECT * FROM users LIMIT 10")
+    if ";" in sql or not _READ_ONLY_SQL.match(sql) or _WRITE_WORDS.search(re.sub(r"'(?:[^']|'')*'", "''", sql)):
+        raise ValueError("only single read-only statements (SELECT, WITH, EXPLAIN) are allowed here; "
+                         "change data through the app's server functions or a migration")
+    limit = max(1, min(int(args.get("limit") or 100), 1000))
+    _, db, _ = _app_db(args)
+    from .db.dialect import dialect_of
+    dialect = dialect_of(db).name
+    params = tuple(args.get("params") or ())
+
+    class _Rollback(Exception):
+        pass
+    out = {}
+    try:
+        with db.transaction():
+            if dialect == "postgres":
+                db.execute("SET TRANSACTION READ ONLY")
+            elif dialect == "sqlite":
+                db.execute("PRAGMA query_only = ON")
+            try:
+                capped = sql
+                if re.match(r"\s*(select|with|values)\b", sql, re.I):
+                    # The database stops at the cap, rather than sending a huge table here.
+                    capped = f"SELECT * FROM ({sql}) pw_q LIMIT {limit + 1}"
+                res = db.execute(capped, params)
+                cols, rows = list(res.columns), res.fetchall()[:limit + 1]
+            finally:
+                if dialect == "sqlite":
+                    db.execute("PRAGMA query_only = OFF")
+            from .ssr import to_jsonable
+            out = {"columns": cols, "rows": [to_jsonable(list(r)) for r in rows[:limit]],
+                   "truncated": len(rows) > limit}
+            raise _Rollback()
+    except _Rollback:
+        pass
+    from .telemetry.logs import redact
+    out["rows"] = [[redact(v, c) for v, c in zip(row, out["columns"])] for row in out["rows"]]
+    return out
+
+
+def tool_migrations(args):
+    from .db import migrate as MG
+    client, db, models = _app_db(args)
+    folder = client.site.app.migrations_dir or os.path.join(
+        os.path.dirname(os.path.abspath(args.get("path") or "app.pyweb")), "migrations")
+    action = args.get("action") or "status"
+    if action == "status":
+        return {"folder": folder, "migrations": [{"label": label, "applied": done}
+                                                 for label, done in MG.status(db, folder)],
+                "report": MG.report(db, folder, models)}
+    if action == "diff":
+        paths, plan = MG.make_migration(db, models, folder, args.get("name"),
+                                        allow_destructive=bool(args.get("allow_destructive")))
+        return {"written": paths, "changes": [op.describe() for op in plan.ops] if plan else [],
+                "notes": list(getattr(plan, "notes", []) or []),
+                "next": "review the file, then call pyweb_migrations with action=upgrade" if paths else
+                        "no changes: the database matches the Models"}
+    if action == "upgrade":
+        return {"applied": MG.upgrade(db, folder, contract=bool(args.get("contract")))}
+    raise ValueError("action must be status, diff or upgrade")
+
+
+def tool_jobs(args):
+    from .jobs import core
+    APPS.client(args.get("path") or "app.pyweb")
+    store = core.backend()
+    if args.get("retry"):
+        return {"retried": {job_id: bool(store.retry(job_id)) for job_id in args["retry"]}}
+    if args.get("run"):
+        from .jobs import Worker
+        return {"ran": Worker(concurrency=2, schedule=False).drain(timeout=float(args.get("timeout") or 30))}
+    rows = store.list(state=args.get("state"), limit=int(args.get("limit") or 30), name=args.get("name"))
+    for r in rows:
+        if r.get("last_error"):
+            r["last_error"] = r["last_error"][-1500:]
+    return {"store": type(store).__name__,
+            "counts": store.counts() if hasattr(store, "counts") else None,
+            "jobs": [{k: v for k, v in r.items() if k != "trace"} for r in rows],
+            "registered": sorted(core.REGISTRY)}
+
+
+def tool_requests(args):
+    """What the last requests (pyweb_render / pyweb_call) did: SQL, N+1 warnings, spans, jobs, errors."""
+    from . import telemetry
+    items = list(telemetry.RECENT)[-int(args.get("limit") or 10):]
+    if not args.get("sql", True):
+        items = [{k: v for k, v in r.items() if k != "sql"} for r in items]
+    return {"requests": items,
+            "hint": "requests appear here after pyweb_render or pyweb_call; a warning about a repeated "
+                    "query means add .include(...) or move the query out of the loop"}
+
+
 PATH_PROP = {"type": "string", "description": "Path to the .pyweb file (default: app.pyweb)."}
 SOURCE_PROP = {"type": "string", "description": "Source text to check instead of reading `path`."}
 
@@ -635,8 +787,10 @@ TOOLS = [
     {"name": "pyweb_new_app", "fn": tool_new_app, "readOnly": False,
      "description": "Create a new PyWeb app directory from a template, including AGENTS.md/CLAUDE.md instructions "
                     "for AI agents. Templates: blank, counter, todo (components, lists), blog (SQL database, "
-                    "server functions, route params), auth (sessions, passwords), chat (live updates), ai-chat "
-                    "(streaming AI replies with Stop and Markdown). New apps include test_app.py.",
+                    "server functions, route params), saas (accounts, Models with policies, forms, live pages, "
+                    "jobs, admin, migrations: the best start for a real product), auth (sessions, passwords), "
+                    "chat (live updates), ai-chat (streaming AI replies with Stop and Markdown). New apps "
+                    "include test_app.py.",
      "inputSchema": {"type": "object", "properties": {
          "directory": {"type": "string", "description": "Directory to create (default: current directory)."},
          "template": {"type": "string", "enum": list(TEMPLATES)},
@@ -702,6 +856,40 @@ TOOLS = [
                                                                   "or wait time in ms."}}}},
          "width": {"type": "integer"}, "height": {"type": "integer"},
          "full_page": {"type": "boolean"}, "max_chars": {"type": "integer"}}}},
+    {"name": "pyweb_db_schema", "fn": tool_db_schema, "readOnly": True,
+     "description": "The app's data: every Model (fields, types, rules, relations, policies) and the tables "
+                    "the database has now, plus drift (what `pyweb db diff` would change). Read this before "
+                    "writing queries or changing Models.",
+     "inputSchema": {"type": "object", "properties": {"path": PATH_PROP}}},
+    {"name": "pyweb_db_query", "fn": tool_db_query, "readOnly": True,
+     "description": "Run one read-only SQL statement (SELECT/WITH/EXPLAIN) on the app's database and get rows "
+                    "back (capped; secrets redacted). Writes are refused and the transaction is rolled back.",
+     "inputSchema": {"type": "object", "required": ["sql"], "properties": {
+         "path": PATH_PROP, "sql": {"type": "string"},
+         "params": {"type": "array", "description": "Values for ? / %s placeholders."},
+         "limit": {"type": "integer", "description": "Rows to return (default 100, max 1000)."}}}},
+    {"name": "pyweb_migrations", "fn": tool_migrations, "readOnly": False,
+     "description": "Migrations: status (applied/pending and drift), diff (write the next migration from the "
+                    "Models; removals go to a separate contract step) or upgrade (apply pending ones to the "
+                    "development database).",
+     "inputSchema": {"type": "object", "properties": {
+         "path": PATH_PROP, "action": {"type": "string", "enum": ["status", "diff", "upgrade"]},
+         "name": {"type": "string", "description": "diff: the migration's name."},
+         "allow_destructive": {"type": "boolean"}, "contract": {"type": "boolean"}}}},
+    {"name": "pyweb_jobs", "fn": tool_jobs, "readOnly": False,
+     "description": "Background jobs: list them (filter by state/name) with errors and counts, retry failed "
+                    "ones by id, or run what's queued now (run=true) to test a job end to end.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": PATH_PROP, "state": {"type": "string", "enum": ["queued", "running", "done", "failed", "dead"]},
+         "name": {"type": "string"}, "limit": {"type": "integer"},
+         "retry": {"type": "array", "items": {"type": "string"}}, "run": {"type": "boolean"},
+         "timeout": {"type": "number"}}}},
+    {"name": "pyweb_requests", "fn": tool_requests, "readOnly": True,
+     "description": "What the app did for the last requests made with pyweb_render/pyweb_call: time, status, "
+                    "every SQL statement, N+1 warnings, spans, jobs queued, emails and errors (the dev toolbar's "
+                    "data). Use it to find slow or repeated queries.",
+     "inputSchema": {"type": "object", "properties": {
+         "limit": {"type": "integer"}, "sql": {"type": "boolean", "description": "Include SQL (default true)."}}}},
     {"name": "pyweb_test", "fn": tool_test, "readOnly": False,
      "description": "Run the app's tests with pytest (test_*.py files using pyweb.testing.TestClient) and return "
                     "pass/fail counts, the summary line and the failure output.",

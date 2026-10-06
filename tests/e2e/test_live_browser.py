@@ -210,10 +210,10 @@ def test_values_derived_from_a_live_model_query_follow_it(browser, tmp_path, mon
             page.goto(url)
             ready(page)
         expect(b.locator("#title")).to_have_text("Orders (0 waiting)")
-        for item in ("Book", "Pen"):
+        for n, item in enumerate(("Book", "Pen"), 1):
             a.fill("#item", item)
             a.press("#item", "Enter")
-        expect(b.locator("#orders li")).to_have_count(2)
+            expect(b.locator("#orders li")).to_have_count(n)  # one order at a time: the handler clears the input
         expect(b.locator("#title")).to_have_text("Orders (2 waiting)")
         b.locator(".ship").first.click()                  # ships Pen (newest first)
         expect(a.locator("#orders li").first).to_have_text("Pen: shipped")

@@ -17,3 +17,10 @@ node_modules/
 
 # databases created by running the examples
 examples/**/*.db
+tests/deploy/Dockerfile
+tests/deploy/.dockerignore
+tests/deploy/.env*
+tests/deploy/compose.yaml
+tests/deploy/Caddyfile
+tests/deploy/*.whl
+tests/deploy/wheels/

@@ -1,0 +1,41 @@
+import os
+from pyweb import App, server
+from pyweb.models import Model, Field
+
+app = App(database="sqlite:///shop.db", title="Shop")
+
+
+class Order(Model):
+    item: str = Field(max=60)
+    status: str = "new"
+    shipped_by: str = ""
+
+
+@app.job(retries=3)
+def ship(order_id: int):
+    order = Order.get(order_id)
+    order.status = "shipped"
+    order.shipped_by = os.environ.get("HOSTNAME", "?")
+    order.save()
+
+
+@server
+def place(item: str) -> dict:
+    order = Order.create(item=item)
+    ship.enqueue(order.id)
+    return {"id": order.id, "web": os.environ.get("HOSTNAME", "?")}
+
+
+@server
+def status(order_id: int) -> dict:
+    o = Order.get(order_id)
+    return {"status": o.status, "by": o.shipped_by}
+
+
+@app.page("/")
+def Home():
+    orders = Order.query().order("-id").limit(20).live()
+    <ul id="orders">
+        for o in orders:
+            <li>{o["item"]}: {o["status"]}</li>
+    </ul>

@@ -327,8 +327,10 @@ class ManyToMany(Relation):
     def __set__(self, obj, values):
         lst = self.__get__(obj)
         if obj.pk is None or not obj.__dict__.get("_persisted"):
-            obj.__dict__.setdefault("_pending_m2m", {})[self.name] = list(values)
-            lst._replace(list(values))
+            values = list(values)
+            obj.__dict__.setdefault("_pending_m2m", {})[self.name] = values
+            if not any(isinstance(v, (int, str)) for v in values):
+                lst._replace(values)
         else:
             lst.set(values)
 
@@ -614,7 +616,12 @@ class RelatedList(list):
         else:
             rel.clear(self._owner)
             rel.add(self._owner, items)
-        self._replace(items)
+        if all(hasattr(i, "_meta") or hasattr(type(i), "_meta") for i in items) and \
+                not any(isinstance(i, (int, str)) for i in items):
+            self._replace(items)
+        else:                                  # set by id: load the rows when read
+            list.clear(self)
+            self._loaded = False
 
     def create(self, **values):
         """Create a related row and link it: ``user.posts.create(title="Hi")``."""

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import threading
 
 from .rpc import RPCError
 
@@ -127,41 +126,15 @@ class TestClient:
 
 @contextlib.contextmanager
 def serve(app="app.pyweb", *, host="127.0.0.1", **site_kwargs):
-    """Serve ``app`` (a `.pyweb` file or built dist) on a free port; yield its base URL."""
-    import http.server
-
+    """Serve ``app`` (a `.pyweb` file or built dist) on a free port with PyWeb's server; yield its base URL."""
     from .hosting import Site
-    from .serve import ThreadedServer
+    from .net.server import Running
 
-    site = Site(app, **site_kwargs)
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def _go(self, method, body=b""):
-            from .hosting import write_http
-            status, headers, raw = site.respond(method, self.path, dict(self.headers), body)
-            write_http(self, status, headers, raw, head=method == "HEAD")
-
-        def do_GET(self):  # noqa: N802
-            self._go("GET")
-
-        def do_HEAD(self):  # noqa: N802
-            self._go("HEAD")
-
-        def do_POST(self):  # noqa: N802
-            n = int(self.headers.get("Content-Length", 0) or 0)
-            self._go("POST", self.rfile.read(n) if n else b"")
-
-        def log_message(self, *a):
-            pass
-
-    httpd = ThreadedServer((host, 0), Handler)
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
+    running = Running(Site(app, **site_kwargs), host=host)
     try:
-        yield f"http://{host}:{httpd.server_address[1]}"
+        yield running.url
     finally:
-        httpd.shutdown()
-        httpd.server_close()
+        running.stop(timeout=2.0)
 
 
 class Factory:

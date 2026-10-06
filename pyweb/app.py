@@ -11,7 +11,8 @@ class App:
     ``image`` are the defaults for pages that don't set their own.
     ``client_nav=False`` makes links do full page loads.
     ``database`` (a URL like ``"sqlite:///app.db"`` or a database object) is
-    where Models keep their rows; without it, ``DATABASE_URL`` is used.
+    where Models keep their rows. ``DATABASE_URL``, when set, wins over a URL
+    given here: develop on SQLite, deploy on Postgres, same code.
     """
 
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
@@ -31,6 +32,7 @@ class App:
             from pyweb import models as _models
             if isinstance(database, str):
                 from pyweb.db import connect
+                database = _os.environ.get("DATABASE_URL") or database   # the environment decides in production
                 replica = _os.environ.get("DATABASE_REPLICA_URL") or None
                 database = connect(database, replica=replica)
             self.db = _models.use_database(database)

@@ -53,6 +53,7 @@ DOCS = [
     ("09-data.md", "data", "Data & databases", "Server"),
     ("23-forms.md", "forms", "Forms & uploads", "Server"),
     ("24-jobs.md", "jobs", "Background jobs", "Server"),
+    ("25-scaling.md", "scaling", "Scaling & deploying", "Ship"),
     ("10-auth.md", "auth", "Authentication", "Server"),
     ("11-testing.md", "testing", "Testing", "Ship"),
     ("12-deployment.md", "deployment", "Deployment", "Ship"),

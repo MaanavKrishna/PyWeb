@@ -238,7 +238,7 @@ class Registry:
             if got != integrity:
                 raise PackageError(f"checksum mismatch for {meta['name']}@{meta['version']}; refusing to install")
         elif dist.get("shasum"):
-            if hashlib.sha1(data).hexdigest() != dist["shasum"]:  # noqa: S324 - npm's legacy checksum
+            if hashlib.sha1(data, usedforsecurity=False).hexdigest() != dist["shasum"]:  # noqa: S324 - npm's legacy checksum
                 raise PackageError(f"checksum mismatch for {meta['name']}@{meta['version']}; refusing to install")
         files = {}
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:

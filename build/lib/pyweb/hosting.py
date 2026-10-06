@@ -135,8 +135,9 @@ def gzip_response(headers, body, accept_encoding):
 def shutdown(timeout=10.0, logger=None):
     """Wind down cleanly: end live connections, then let background jobs finish."""
     from . import jobs, realtime
-    closed = realtime.close_streams()
-    unfinished = jobs._default_queue.shutdown(timeout)
+    from .net import live
+    closed = realtime.close_streams() + live.close_all()
+    unfinished = jobs._default_queue.shutdown(timeout) + jobs.stop_all(timeout)
     if logger is not None:
         logger.info(f"shutdown: closed {closed} live connection(s); {unfinished} job(s) unfinished")
     return closed, unfinished
@@ -198,6 +199,14 @@ def write_http(handler, status, headers, body, *, head=False):
         body.close()
 
 
+def body_limit(path, max_body):
+    """The largest body accepted for ``path``: form submits may carry files (``PYWEB_MAX_UPLOAD``)."""
+    if (path or "").startswith("/__pyweb/form/"):
+        from .config import settings
+        return max(max_body, settings().max_upload)
+    return max_body
+
+
 class Site:
     """Serve an app from source (``app.pyweb``) or from a built ``dist/``."""
 
@@ -236,7 +245,7 @@ class Site:
             self.source_mode = True
             self.app = LoadedApp(target)
             self._index_memory_js()
-        self.server = Server(app=self.app, debug=debug, max_body=max_body, **server_kwargs)
+        self.server = Server(app=self.app, debug=debug, max_body=max_body, **self.server_kwargs)
 
     def _index_memory_js(self):
         units = {**self.app.compiled.get("layouts", {}), **self.app.compiled["pages"]}
@@ -255,13 +264,22 @@ class Site:
         rel, _, q = rel.partition("?")
         query = query or q
         if self.source_mode:
-            if rel in ("runtime.js", "markdown.js"):
+            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js"):
                 with open(os.path.join(os.path.dirname(RUNTIME_PATH), rel), "rb") as fh:
                     return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], fh.read()
             if rel in self.memory_js:
                 return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], \
                     self.memory_js[rel].encode()
         return static_file(self.static_dirs, rel, query=query, if_none_match=if_none_match, dev=self.source_mode)
+
+    # --------------------------------------------------------- websocket
+    def websocket(self, path, headers, client=None):
+        """A :class:`pyweb.net.live.LiveSession` for ``/__pyweb/ws``, or ``(status, message)``."""
+        from .net import live
+        if path.split("?")[0] != "/__pyweb/ws":
+            return 404, "no WebSocket here"
+        req = Request("GET", path, headers, b"", client=client)
+        return live.open_session(self.server, req, {k.lower(): v for k, v in (headers or {}).items()})
 
     # ----------------------------------------------------------- request
     def respond(self, method, path, headers, body=b"", client=None):
@@ -274,7 +292,7 @@ class Site:
             query = path.partition("?")[2]
             inm = next((v for k, v in (headers or {}).items() if k.lower() == "if-none-match"), None)
             out = self.static(bare[len("/static/"):], query=query, if_none_match=inm)
-        elif len(body or b"") > self.max_body:
+        elif len(body or b"") > body_limit(bare, self.max_body):
             out = (413, [("Content-Type", "application/json")],
                    json.dumps({"error": {"code": "http_413", "message": "request body too large"}}).encode())
         else:

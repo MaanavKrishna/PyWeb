@@ -130,7 +130,15 @@ class LoadedApp:
         from .db import migrate as _mig
         if self.migrations_dir and _mig.discover(self.migrations_dir):
             return _mig.upgrade(db, self.migrations_dir)
-        M._auto.setdefault(db, set())
+        made = M._auto.setdefault(db, set())
+        try:
+            # Make the tables now, not on first use inside a request: a request that fails would
+            # roll the CREATE back with its own writes.
+            models = self.models()
+            M.ensure_tables(db, models)
+            made.update(m._meta.table for m in M._closure(models))
+        except Exception:  # noqa: BLE001 - e.g. the database is still starting; tables come on first use
+            pass
         return []
 
     def migrate(self, *, contract=False):
@@ -152,6 +160,8 @@ class LoadedApp:
         mod = types.ModuleType(module_name or f"pyweb_app_{stem}")
         mod.__file__ = os.path.abspath(filename) if self.path else filename
         mod.__dict__["__pyweb_ui__"] = lambda *_a: None
+        from .forms import specs as _form_specs
+        mod.__dict__["__pw_form_specs__"] = _form_specs
         app_dir = os.path.dirname(os.path.abspath(self.path)) if self.path else None
         if app_dir and app_dir not in sys.path:
             sys.path.insert(0, app_dir)

@@ -268,13 +268,39 @@ def _signature(secret, payload):
     return hmac.new(key, b"pyweb-feed:" + payload.encode(), hashlib.sha256).hexdigest()[:40]
 
 
-def make_feed(name, secret, *, since=0, max_age=FEED_MAX_AGE, now=None):
-    """A signed token for channel ``name``. Streams start after message ``since``."""
+def make_feed(name, secret, *, since=0, max_age=FEED_MAX_AGE, now=None, sid=None):
+    """A signed token for channel ``name``. Streams start after message ``since``.
+
+    ``sid`` ties the feed to a signed-in session: only that session, while it's
+    valid, can listen (so a feed copied from a signed-in page is useless to
+    anyone else, and stops working when the session ends).
+    """
     import json as _json
     import time as _time
     expires = int((now or _time.time()) + max_age)
-    payload = _b64(_json.dumps([str(name), expires, int(since)], separators=(",", ":")).encode())
+    fields = [str(name), expires, int(since)] + ([sid] if sid else [])
+    payload = _b64(_json.dumps(fields, separators=(",", ":")).encode())
     return f"{payload}.{_signature(secret, payload)}"
+
+
+def feed_session(token):
+    """The session id a feed is tied to, or None (call after :func:`read_feed` accepted it)."""
+    import json as _json
+    try:
+        fields = _json.loads(_unb64((token or "").partition(".")[0]))
+    except (ValueError, TypeError):
+        return None
+    return fields[3] if isinstance(fields, list) and len(fields) > 3 else None
+
+
+def current_sid():
+    """The signed-in session's id while handling a request, else None."""
+    try:
+        from .context import session
+        payload = session.user()
+    except RuntimeError:
+        return None
+    return (payload or {}).get("sid")
 
 
 def read_feed(token, secret, *, now=None):
@@ -288,7 +314,7 @@ def read_feed(token, secret, *, now=None):
     if not payload or not any_valid(candidates, lambda k: hmac.compare_digest(sig, _signature(k, payload))):
         return None
     try:
-        name, expires, since = _json.loads(_unb64(payload))
+        name, expires, since, *_sid = _json.loads(_unb64(payload))
     except (ValueError, TypeError):
         return None
     if expires < (now or _time.time()):
@@ -310,7 +336,7 @@ def channel(name: str) -> str:
     the page rendered (even before the browser connects) are delivered.
     """
     from .context import sign_key
-    return make_feed(name, sign_key("feed"), since=_default_bus.position(name))
+    return make_feed(name, sign_key("feed"), since=_default_bus.position(name), sid=current_sid())
 
 
 def publish(name: str, data=None) -> int:

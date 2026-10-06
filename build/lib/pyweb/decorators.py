@@ -17,8 +17,18 @@ def component(fn=None):
     return _mark(fn, component=True) if fn else lambda t: _mark(t, component=True)
 
 
-def server(fn=None):
-    return _mark(fn, location="server") if fn else lambda t: _mark(t, location="server")
+def server(fn=None, *, login=False, roles=(), fresh=None):
+    """Make a function callable from the browser. ``login=True`` requires a signed-in
+    user (401), ``roles=[...]`` those roles too (403), ``fresh=600`` a sign-in in
+    the last 600 seconds."""
+    guard = {"login": True, "roles": list(roles), "fresh": fresh} if (login or roles or fresh) else None
+
+    def apply(target):
+        _mark(target, location="server")
+        if guard is not None:
+            target.__pyweb_guard__ = guard
+        return target
+    return apply(fn) if fn is not None else apply
 
 
 

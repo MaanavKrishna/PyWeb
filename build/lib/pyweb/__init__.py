@@ -4,6 +4,7 @@ from .app import App
 from .models import Email, Field, Model
 from .rules import ValidationError
 from .db import atomic
+from .auth import current_user
 from . import auth, cache, jobs, realtime, security, observability, forms, testing
 from . import sync, deploy, uploads, lsp, livetable
 from . import browser as browser_api
@@ -12,9 +13,11 @@ from .jobs import task
 from .context import NotFound, head, redirect, request, session
 from .rpc import RPCError
 from .decorators import component, edge, server, worker
+from .rooms import join, presence
 from .realtime import channel, publish, subscribe
 from .packages import npm
 from .markdown import Markdown
+from .forms import Checkbox, FileInput, Form, FormError, Input, Select, Submit, Textarea, UploadedFile
 from .livedata import live
 
 __all__ = [
@@ -30,16 +33,28 @@ __all__ = [
     "server",
     "worker",
     "channel",
+    "join",
+    "presence",
     "publish",
     "subscribe",
     "npm",
     "Markdown",
+    "Form",
+    "Input",
+    "Textarea",
+    "Select",
+    "Checkbox",
+    "FileInput",
+    "Submit",
+    "FormError",
+    "UploadedFile",
     "live",
     "Email",
     "Field",
     "Model",
     "ValidationError",
     "atomic",
+    "current_user",
     "task",
     "auth",
     "cache",

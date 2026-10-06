@@ -185,6 +185,30 @@ def Item(item_id: int):
   `@validates("field")`; `ValidationError` reaches the browser as field errors.
   Each `@server` call is one transaction. Schema changes: `pyweb db diff`
   then `pyweb db upgrade` (`--contract` later for removals).
+- Forms: `@server def save_post(post: Post): post.save(); return post`, then
+  `<Form action={save_post} redirect="/posts/{id}"><Input name="title" />`
+  `<Textarea name="body" /><Select name="tags" /><Checkbox name="draft" />`
+  `<Submit>Save</Submit></Form>` (import the tags from `pyweb`). Rules come
+  from the Model; don't add your own JS validation. `values={post}` edits a
+  row. Raise `ValidationError({"field": "message"})` for your own checks.
+  Uploads: `photo: str | None = File(types=["image/*"])` + `<FileInput name="photo" />`.
+- Accounts: `auth = app.use_auth()` (after `App(database=...)`) gives
+  `/signup`, `/login`, `/logout`, `/reset`, `/account` and `/admin`; don't
+  write your own login pages, password hashing or reset emails. Guard with
+  `@app.page("/x", login=True, roles=["admin"], fresh=600)`, the same on
+  `@app.layout` and `@server(login=True)`. In code: `user = auth.user()`
+  (a `User` row or None), `auth.require("admin")`, `auth.set_roles(user, [...])`.
+  Scope rows per user with `Note.policy(read=lambda user: Note.owner_id == user.id,
+  write=lambda user, note: note.owner_id == user.id)` instead of checking
+  ownership by hand in every function. OAuth: `use_auth(providers=["github"])`
+  plus `PYWEB_OAUTH_GITHUB_ID/SECRET`. Production needs `PYWEB_ORIGIN` and
+  `PYWEB_MAIL_URL`; while developing, emailed links are printed in the terminal.
+- Background work: `@app.job(retries=5)` then `fn.enqueue(id)` from a
+  server function (queued only if its writes commit; pass ids, not objects;
+  make jobs safe to run twice). Schedules: `@app.cron("0 3 * * *")`,
+  `@app.every(minutes=5)`. Don't start threads or `time.sleep` loops in
+  server code, and don't send email inline: `pyweb.mail.send` already goes
+  through the job queue.
 - Raw SQL when needed: `from pyweb.db import connect; db = connect(url)`;
   `db.execute("select ... where id = ?", (x,)).dicts()`; always use `?`
   parameters; `with db.transaction(): ...`.
@@ -196,7 +220,14 @@ def Item(item_id: int):
   page `feed = channel("room:1")` (runs on the server); in `on_mount`
   `subscribe(feed, handler)`, where `handler(message)` assigns page
   variables. Import all three from `pyweb`. Never poll with
-  `setInterval` when `publish` fits.
+  `setInterval` when `publish` fits. For lists from the database prefer
+  `rows = live(db, sql)` or `Post.where(...).live()` in the page: it
+  updates by itself, sending only changed rows (keep an `id` column).
+- Presence: `room = presence("doc:1")` in the page, then in `on_mount`
+  `me = join(room, {"name": name}, on_members)`; `me.cast(data)` reaches
+  the others' `on_cast(data, sender)`. Trust `member["user"]`, not names.
+- Serve with `pyweb serve dist --workers 4` (PyWeb's own server: WebSockets,
+  keep-alive, graceful SIGTERM); set `PYWEB_REDIS_URL` with several workers.
 
 ## 7. Python that compiles to the browser
 

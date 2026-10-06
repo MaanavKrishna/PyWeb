@@ -87,7 +87,7 @@ class Table:
 def index_name(prefix, table, columns):
     name = f"{prefix}_{table}_{'_'.join(columns)}"
     if len(name) > 60:
-        name = name[:50] + "_" + hashlib.sha1(name.encode()).hexdigest()[:8]
+        name = name[:50] + "_" + hashlib.sha1(name.encode(), usedforsecurity=False).hexdigest()[:8]
     return name
 
 

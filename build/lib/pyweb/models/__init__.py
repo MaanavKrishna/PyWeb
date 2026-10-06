@@ -44,7 +44,7 @@ from typing import ClassVar
 
 from pyweb.rules import ValidationError
 
-from .fields import (JSON, MISSING, URL, BlobField, Email, Field, Index, IntegerField, RealField, Slug, Text,
+from .fields import (JSON, MISSING, URL, BlobField, Email, Field, File, Index, IntegerField, RealField, Slug, Text,
                      TextField, kind_for, unwrap_optional)
 from .query import Avg, Count, Max, Min, Order, Page, QuerySet, Sum
 from .relations import (ForeignKey, ManyToMany, ManyToManyReverse, NotIncluded, OneToOne, RelatedList, Relation,
@@ -52,7 +52,7 @@ from .relations import (ForeignKey, ManyToMany, ManyToManyReverse, NotIncluded, 
 
 log = logging.getLogger("pyweb.models")
 
-__all__ = ["Model", "Field", "Index", "ForeignKey", "OneToOne", "ManyToMany", "NotIncluded", "RelatedList",
+__all__ = ["Model", "Field", "File", "Index", "Policy", "system", "ForeignKey", "OneToOne", "ManyToMany", "NotIncluded", "RelatedList",
            "QuerySet", "Page", "Count", "Sum", "Avg", "Min", "Max", "Email", "URL", "Slug", "Text", "JSON",
            "ValidationError", "validates", "use_database", "database", "ensure_tables", "all_models",
            "IntegerField", "TextField", "RealField", "BlobField"]
@@ -185,6 +185,66 @@ def resolve_model(ref, owner=None):
             return found
         raise LookupError(f"no Model named {name!r}" + (f" (used by {owner.__name__})" if owner else ""))
     raise TypeError(f"{ref!r} is not a Model")
+
+
+# --------------------------------------------------------------- row policies
+
+_SYSTEM = __import__("contextvars").ContextVar("pyweb_models_system", default=False)
+
+
+class system:
+    """``with system():`` runs code as the system: row policies don't apply
+    (admin pages, jobs, migrations, scripts)."""
+
+    def __enter__(self):
+        self._token = _SYSTEM.set(True)
+        return self
+
+    def __exit__(self, *exc):
+        _SYSTEM.reset(self._token)
+        return False
+
+
+class Policy:
+    """Who may read and change a Model's rows (see :meth:`Model.policy`)."""
+
+    def __init__(self, read=None, write=None):
+        self.read = read
+        self.write = write
+
+    @staticmethod
+    def _viewer():
+        from pyweb.context import current
+        try:
+            current()
+        except RuntimeError:
+            return False, None           # not handling a request: scripts, jobs, tests
+        from pyweb.auth import current_user
+        return True, current_user()
+
+    def read_condition(self, model):
+        if self.read is None or _SYSTEM.get():
+            return None
+        active, user = self._viewer()
+        if not active:
+            return None
+        found = self.read(user)
+        if found is True or found is None:
+            return None
+        if found is False:
+            from .query import Raw
+            return Raw("1 = 0")
+        return found
+
+    def check_write(self, row, action):
+        if self.write is None or _SYSTEM.get():
+            return
+        active, user = self._viewer()
+        if not active:
+            return
+        if not self.write(user, row):
+            from pyweb.rpc import Code, RPCError
+            raise RPCError(Code.FORBIDDEN, f"you can't {action} this {type(row).__name__.lower()}")
 
 
 # ------------------------------------------------------------------ validators
@@ -624,6 +684,20 @@ class Model(metaclass=ModelMeta):
 
     # -- database --------------------------------------------------------------
     @classmethod
+    def policy(cls, *, read=None, write=None):
+        """Who may see and change rows, checked on every query and save while handling a request::
+
+            Post.policy(read=lambda user: (Post.published == True) | (Post.author == user),
+                        write=lambda user, post: user is not None and post.author_id == user.id)
+
+        ``read(user)`` returns a condition (or True / False); ``write(user, row)``
+        returns whether ``row`` may be saved or deleted. ``user`` is the signed-in
+        user (or None). Code outside requests, and ``with system():`` blocks, skip policies.
+        """
+        cls._meta.policy = Policy(read, write)
+        return cls._meta.policy
+
+    @classmethod
     def bind(cls, db):
         """Store this Model's rows in ``db`` (overrides the default database)."""
         cls._db = db
@@ -640,11 +714,15 @@ class Model(metaclass=ModelMeta):
             if table not in made:
                 with _lock:
                     if table not in made:
-                        tables = [m._meta.table for m in _closure([cls])]
+                        tables = [m._meta.table for m in _closure([cls])] + [m.table for m in cls._meta.m2m.values()]
                         ensure_tables(db, [cls])
-                        made.update(tables)
-                        for m in cls._meta.m2m.values():
-                            made.add(m.table)
+                        # Inside a transaction the CREATE only counts once it commits (a rollback undoes it,
+                        # and the next use creates the table again).
+                        mark = getattr(db, "after_commit", None)
+                        if mark is not None:
+                            mark(lambda: made.update(tables))
+                        else:
+                            made.update(tables)
         return db
 
     def _db_used(self):
@@ -858,6 +936,8 @@ class Model(metaclass=ModelMeta):
                 state[f.name] = f.initial()
         if validate:
             self.validate()
+        if meta.policy is not None:
+            meta.policy.check_write(self, "change" if state.get("_persisted") else "create")
         pk = meta.pk
         q = d.quote
         try:
@@ -905,6 +985,8 @@ class Model(metaclass=ModelMeta):
         meta = type(self)._meta
         if self.pk is None:
             raise ValueError("cannot delete a model without a primary key value")
+        if meta.policy is not None:
+            meta.policy.check_write(self, "delete")
         db = self._db_used()
         d = dialect_of(db)
         db.execute(f"DELETE FROM {d.quote(meta.table)} WHERE {d.quote(meta.pk.column)} = ?",

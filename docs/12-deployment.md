@@ -77,9 +77,21 @@ cd dist && docker build -t myapp . && docker run -p 8000:8000 -e PYWEB_AUTH_SECR
 
 The generated `Dockerfile` installs the matching PyWeb version, installs
 `requirements.txt` if you put one in `dist/`, and runs `pyweb serve`
-with a health check. `pyweb deploy --target docker|compose|k8s` writes
-deployment files for an app directory (Kubernetes manifests include
-liveness and readiness probes on `/healthz`).
+with a health check.
+
+### `pyweb deploy`: from app to production in one command
+
+```bash
+pyweb deploy fly          # or: docker | compose | k8s | render | railway
+```
+
+`pyweb deploy` reads your app (database, jobs, live updates, sign-in,
+uploads, migrations), decides how it should run, prints that plan with
+the reason for every decision, and writes the files for the target: a
+multi-stage, non-root image plus `compose.yaml`, Kubernetes manifests,
+`fly.toml`, a Render blueprint or Railway config, with a web process, a
+worker for background jobs, and migrations once per deploy. See
+[Scaling and deploying](25-scaling.md).
 
 ## Production checklist
 
@@ -95,7 +107,12 @@ It exits non-zero and says what to fix when:
 - `PYWEB_TRUST_PROXY` isn't set (needed behind a reverse proxy);
 - `WEB_CONCURRENCY` is above 1 without `PYWEB_REDIS_URL`;
 - the app uses `RedisCache(allow_pickle=True)`;
-- npm package files don't match `pyweb.lock`.
+- npm package files don't match `pyweb.lock`;
+- the app has Models but no `migrations/`, or migrations not yet applied
+  to `DATABASE_URL`;
+- the app sends email without `PYWEB_MAIL_URL`, or accepts uploads
+  without object storage (`PYWEB_STORAGE=s3://...`);
+- `PYWEB_WORKER=0` while the app has jobs (a reminder to run `pyweb worker`).
 
 ## Behind a reverse proxy
 
@@ -113,15 +130,15 @@ Only set it when clients can't reach PyWeb directly; otherwise anyone
 could send a made-up `X-Forwarded-For`. Without it, rate limits treat
 all your visitors as one.
 
-**The easy way:** `pyweb deploy --target compose --domain example.com`
-writes a `compose.yaml` and `Caddyfile` with [Caddy](https://caddyserver.com)
-in front. Caddy fetches the HTTPS certificate by itself, the app is
-only reachable through it, and both settings above are already set:
+**The easy way:** `pyweb deploy compose --domain example.com` writes a
+`compose.yaml` and `Caddyfile` with [Caddy](https://caddyserver.com) in
+front. Caddy fetches the HTTPS certificate by itself, the app is only
+reachable through it, and both settings above are already set:
 
 ```bash
-pyweb deploy --target compose --domain example.com --out deploy
-cp -r app.pyweb static deploy/ && cd deploy
-PYWEB_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))") docker compose up -d
+pyweb deploy compose --domain example.com --out .
+cp .env.example .env        # fill in PYWEB_AUTH_SECRET (and DB_PASSWORD if it asks)
+docker compose up -d --build
 ```
 
 Point the domain's DNS at the server first. `pyweb deploy --target k8s`

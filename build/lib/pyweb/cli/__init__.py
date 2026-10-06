@@ -91,12 +91,51 @@ def production_problems(source="", app_dir="."):
     if workers > 1 and not s.redis_url:
         out.append(f"WEB_CONCURRENCY={workers} without PYWEB_REDIS_URL: each worker would keep its own rate "
                    "limits and live updates (connect Redis to share them)")
+    if "use_auth(" in (source or "") and not os.environ.get("PYWEB_ORIGIN") and "origin=" not in source:
+        out.append("app.use_auth() without PYWEB_ORIGIN: password-reset and sign-in emails need the site's "
+                   "public address (set PYWEB_ORIGIN=https://example.com)")
     if "allow_pickle=True" in (source or ""):
         out.append("RedisCache(allow_pickle=True): anyone who can write to Redis could run code; store JSON")
+    out += _topology_problems(app_dir)
     if os.path.isfile(os.path.join(app_dir, "pyweb.lock")):
         from pyweb import packages
         for path, why in packages.verify(app_dir)[:5]:
             out.append(f"{path}: {why} (run pyweb add to reinstall)")
+    return out
+
+
+def _topology_problems(app_dir):
+    """What the app uses that production must provide (from the same reading `pyweb deploy` does)."""
+    from pyweb.deploy import read_app
+    app_file = os.path.join(app_dir, "app.pyweb")
+    if not os.path.isfile(app_file):
+        return []
+    facts = read_app(app_file)
+    out = []
+    env = os.environ
+    if facts.models and not facts.migrations:
+        out.append("the app has Models but no migrations/: production doesn't create tables by itself "
+                   "(run `pyweb db diff --name initial` and commit migrations/)")
+    if facts.migrations and (env.get("DATABASE_URL") or facts.database in ("sqlite", "postgres", "mysql")):
+        try:
+            from pyweb.db import connect
+            from pyweb.db import migrate as _mig
+            url = env.get("DATABASE_URL")
+            if url:
+                waiting = _mig.pending(connect(url), os.path.join(app_dir, "migrations"))
+                if waiting:
+                    out.append(f"{len(waiting)} migration(s) not applied yet: "
+                               f"{', '.join(m.label for m in waiting[:5])} (pyweb db upgrade)")
+        except Exception as exc:  # noqa: BLE001 - can't reach the database from here: say so, don't fail
+            out.append(f"couldn't check migrations against DATABASE_URL ({type(exc).__name__}: {exc})")
+    if facts.mail and not env.get("PYWEB_MAIL_URL"):
+        out.append("the app sends email (sign-in links, resets) but PYWEB_MAIL_URL isn't set")
+    if facts.uploads and not env.get("PYWEB_STORAGE", "").startswith("s3"):
+        out.append("the app accepts uploads but PYWEB_STORAGE isn't object storage (s3://...): files on a "
+                   "container's disk vanish on redeploy (ignore this with a persistent volume)")
+    if facts.jobs and env.get("PYWEB_WORKER", "1").strip().lower() in ("0", "false", "no", "off"):
+        out.append("PYWEB_WORKER=0: make sure `pyweb worker` processes run, or queued jobs will wait forever "
+                   "(this is a reminder; ignore it if they do)")
     return out
 
 
@@ -181,57 +220,56 @@ def _dev_load(state, Site):
     state.version += 1
 
 
+class _DevSite:
+    """What the server serves while developing: the current build of the app, the error
+    overlay while it doesn't compile, and a script that reloads pages after a change."""
+
+    def __init__(self, state):
+        self.state = state
+
+    @property
+    def max_body(self):
+        site = self.state.site
+        return site.max_body if site is not None else 1_048_576
+
+    def respond(self, method, path, headers, body=b"", client=None):
+        state = self.state
+        if path == "/__pyweb/dev/version":
+            return 200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], str(state.version).encode()
+        if state.error is not None or state.site is None:
+            return 500, [("Content-Type", "text/html; charset=utf-8")], _error_overlay(state.error, state.path).encode()
+        status, hdrs, raw = state.site.respond(method, path, headers, body, client=client)
+        ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
+        if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
+            raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
+            hdrs = [(k, v) for k, v in hdrs if k.lower() != "content-length"]
+        return status, hdrs, raw
+
+    def websocket(self, path, headers, client=None):
+        if self.state.site is None:
+            return 503, "the app doesn't compile"
+        return self.state.site.websocket(path, headers, client)
+
+
 def cmd_dev(args):
     """Development server: compile on save, live reload, error overlay."""
     from pyweb.hosting import Site
-    from pyweb.serve import LimitedHandler, ThreadedServer
+    from pyweb.net import server as _net
 
     state = _DevState(args.file)
     _dev_load(state, Site)
     if state.error is not None:
         print(f"error: {state.error}", file=sys.stderr)
-
-    class H(LimitedHandler):
-        def _send(self, status, headers, body):
-            from pyweb.hosting import write_http
-            write_http(self, status, headers, body, head=self.command == "HEAD")
-
-        def _handle(self, method, body=b""):
-            if self.path == "/__pyweb/dev/version":
-                return self._send(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")],
-                                  str(state.version).encode())
-            if state.error is not None or state.site is None:
-                html = _error_overlay(state.error, state.path).encode()
-                return self._send(500, [("Content-Type", "text/html; charset=utf-8")], html)
-            status, headers, raw = state.site.respond(method, self.path, dict(self.headers), body,
-                                                      client=self.client_address[0])
-            ctype = next((v for k, v in headers if k.lower() == "content-type"), "")
-            if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
-                raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
-            return self._send(status, headers, raw)
-
-        def do_GET(self):  # noqa: N802
-            self._handle("GET")
-
-        def do_HEAD(self):  # noqa: N802
-            self._handle("HEAD")
-
-        def do_POST(self):  # noqa: N802
-            try:
-                n = int(self.headers.get("Content-Length", 0) or 0)
-            except ValueError:
-                n = 0
-            self._handle("POST", self.rfile.read(n) if n else b"")
-
-        def log_message(self, *a):
-            pass
-
     host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
-    with ThreadedServer((host, args.port), H) as httpd:
-        print(f"PyWeb dev server: http://{host}:{httpd.server_address[1]}/  ({args.file})", flush=True)
+
+    def ready(port):
+        print(f"PyWeb dev server: http://{host}:{port}/  ({args.file})", flush=True)
         if not getattr(args, "no_reload", False):
             _watch_and_reload(state, Site)
-        httpd.serve_forever()
+        from pyweb import jobs
+        jobs.start_embedded()
+
+    _net.run(lambda: _DevSite(state), host=host, port=args.port, ready=ready)
 
 
 def _watch_and_reload(state, Site):
@@ -283,21 +321,39 @@ def _watch_and_reload(state, Site):
 
 
 def cmd_serve(args):
-    from pyweb import serve as _serve
     from pyweb import observability as _obs
-    httpd = _serve.serve(args.dir, host=args.host, port=args.port,
-                         app_factory=args.app, logger=_obs.Logger("serve"),
-                         migrate=getattr(args, "migrate", False))
-    addr = httpd.server_address
-    print(f"serving {args.dir} on http://{addr[0]}:{addr[1]} "
-          f"(health: /healthz)")
-    _serve.install_shutdown_handlers(httpd, logger=_obs.Logger("serve"))
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        httpd.server_close()
+    logger = _obs.Logger("serve")
+    if args.app:                                     # legacy: RPC implementations from a factory
+        from pyweb import serve as _serve
+        httpd = _serve.serve(args.dir, host=args.host, port=args.port, app_factory=args.app, logger=logger)
+        _serve.install_shutdown_handlers(httpd, logger=logger)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            httpd.server_close()
+        return
+    from pyweb import config
+    from pyweb.net import server as _net
+    config.startup()
+    if getattr(args, "migrate", False) or os.environ.get("PYWEB_MIGRATE_ON_START", "").lower() in ("1", "true", "yes"):
+        import subprocess
+        app_file = os.path.join(args.dir, "app.pyweb")
+        done = subprocess.run([sys.executable, "-m", "pyweb.cli", "db", "upgrade", "--app", app_file], check=False)
+        if done.returncode != 0:
+            raise SystemExit("migrations failed; not serving")
+    workers = args.workers or int(os.environ.get("WEB_CONCURRENCY", "1") or 1)
+
+    def make_site():
+        from pyweb.hosting import Site
+        return Site(args.dir, max_body=1_048_576)
+
+    def ready(port):
+        print(f"serving {args.dir} on http://{args.host}:{port} with {workers} worker(s) (health: /healthz)",
+              flush=True)
+
+    _net.run(make_site, host=args.host, port=args.port, workers=workers, logger=logger, ready=ready)
 
 
 def cmd_test(args):
@@ -405,6 +461,66 @@ def _db_context(args, *, need_models=False):
     return db, migrations, models
 
 
+def _load_app_for_jobs(target):
+    """Load the app (a ``.pyweb`` file or a built ``dist/``) so its database and jobs are set up."""
+    from pyweb import config
+    from pyweb.app_loader import LoadedApp
+    config.startup()
+    path = os.path.join(target, "app.pyweb") if os.path.isdir(target) else target
+    if not os.path.isfile(path):
+        raise SystemExit(f"no app at {target} (pass app.pyweb or a built dist/)")
+    return LoadedApp(path)
+
+
+def cmd_worker(args):
+    """Run jobs (and schedules) until SIGTERM/SIGINT; then finish or hand back running jobs."""
+    import signal
+    import threading
+    from pyweb import jobs
+    _load_app_for_jobs(args.app)
+    queues = [q.strip() for q in (args.queues or "").split(",") if q.strip()] or None
+    worker = jobs.Worker(queues=queues, concurrency=args.concurrency, schedule=not args.no_schedule)
+    stop = threading.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, lambda *_: stop.set())
+        except ValueError:
+            pass
+    worker.start()
+    print(f"worker {worker.name}: queues {', '.join(worker.queue_names())}, concurrency {worker.concurrency}"
+          f", store {type(jobs.backend()).__name__}", flush=True)
+    while not stop.wait(0.5):
+        pass
+    left = worker.stop(args.grace)
+    print(f"worker stopped ({left} job(s) handed back)", flush=True)
+
+
+def cmd_jobs(args):
+    import datetime as _dt
+    from pyweb import jobs
+    _load_app_for_jobs(args.app)
+    store = jobs.backend()
+    if args.jobs_action == "list":
+        rows = store.list(state=args.state, limit=args.limit, name=args.name)
+        for r in rows:
+            when = _dt.datetime.fromtimestamp(r["created_at"] or 0).strftime("%Y-%m-%d %H:%M:%S")
+            err = (r["last_error"] or "").splitlines()[0][:60] if r["last_error"] else ""
+            print(f"{r['id']}  {r['state']:<7} {r['attempts']}/{r['max_attempts']}  {when}  {r['name']}  {err}")
+        if not rows:
+            print("no jobs")
+    elif args.jobs_action == "retry":
+        if not args.ids:
+            raise SystemExit("pyweb jobs retry ID [ID ...]")
+        for job_id in args.ids:
+            print(f"{job_id}: " + ("queued again" if store.retry(job_id) else "not found, or not failed/dead"))
+    elif args.jobs_action == "purge":
+        import time as _time
+        print(f"removed {store.purge(_time.time() - args.days * 86400)} finished job(s)")
+    elif args.jobs_action == "run":
+        n = jobs.Worker(concurrency=4, schedule=False).drain(timeout=args.timeout)
+        print(f"ran {n} job(s)")
+
+
 def cmd_db(args):
     from pyweb.db import migrate as _migrate
     action = {"migrate": "upgrade", "rollback": "downgrade"}.get(args.db_action, args.db_action)
@@ -463,33 +579,37 @@ def cmd_db(args):
 
 
 def cmd_deploy(args):
+    """Read the app, decide the production topology, and write files for the target."""
     from pyweb import deploy as D
-    if not getattr(args, "db_url", None) and not os.environ.get("DATABASE_URL"):
-        print("note: no DATABASE_URL set (--db-url or env); "
-              "deploying with embedded sqlite", file=sys.stderr)
-    target = (args.target or "docker").lower()
+    target = (args.target_pos or args.target or "docker").lower()
+    if target == "docker" and args.compose:
+        target = "compose"
+    if target not in D.TARGETS:
+        raise SystemExit(f"unknown deploy target {target!r} (one of: {', '.join(D.TARGETS)})")
+    facts = D.read_app(args.file)
+    with_services = [s for s in (args.with_services or "").split(",") if s.strip()]
+    plan = D.make_plan(target, facts, replicas=args.replicas, db=args.db, domain=args.domain or "",
+                       region=args.region or "", with_services=with_services, port=args.port,
+                       image=args.image or "", name=args.name or (None if args.app == "pyweb" else args.app),
+                       processes=args.processes, database_url=args.db_url or None)
+    print(D.describe(plan))
+    if args.plan:
+        return
+    if args.check and plan.warnings:
+        raise SystemExit(1)
     outdir = args.out
     os.makedirs(outdir, exist_ok=True)
-    files = {}
-    if target in ("docker", "compose"):
-        files["Dockerfile"] = D.dockerfile(port=args.port)
-        domain = getattr(args, "domain", "") or ""
-        if target == "compose" or args.compose:
-            files["compose.yaml"] = D.compose(port=args.port, db_url=args.db_url or "", domain=domain)
-            if domain:
-                files["Caddyfile"] = D.caddyfile(domain, port=args.port)
-    elif target == "k8s":
-        files["k8s.yaml"] = D.k8s_manifest(app=args.app, image=args.image, port=args.port)
-    else:
-        raise SystemExit(f"unknown deploy target {args.target!r} (docker|compose|k8s)")
+    files = D.files_for(plan)
     for name, body in files.items():
         with open(os.path.join(outdir, name), "w") as fh:
             fh.write(body)
-    print(f"deploy {target} -> {outdir}/ ({', '.join(files)})")
-    if "Caddyfile" in files:
-        print(f"next: point {args.domain}'s DNS at this server, then run\n"
-              f"  PYWEB_AUTH_SECRET=... docker compose up -d   (in {outdir}/, with your app files)\n"
-              "Caddy gets the HTTPS certificate by itself; the app is only reachable through it.")
+    print(f"\nwrote {outdir}/: {', '.join(files)}")
+    steps = D.next_steps(plan)
+    if steps:
+        print("\nNext:" + "".join(f"\n  {s}" for s in steps))
+        if outdir not in (".", ""):
+            print(f"  (the build context is your app folder: copy these files next to {facts.app_file}, "
+                  f"or run from there with --out .)")
 
 
 def cmd_dts(args):
@@ -555,7 +675,7 @@ def main(argv=None):
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
-    p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 8000), help="default: $PORT, else 8000"); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db", help="migrations and seed data")
     p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "new", "adopt", "squash", "seed", "migrate", "rollback"])
     p.add_argument("--app", default=None, help="the app whose Models to use (default: ./app.pyweb)")
@@ -572,6 +692,23 @@ def main(argv=None):
     p.add_argument("--allow-destructive", action="store_true", help="diff: put removals in the same migration")
     p.add_argument("--seeds", default=None, help="seed: the seeds file (default: seeds.py next to the app)")
     p.set_defaults(fn=cmd_db)
+    p = sub.add_parser("worker", help="run background jobs and schedules")
+    p.add_argument("app", nargs="?", default="app.pyweb", help="app.pyweb or a built dist/ (default: app.pyweb)")
+    p.add_argument("--queues", default="", help="comma-separated queues (default: every queue the app uses)")
+    p.add_argument("--concurrency", type=int, default=8, help="jobs at once (default 8)")
+    p.add_argument("--grace", type=float, default=25.0, help="seconds running jobs get on shutdown")
+    p.add_argument("--no-schedule", action="store_true", help="don't queue cron/interval jobs from this worker")
+    p.set_defaults(fn=cmd_worker)
+    p = sub.add_parser("jobs", help="list, retry and purge background jobs")
+    p.add_argument("jobs_action", choices=["list", "retry", "purge", "run"])
+    p.add_argument("ids", nargs="*", help="retry: job ids")
+    p.add_argument("--app", default="app.pyweb")
+    p.add_argument("--state", choices=["queued", "running", "done", "failed", "dead"], default=None)
+    p.add_argument("--name", default=None)
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--days", type=float, default=7, help="purge: finished more than this many days ago")
+    p.add_argument("--timeout", type=float, default=60, help="run: give up after this many seconds")
+    p.set_defaults(fn=cmd_jobs)
     p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=["blank", "counter", "todo", "blog", "auth", "chat", "ai-chat"], help="starter app"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
@@ -588,15 +725,26 @@ def main(argv=None):
     p.add_argument("packages", nargs="+")
     p.add_argument("--app", default="app.pyweb")
     p.set_defaults(fn=cmd_remove)
-    p = sub.add_parser("deploy")
-    p.add_argument("--target", default="docker")
+    p = sub.add_parser("deploy", help="production files for docker, compose, k8s, fly, render or railway")
+    p.add_argument("target_pos", nargs="?", metavar="TARGET", help="docker | compose | k8s | fly | render | railway")
+    p.add_argument("--target", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--file", default="app.pyweb", help="the app (default: app.pyweb)")
     p.add_argument("--out", default="deploy")
     p.add_argument("--port", type=int, default=8000)
-    p.add_argument("--compose", action="store_true")
-    p.add_argument("--db-url", default="")
-    p.add_argument("--domain", default="", help="compose: put Caddy in front with automatic HTTPS for this domain")
-    p.add_argument("--app", default="pyweb")
-    p.add_argument("--image", default="pyweb:latest")
+    p.add_argument("--replicas", type=int, default=None, help="web machines/containers (default: 1, k8s: 2)")
+    p.add_argument("--processes", type=int, default=None, help="server processes per machine (default 2)")
+    p.add_argument("--db", choices=["sqlite", "postgres", "mysql"], default=None,
+                   help="override the database choice (default: decided from the app and the target)")
+    p.add_argument("--with", dest="with_services", default="", help="also provision: redis, postgres")
+    p.add_argument("--domain", default="", help="the public domain (HTTPS, PYWEB_ORIGIN, Ingress)")
+    p.add_argument("--region", default="", help="fly: primary region")
+    p.add_argument("--name", default="", help="app name (default: the app folder's name)")
+    p.add_argument("--plan", action="store_true", help="print the plan only, write nothing")
+    p.add_argument("--check", action="store_true", help="fail if the plan has warnings (CI)")
+    p.add_argument("--compose", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--db-url", default="", help="an existing database to use (provision none)")
+    p.add_argument("--app", default="pyweb", help=argparse.SUPPRESS)
+    p.add_argument("--image", default="", help="image name (default: NAME:latest)")
     p.set_defaults(fn=cmd_deploy)
     p = sub.add_parser("test"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_test)
     p = sub.add_parser("fmt"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_fmt)

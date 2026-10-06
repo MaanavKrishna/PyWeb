@@ -827,7 +827,11 @@ def classify(info, ctx):
             info.mutated.setdefault(name, why)
     info.live = []
     for name, value in info.inits.items():
-        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in ctx.live_names:
+        is_live = isinstance(value, ast.Call) and (
+            (isinstance(value.func, ast.Name) and value.func.id in ctx.live_names)
+            # Model queries: rows = Post.where(...).order("-id").live()
+            or (isinstance(value.func, ast.Attribute) and value.func.attr == "live" and not value.args))
+        if is_live:
             if info.kind not in ("page", "layout"):
                 raise CompileError("live() runs while a page renders: call it in a page or layout, and pass "
                                    "the rows to components as a prop", value.lineno, ctx.filename)

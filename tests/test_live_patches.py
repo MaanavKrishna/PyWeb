@@ -68,3 +68,26 @@ def test_a_patch_bigger_than_the_rows_sends_the_rows():
 
 def test_first_message_has_no_prev():
     assert L.change_message(None, [{"id": 1}], "id", None, "v1") == {"version": "v1", "rows": [{"id": 1}]}
+
+
+def test_model_queries_with_live_make_a_live_page():
+    from pyweb.compiler import compile_source
+    out = compile_source('''
+from pyweb import App
+from pyweb.models import Model
+
+app = App(database="sqlite:///:memory:")
+
+class Order(Model):
+    item: str
+
+@app.page("/")
+def Home():
+    orders = Order.query().order("-id").limit(20).live()
+    <ul>
+        for o in orders:
+            <li>{o["item"]}</li>
+    </ul>
+''', filename="app.pyweb")
+    js = out["pages"]["Home"]["js"]
+    assert '$live(orders, $s["$live:orders"])' in js and 'from "./live.js"' in js

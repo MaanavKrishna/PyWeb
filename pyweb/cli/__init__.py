@@ -96,10 +96,46 @@ def production_problems(source="", app_dir="."):
                    "public address (set PYWEB_ORIGIN=https://example.com)")
     if "allow_pickle=True" in (source or ""):
         out.append("RedisCache(allow_pickle=True): anyone who can write to Redis could run code; store JSON")
+    out += _topology_problems(app_dir)
     if os.path.isfile(os.path.join(app_dir, "pyweb.lock")):
         from pyweb import packages
         for path, why in packages.verify(app_dir)[:5]:
             out.append(f"{path}: {why} (run pyweb add to reinstall)")
+    return out
+
+
+def _topology_problems(app_dir):
+    """What the app uses that production must provide (from the same reading `pyweb deploy` does)."""
+    from pyweb.deploy import read_app
+    app_file = os.path.join(app_dir, "app.pyweb")
+    if not os.path.isfile(app_file):
+        return []
+    facts = read_app(app_file)
+    out = []
+    env = os.environ
+    if facts.models and not facts.migrations:
+        out.append("the app has Models but no migrations/: production doesn't create tables by itself "
+                   "(run `pyweb db diff --name initial` and commit migrations/)")
+    if facts.migrations and (env.get("DATABASE_URL") or facts.database in ("sqlite", "postgres", "mysql")):
+        try:
+            from pyweb.db import connect
+            from pyweb.db import migrate as _mig
+            url = env.get("DATABASE_URL")
+            if url:
+                waiting = _mig.pending(connect(url), os.path.join(app_dir, "migrations"))
+                if waiting:
+                    out.append(f"{len(waiting)} migration(s) not applied yet: "
+                               f"{', '.join(m.label for m in waiting[:5])} (pyweb db upgrade)")
+        except Exception as exc:  # noqa: BLE001 - can't reach the database from here: say so, don't fail
+            out.append(f"couldn't check migrations against DATABASE_URL ({type(exc).__name__}: {exc})")
+    if facts.mail and not env.get("PYWEB_MAIL_URL"):
+        out.append("the app sends email (sign-in links, resets) but PYWEB_MAIL_URL isn't set")
+    if facts.uploads and not env.get("PYWEB_STORAGE", "").startswith("s3"):
+        out.append("the app accepts uploads but PYWEB_STORAGE isn't object storage (s3://...): files on a "
+                   "container's disk vanish on redeploy (ignore this with a persistent volume)")
+    if facts.jobs and env.get("PYWEB_WORKER", "1").strip().lower() in ("0", "false", "no", "off"):
+        out.append("PYWEB_WORKER=0: make sure `pyweb worker` processes run, or queued jobs will wait forever "
+                   "(this is a reminder; ignore it if they do)")
     return out
 
 
@@ -543,33 +579,37 @@ def cmd_db(args):
 
 
 def cmd_deploy(args):
+    """Read the app, decide the production topology, and write files for the target."""
     from pyweb import deploy as D
-    if not getattr(args, "db_url", None) and not os.environ.get("DATABASE_URL"):
-        print("note: no DATABASE_URL set (--db-url or env); "
-              "deploying with embedded sqlite", file=sys.stderr)
-    target = (args.target or "docker").lower()
+    target = (args.target_pos or args.target or "docker").lower()
+    if target == "docker" and args.compose:
+        target = "compose"
+    if target not in D.TARGETS:
+        raise SystemExit(f"unknown deploy target {target!r} (one of: {', '.join(D.TARGETS)})")
+    facts = D.read_app(args.file)
+    with_services = [s for s in (args.with_services or "").split(",") if s.strip()]
+    plan = D.make_plan(target, facts, replicas=args.replicas, db=args.db, domain=args.domain or "",
+                       region=args.region or "", with_services=with_services, port=args.port,
+                       image=args.image or "", name=args.name or (None if args.app == "pyweb" else args.app),
+                       processes=args.processes, database_url=args.db_url or None)
+    print(D.describe(plan))
+    if args.plan:
+        return
+    if args.check and plan.warnings:
+        raise SystemExit(1)
     outdir = args.out
     os.makedirs(outdir, exist_ok=True)
-    files = {}
-    if target in ("docker", "compose"):
-        files["Dockerfile"] = D.dockerfile(port=args.port)
-        domain = getattr(args, "domain", "") or ""
-        if target == "compose" or args.compose:
-            files["compose.yaml"] = D.compose(port=args.port, db_url=args.db_url or "", domain=domain)
-            if domain:
-                files["Caddyfile"] = D.caddyfile(domain, port=args.port)
-    elif target == "k8s":
-        files["k8s.yaml"] = D.k8s_manifest(app=args.app, image=args.image, port=args.port)
-    else:
-        raise SystemExit(f"unknown deploy target {args.target!r} (docker|compose|k8s)")
+    files = D.files_for(plan)
     for name, body in files.items():
         with open(os.path.join(outdir, name), "w") as fh:
             fh.write(body)
-    print(f"deploy {target} -> {outdir}/ ({', '.join(files)})")
-    if "Caddyfile" in files:
-        print(f"next: point {args.domain}'s DNS at this server, then run\n"
-              f"  PYWEB_AUTH_SECRET=... docker compose up -d   (in {outdir}/, with your app files)\n"
-              "Caddy gets the HTTPS certificate by itself; the app is only reachable through it.")
+    print(f"\nwrote {outdir}/: {', '.join(files)}")
+    steps = D.next_steps(plan)
+    if steps:
+        print("\nNext:" + "".join(f"\n  {s}" for s in steps))
+        if outdir not in (".", ""):
+            print(f"  (the build context is your app folder: copy these files next to {facts.app_file}, "
+                  f"or run from there with --out .)")
 
 
 def cmd_dts(args):
@@ -635,7 +675,7 @@ def main(argv=None):
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
-    p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=8000); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 8000), help="default: $PORT, else 8000"); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db", help="migrations and seed data")
     p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "new", "adopt", "squash", "seed", "migrate", "rollback"])
     p.add_argument("--app", default=None, help="the app whose Models to use (default: ./app.pyweb)")
@@ -685,15 +725,26 @@ def main(argv=None):
     p.add_argument("packages", nargs="+")
     p.add_argument("--app", default="app.pyweb")
     p.set_defaults(fn=cmd_remove)
-    p = sub.add_parser("deploy")
-    p.add_argument("--target", default="docker")
+    p = sub.add_parser("deploy", help="production files for docker, compose, k8s, fly, render or railway")
+    p.add_argument("target_pos", nargs="?", metavar="TARGET", help="docker | compose | k8s | fly | render | railway")
+    p.add_argument("--target", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--file", default="app.pyweb", help="the app (default: app.pyweb)")
     p.add_argument("--out", default="deploy")
     p.add_argument("--port", type=int, default=8000)
-    p.add_argument("--compose", action="store_true")
-    p.add_argument("--db-url", default="")
-    p.add_argument("--domain", default="", help="compose: put Caddy in front with automatic HTTPS for this domain")
-    p.add_argument("--app", default="pyweb")
-    p.add_argument("--image", default="pyweb:latest")
+    p.add_argument("--replicas", type=int, default=None, help="web machines/containers (default: 1, k8s: 2)")
+    p.add_argument("--processes", type=int, default=None, help="server processes per machine (default 2)")
+    p.add_argument("--db", choices=["sqlite", "postgres", "mysql"], default=None,
+                   help="override the database choice (default: decided from the app and the target)")
+    p.add_argument("--with", dest="with_services", default="", help="also provision: redis, postgres")
+    p.add_argument("--domain", default="", help="the public domain (HTTPS, PYWEB_ORIGIN, Ingress)")
+    p.add_argument("--region", default="", help="fly: primary region")
+    p.add_argument("--name", default="", help="app name (default: the app folder's name)")
+    p.add_argument("--plan", action="store_true", help="print the plan only, write nothing")
+    p.add_argument("--check", action="store_true", help="fail if the plan has warnings (CI)")
+    p.add_argument("--compose", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--db-url", default="", help="an existing database to use (provision none)")
+    p.add_argument("--app", default="pyweb", help=argparse.SUPPRESS)
+    p.add_argument("--image", default="", help="image name (default: NAME:latest)")
     p.set_defaults(fn=cmd_deploy)
     p = sub.add_parser("test"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_test)
     p = sub.add_parser("fmt"); p.add_argument("path", nargs="?", default=None); p.set_defaults(fn=cmd_fmt)

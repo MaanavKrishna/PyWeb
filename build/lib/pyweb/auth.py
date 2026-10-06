@@ -814,3 +814,23 @@ def oidc_userinfo(endpoint: str, access_token: str, timeout=10) -> dict:
         "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode())
+
+
+# ---------------------------------------------------------------------------
+# The signed-in user (filled in by ``app.use_auth()``)
+# ---------------------------------------------------------------------------
+
+KIT = {"kit": None}
+
+
+def current_user():
+    """The signed-in :class:`pyweb.authkit.User` (with ``app.use_auth()``), the
+    session payload (without it), or None."""
+    kit = KIT["kit"]
+    if kit is not None:
+        return kit.user()
+    from pyweb.context import session
+    try:
+        return session.user()
+    except RuntimeError:
+        return None

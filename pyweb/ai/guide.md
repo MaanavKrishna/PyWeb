@@ -228,6 +228,10 @@ def Item(item_id: int):
   the others' `on_cast(data, sender)`. Trust `member["user"]`, not names.
 - Serve with `pyweb serve dist --workers 4` (PyWeb's own server: WebSockets,
   keep-alive, graceful SIGTERM); set `PYWEB_REDIS_URL` with several workers.
+- Deploying: run `pyweb deploy <docker|compose|k8s|fly|render|railway>`
+  and follow the plan it prints; don't hand-write Dockerfiles or manifests.
+  Keep `App(database="sqlite:///app.db")` in code: `DATABASE_URL` replaces
+  it in production. Commit `migrations/` (`pyweb db diff`).
 
 ## 7. Python that compiles to the browser
 

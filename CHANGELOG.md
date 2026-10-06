@@ -141,6 +141,29 @@ Work towards 0.5.0: production apps in one Python file.
 - Jobs stored in the app's database are marked done in the job's own
   transaction, so a job's database writes happen exactly once even if a
   worker crashes or loses its lease.
+- **`pyweb deploy` plans the production topology.** It reads the app
+  (database, jobs, live updates, sign-in, uploads, migrations), decides
+  what production needs for the target and number of machines (Postgres
+  instead of SQLite for several machines or disposable disks, Redis for
+  more than one process, a separate worker, migrations once per deploy,
+  object storage for uploads, the secrets to set), prints the plan with
+  the reason for each decision, and writes the files. Targets: `docker`,
+  `compose` (Caddy, load-balanced replicas, Postgres, Redis, worker,
+  migrate step), `k8s` (web and worker Deployments, migrate init
+  container, probes, PodDisruptionBudget, HorizontalPodAutoscaler,
+  Ingress), `fly`, `render` and `railway`. `--plan` prints only;
+  `--check` fails CI when the plan has warnings.
+- **A production image**: multi-stage, non-root, cached pip installs,
+  health check, `SIGTERM` drain, `PYTHON_IMAGE`/`PYWEB_SPEC`/
+  `EXTRA_PACKAGES` build arguments.
+- `DATABASE_URL` overrides the URL in `App(database=...)` (develop on
+  SQLite, deploy on Postgres, same code). `pyweb serve` uses `$PORT`.
+- `pyweb check --production` also reports Models without migrations,
+  unapplied migrations, email without `PYWEB_MAIL_URL`, uploads without
+  object storage, and jobs with `PYWEB_WORKER=0`.
+- CI deploys a real stack (2 replicas, worker, Postgres, Redis, Caddy)
+  with `pyweb deploy compose` and checks load balancing, jobs on the
+  worker and live updates across replicas.
 - **Read replicas** with `DATABASE_REPLICA_URL` (read-your-writes inside a
   request), slow query logging with query plans (`PYWEB_SLOW_QUERY_MS`),
   `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and
@@ -158,6 +181,8 @@ Work towards 0.5.0: production apps in one Python file.
   in-memory SQLite file.
 
 ### Fixed
+- `Model.query()...live()` in a page made a static page: the compiler only
+  recognised `live(db, sql)`.
 - Schedules in UTC (including PyWeb's nightly cleanup) no longer need a
   time zone database, which Windows and Pyodide (the playground) don't
   ship; other zones explain that `pip install tzdata` provides one.

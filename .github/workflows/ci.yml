@@ -141,6 +141,31 @@ jobs:
       # Redis-backed sessions/rate limits/throttles and the integration suites all run here.
       - run: python -m pytest tests -q -p no:cacheprovider -rs --ignore=tests/e2e
 
+  deploy:
+    name: deploy (compose, 2 replicas + worker + Postgres + Redis + Caddy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . && pip wheel . --no-deps -w tests/deploy
+      - name: Plan and write the files
+        working-directory: tests/deploy
+        run: python -m pyweb.cli deploy compose --replicas 2 --out . --check
+      - name: Start the stack
+        working-directory: tests/deploy
+        run: |
+          printf "PYWEB_AUTH_SECRET=%s\nDB_PASSWORD=%s\n" "$(openssl rand -hex 32)" "$(openssl rand -hex 16)" > .env
+          docker compose build --build-arg PYWEB_SPEC=./$(ls pyweb_stack-*.whl)
+          docker compose up -d --wait --wait-timeout 180
+      - run: python tests/deploy/smoke.py
+      - name: Logs on failure
+        if: failure()
+        working-directory: tests/deploy
+        run: docker compose ps && docker compose logs --tail 80
+
   examples:
     name: examples, budgets, package
     runs-on: ubuntu-latest

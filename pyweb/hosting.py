@@ -15,6 +15,7 @@ import os
 import re
 import time
 
+from . import telemetry
 from .runtime.server import Request, Server
 
 RUNTIME_PATH = os.path.join(os.path.dirname(__file__), "runtime", "browser", "runtime.js")
@@ -246,6 +247,8 @@ class Site:
             self.app = LoadedApp(target)
             self._index_memory_js()
         self.server = Server(app=self.app, debug=debug, max_body=max_body, **self.server_kwargs)
+        self.trust_proxy = config.settings().trust_proxy > 0
+        telemetry.install()
 
     def _index_memory_js(self):
         units = {**self.app.compiled.get("layouts", {}), **self.app.compiled["pages"]}
@@ -283,20 +286,51 @@ class Site:
 
     # ----------------------------------------------------------- request
     def respond(self, method, path, headers, body=b"", client=None):
+        """Answer one request: ``(status, headers, body)``, with its telemetry (metrics, log line, trace)."""
+        tel, token = telemetry.begin_request(method, path, headers, trust_proxy=self.trust_proxy, dev=self.debug)
+        status, error = 500, None
+        try:
+            status, hdrs, raw = self._respond(method, path, headers, body, client, tel)
+            if not any(k.lower() == "x-request-id" for k, _ in hdrs):
+                hdrs.append(("X-Request-Id", tel.request_id))
+            return status, hdrs, raw
+        except BaseException as exc:
+            error = exc
+            raise
+        finally:
+            telemetry.end_request(tel, token, status, error)
+
+    def _metrics_path(self, bare):
+        if bare == "/__pyweb/metrics":
+            return True
+        return bare == "/metrics" and not any(pat.match(bare) for pat, _ in self.server.routes)
+
+    def _respond(self, method, path, headers, body, client, tel):
         bare = path.split("?")[0]
         if bare in ("/healthz", "/health", "/readyz"):
+            tel.route = "health"
             code, payload = health(bare == "/readyz", self.started)
             out = (code, [("Content-Type", "application/json"), ("Cache-Control", "no-store")],
                    json.dumps(payload).encode())
         elif bare.startswith("/static/") and method in ("GET", "HEAD"):
+            tel.route = "static"
             query = path.partition("?")[2]
             inm = next((v for k, v in (headers or {}).items() if k.lower() == "if-none-match"), None)
             out = self.static(bare[len("/static/"):], query=query, if_none_match=inm)
+        elif method in ("GET", "HEAD") and self._metrics_path(bare):
+            tel.route = "metrics"
+            if telemetry.metrics_allowed(headers, dev=self.debug):
+                out = telemetry.metrics_response()
+            else:   # without PYWEB_METRICS_TOKEN (or with a wrong one) there's nothing here
+                out = (404, [("Content-Type", "text/plain")], b"not found")
         elif len(body or b"") > body_limit(bare, self.max_body):
+            tel.route = "too_large"
             out = (413, [("Content-Type", "application/json")],
                    json.dumps({"error": {"code": "http_413", "message": "request body too large"}}).encode())
         else:
-            resp = self.server.handle(Request(method, path, headers, body, client=client))
+            request = Request(method, path, headers, body, client=client)
+            request.id = tel.request_id
+            resp = self.server.handle(request)
             hdrs = []
             for k, v in resp.headers.items():
                 for item in (v if isinstance(v, list) else [v]):

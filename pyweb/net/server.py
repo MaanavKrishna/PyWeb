@@ -420,6 +420,12 @@ def run(make_site, *, host="0.0.0.0", port=8000, workers=1, logger=None, sock=No
     if workers <= 1 or not hasattr(os, "fork"):
         return _worker(make_site, sock or bind(host, port), logger, ready)
     split = sock is None and REUSEPORT
+    shared_metrics = None
+    if not os.environ.get("PYWEB_METRICS_DIR"):
+        # Each worker writes its metrics here; a scrape (answered by any worker) adds them all up.
+        import tempfile
+        shared_metrics = tempfile.mkdtemp(prefix="pyweb-metrics-")
+        os.environ["PYWEB_METRICS_DIR"] = shared_metrics
     # With SO_REUSEPORT the parent only holds the port (bound, not listening, so it gets no connections).
     sock = sock or bind(host, port, reuse_port=split, listen=not split)
     children = {}
@@ -464,10 +470,17 @@ def run(make_site, *, host="0.0.0.0", port=8000, workers=1, logger=None, sock=No
             if logger is not None:
                 logger.info(f"worker {pid} exited; starting another")
             spawn()
+    if shared_metrics:
+        import shutil
+        shutil.rmtree(shared_metrics, ignore_errors=True)
+        os.environ.pop("PYWEB_METRICS_DIR", None)
     return 0
 
 
 def _worker(make_site, sock, logger, ready):
+    from pyweb import telemetry
+    telemetry.logs.setup()
+    telemetry.metrics.start_dumping()       # only with several processes (PYWEB_METRICS_DIR)
     site = make_site()
     if getattr(site, "start_jobs", True):
         from pyweb import jobs

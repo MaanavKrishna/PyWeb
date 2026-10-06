@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 
-from .memory import Backend, new_id, when_committed
+from .memory import Backend, new_id, split_payload, when_committed
 
 PREFIX = "pyweb:jobs:v5:"
 
@@ -197,7 +197,7 @@ class RedisBackend(Backend):
                 "run_at": num("run_at"), "progress": num("progress") or 0.0,
                 "last_error": rec.get("last_error") or None, "created_at": num("created_at"),
                 "finished_at": num("finished_at"), "unique_key": rec.get("unique_key") or None,
-                "args": json.loads(rec["payload"]) if rec.get("payload") else None,
+                "args": split_payload(rec.get("payload"))[0], "trace": split_payload(rec.get("payload"))[1],
                 "result": json.loads(rec["result"]) if rec.get("result") else None}
 
     def get(self, job_id):
@@ -213,6 +213,17 @@ class RedisBackend(Backend):
                 if len(out) >= limit:
                     break
         return out
+
+    def counts(self):
+        """Waiting (every queue this app uses) and running jobs: two cheap counts, no scan."""
+        from . import core
+        queues = sorted({d.queue for d in core.REGISTRY.values()} | {"default"})
+        pipe = self.r.pipeline()
+        for q in queues:
+            pipe.zcard(self.p + "q:" + q)
+        pipe.zcard(self.p + "running")
+        *waiting, running = pipe.execute()
+        return {"queued": int(sum(waiting)), "running": int(running)}
 
     def retry(self, job_id):
         rec = self._hash(job_id)

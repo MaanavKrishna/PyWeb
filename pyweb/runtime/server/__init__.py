@@ -11,6 +11,8 @@ import uuid
 
 from pyweb.db import in_scope as _in_scope
 from pyweb.rules import ValidationError
+from pyweb.telemetry.tracing import RequestTelemetry as _RequestTelemetry
+from pyweb.telemetry.tracing import current as _telemetry_now
 
 
 class Request:
@@ -97,6 +99,8 @@ class RPCStream:
                                           "details": exc.details or {}}}) + "\n").encode()
         except Exception as exc:  # noqa: BLE001 - reported in-band; the status line is already sent
             self._finished = True
+            from pyweb.telemetry import report_error
+            report_error(exc, "rpc", rpc=self.name, streaming=True)
             if self.logger is not None:
                 self.logger.error(f"rpc {self.name} failed while streaming: {exc}",
                                   request_id=self.request_id, rpc=self.name)
@@ -379,6 +383,9 @@ class Server:
 
     def _trace_ctx(self, req: Request):
         from pyweb import rpc as _rpc
+        tel = _telemetry_now()
+        if tel is not None:
+            return tel.request_id, tel.traceparent
         parsed = _rpc.parse_traceparent(req.headers.get("traceparent"))
         trace_id = parsed[0] if parsed else uuid.uuid4().hex
         span_id = uuid.uuid4().hex[:16]
@@ -524,10 +531,14 @@ class Server:
                     except asyncio.TimeoutError as exc:  # a separate class before Python 3.11
                         raise TimeoutError() from exc
             except TimeoutError:
+                from pyweb.telemetry import instruments
+                instruments.rpc_errors.inc(function=name, code="timeout")
                 return self._err(_rpc.Code.TIMEOUT,
                                  f"{name} exceeded {self.rpc_timeout}s",
                                  trace_id=trace_id, traceparent=traceparent)
             except _rpc.RPCError as exc:
+                from pyweb.telemetry import instruments
+                instruments.rpc_errors.inc(function=name, code=str(exc.code))
                 return self._err(exc.code, str(exc), details=exc.details,
                                  trace_id=trace_id, traceparent=traceparent)
             except ValidationError as exc:
@@ -537,6 +548,9 @@ class Server:
                 return self._err(_rpc.Code.VALIDATION, str(exc),
                                  trace_id=trace_id, traceparent=traceparent)
             except Exception as exc:  # noqa: BLE001
+                from pyweb.telemetry import instruments, report_error
+                instruments.rpc_errors.inc(function=name, code="internal")
+                report_error(exc, "rpc", rpc=name)
                 if self.logger is not None:
                     self.logger.error(f"rpc {name} failed: {exc}",
                                       request_id=trace_id, rpc=name)
@@ -596,6 +610,10 @@ class Server:
             resp = self._dispatch(req)
         finally:
             _ctx.deactivate(token)
+            if rc._session_loaded and rc._session:
+                tel = _telemetry_now()
+                if tel is not None:
+                    tel.user = str(rc._session.get("sub", "")) or None
         if resp is not None and rc.set_cookies:
             existing = resp.headers.get("Set-Cookie")
             cookies = ([existing] if isinstance(existing, str) else list(existing or [])) + rc.set_cookies
@@ -603,17 +621,28 @@ class Server:
         return resp
 
     def _dispatch(self, req: Request):
+        tel = _telemetry_now()
+        if tel is None:
+            tel = _RequestTelemetry("http")         # a Server used on its own (tests): labels go nowhere
         if req.path.startswith("/__pyweb/rpc/"):
+            name = req.path[len("/__pyweb/rpc/"):].split("?")[0]
+            tel.route = f"rpc:{name}" if name in self.rpc_impls else "rpc:unknown"
             if req.method != "POST":
                 return self._err(405, "RPC endpoints accept POST only")
             return self.handle_rpc(req)
         if req.path == "/__pyweb/events" or req.path.startswith("/__pyweb/events?"):
+            tel.route = "live"
             return self.handle_events(req)
         if req.path == "/__pyweb/poll" or req.path.startswith("/__pyweb/poll?"):
+            tel.route = "live"
             return self.handle_poll(req)
         if req.path.startswith("/__pyweb/live?"):
+            tel.route = "live"
             return self.handle_live(req)
+        if req.path.startswith("/__pyweb/files/"):
+            tel.route = "files"
         if req.path.startswith("/__pyweb/form/"):
+            tel.route = "form"
             if req.method != "POST":
                 return Response(405, "forms accept POST only", {"Allow": "POST", "Content-Type": "text/plain"})
             return self.handle_form(req)
@@ -624,6 +653,7 @@ class Server:
             m = pat.match(path)
             if not m:
                 continue
+            tel.route = f"page:{name}"
             if req.method not in ("GET", "HEAD"):
                 return Response(405, "method not allowed", {"Allow": "GET, HEAD",
                                                             "Content-Type": "text/plain"})
@@ -636,7 +666,9 @@ class Server:
         if kit is not None:
             resp = kit.handle(self, req)
             if resp is not None:
+                tel.route = "auth"
                 return resp
+        tel.route = "not_found"
         return self.error_page(404, req)
 
     def _auth_kit(self):
@@ -773,6 +805,8 @@ class Server:
             return fail(_rpc.status_for(exc.code), str(exc), fields=fields, fid=fid)
         except Exception as exc:  # noqa: BLE001
             F.ONCE.forget(once) if once else None
+            from pyweb.telemetry import report_error
+            report_error(exc, "form", form=fn.__name__)
             if self.logger is not None:
                 self.logger.error(f"form {fn.__name__} failed: {exc}", request_id=req.id, rpc=fn.__name__)
             if self.debug:
@@ -864,6 +898,8 @@ class Server:
             return self.error_page(status, req, message=str(exc))
         except Exception as exc:  # noqa: BLE001
             import traceback
+            from pyweb.telemetry import report_error
+            report_error(exc, "page", page=name)
             if self.logger is not None:
                 self.logger.error(f"page {name} failed: {exc}", request_id=req.id, page=name)
             if self.debug:

@@ -18,7 +18,7 @@ import time
 
 from pyweb.models import Field, Index, Model
 
-from .memory import FINAL, Backend, new_id
+from .memory import FINAL, Backend, new_id, split_payload
 
 TABLE = "pyweb_jobs"
 MARKS = "pyweb_schedules"
@@ -229,7 +229,7 @@ class DatabaseBackend(Backend):
         r = dict(zip(COLUMNS, row))
         out = {k: r[k] for k in ("id", "name", "queue", "state", "attempts", "max_attempts", "run_at",
                                  "progress", "last_error", "created_at", "finished_at", "unique_key")}
-        out["args"] = json.loads(r["payload"]) if r["payload"] else None
+        out["args"], out["trace"] = split_payload(r["payload"])
         out["result"] = json.loads(r["result"]) if r["result"] else None
         return out
 
@@ -248,6 +248,11 @@ class DatabaseBackend(Backend):
         sql = f"SELECT {self.cols} FROM {self.t}" + (" WHERE " + " AND ".join(where) if where else "")
         sql += f" ORDER BY created_at DESC {self.dialect.limit_offset(int(limit), None)}"
         return [self._public(r) for r in self.db.execute(sql, tuple(params)).fetchall()]
+
+    def counts(self):
+        """Jobs by state, without the finished ``done`` ones (metrics; one grouped query)."""
+        rows = self.db.execute(f"SELECT state, COUNT(*) FROM {self.t} WHERE state <> 'done' GROUP BY state").fetchall()
+        return {r[0]: int(r[1]) for r in rows}
 
     def retry(self, job_id):
         res = self.db.execute(

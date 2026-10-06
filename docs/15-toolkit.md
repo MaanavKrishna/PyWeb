@@ -57,7 +57,9 @@ between processes, call `realtime.use_bus(bus)` at startup.
 - `pyweb.uploads.validate_upload(filename=, size=, content_type=,
   allowed_types=, max_bytes=)` and `safe_filename`.
 - `pyweb.forms.validate(model, data)` / `fields_for(model)`.
-- `pyweb.observability.Logger`, `Tracer`, `Metrics`, `format_error`.
+- `pyweb.telemetry`: `span`, `on_error`, the metrics `REGISTRY`, JSON logs
+  with redaction (see [Observability](26-observability.md)). The older
+  `pyweb.observability.Logger`, `Tracer`, `Metrics` and `format_error` still work.
 - `pyweb.security.escape`, `safe_join`, `safe_next`.
 
 ## Stability

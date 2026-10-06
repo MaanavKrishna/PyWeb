@@ -232,6 +232,12 @@ def Item(item_id: int):
   and follow the plan it prints; don't hand-write Dockerfiles or manifests.
   Keep `App(database="sqlite:///app.db")` in code: `DATABASE_URL` replaces
   it in production. Commit `migrations/` (`pyweb db diff`).
+- Observability is built in: use `logging.getLogger(__name__)` (lines get
+  the request id, route and user; secrets are redacted), never `print`.
+  `with span("charge card"):` marks slow parts; `@app.on_error` forwards
+  unhandled errors (e.g. to Sentry). The dev toolbar (`pyweb dev`) shows
+  each request's SQL: a "N+1?" warning means add `include(...)`.
+  `/metrics` needs `PYWEB_METRICS_TOKEN` in production.
 
 ## 7. Python that compiles to the browser
 

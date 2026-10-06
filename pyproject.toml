@@ -41,8 +41,10 @@ redis = ["redis>=5"]
 crypto = ["cryptography>=42"]
 asgi = ["uvicorn>=0.30"]
 auth = ["argon2-cffi>=23.1"]
-all = ["psycopg[binary]>=3.1", "PyMySQL>=1.1", "redis>=5", "cryptography>=42", "uvicorn>=0.30", "argon2-cffi>=23.1"]
-test = ["pytest>=8", "playwright>=1.45", "mcp>=1.2", "hypothesis>=6.100", "pyyaml>=6"]
+otel = ["opentelemetry-sdk>=1.24", "opentelemetry-exporter-otlp-proto-http>=1.24"]
+all = ["psycopg[binary]>=3.1", "PyMySQL>=1.1", "redis>=5", "cryptography>=42", "uvicorn>=0.30", "argon2-cffi>=23.1",
+       "opentelemetry-sdk>=1.24", "opentelemetry-exporter-otlp-proto-http>=1.24"]
+test = ["pytest>=8", "playwright>=1.45", "mcp>=1.2", "hypothesis>=6.100", "pyyaml>=6", "opentelemetry-sdk>=1.24"]
 
 [project.urls]
 Homepage = "https://maanavkrishna.github.io/PyWeb/"

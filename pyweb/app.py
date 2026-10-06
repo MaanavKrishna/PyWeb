@@ -98,6 +98,13 @@ class App:
 
         return deco
 
+    # ------------------------------------------------------------- telemetry
+    def on_error(self, fn):
+        """``@app.on_error``: ``fn(error, info)`` for every unhandled error in a page, server
+        function, form or job, with ``info`` holding the request id, trace id, route and user."""
+        from .telemetry import on_error
+        return on_error(fn)
+
     # ------------------------------------------------------------------ jobs
     def job(self, fn=None, **options):
         """A durable background job: ``@app.job(retries=5, timeout=300, queue="default")``,

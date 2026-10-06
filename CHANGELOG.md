@@ -169,6 +169,26 @@ Work towards 0.5.0: production apps in one Python file.
   `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and
   `pyweb.testing.Factory`.
 
+- **Observability.** A dev toolbar on every page in `pyweb dev`: the SQL each
+  request ran (repeated statements grouped, with an N+1 warning), spans,
+  jobs queued, emails captured, errors, and a list of every request since;
+  it never ships in production builds. JSON logs in production (readable
+  text while developing) where every line carries the request id, trace
+  id, route and user, and secrets (`password`, `token`, `api_key`, ... plus
+  `PYWEB_LOG_REDACT`) are redacted, including inside messages and URLs.
+  Prometheus `/metrics` (`PYWEB_METRICS_TOKEN`; requests, server functions,
+  queries, jobs, live sockets, mail, sign-ins, errors), added up across
+  `--workers` processes; `pyweb worker --metrics-port`. W3C `traceparent`
+  is continued, returned on every response and carried into the jobs a
+  request queues, so one trace covers the click and the job's work on
+  another machine. OpenTelemetry spans for requests, queries, jobs and
+  `with span("..."):` blocks (`pip install pyweb-stack[otel]`,
+  `PYWEB_OTEL=1`). `@app.on_error` hooks receive every unhandled error with
+  its request context.
+- `pyweb worker --alive`: a health check for worker containers (the worker
+  touches a heartbeat file after each round that reached its job store);
+  compose and Kubernetes use it.
+
 ### Changed
 - `PYWEB_MAX_CONNECTIONS` defaults to 10,000 per process (it was 256 for
   the threaded server, which `pyweb serve --app module:factory` still uses).
@@ -181,6 +201,8 @@ Work towards 0.5.0: production apps in one Python file.
   in-memory SQLite file.
 
 ### Fixed
+- `pyweb dev` didn't reload pages larger than 1 KB after a change: they were
+  gzipped before the reload script could be added.
 - `Model.query()...live()` in a page made a static page: the compiler only
   recognised `live(db, sql)`.
 - Schedules in UTC (including PyWeb's nightly cleanup) no longer need a

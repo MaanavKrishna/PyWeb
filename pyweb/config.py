@@ -24,6 +24,14 @@ Variable                       Default      Meaning
 ``PYWEB_MAX_UPLOAD``           10MB         largest form submit with files (413 beyond it)
 ``PYWEB_JOBS``                 db           where background jobs are stored: db, redis or memory
 ``PYWEB_WORKER``               1            0: don't run jobs inside ``pyweb serve``/``dev``
+``PYWEB_LOG_FORMAT``           json/text    ``json`` in production, readable ``text`` otherwise
+``PYWEB_LOG_LEVEL``            info         ``debug``, ``info``, ``warning``, ``error``
+``PYWEB_LOG_REDACT``           (none)       more field names to redact in logs, comma-separated
+``PYWEB_ACCESS_LOG``           1            0: no log line per request
+``PYWEB_METRICS_TOKEN``        (none)       bearer token for ``/metrics`` (404 in production without it)
+``PYWEB_METRICS_PORT``         (none)       ``pyweb worker``: serve ``/metrics`` on this port
+``PYWEB_OTEL``                 auto         1: set up OpenTelemetry (``[otel]`` extra); 0: never trace
+``PYWEB_DEVTOOLS``             1            0: no dev toolbar in ``pyweb dev``
 =============================  ===========  =====================================================
 """
 

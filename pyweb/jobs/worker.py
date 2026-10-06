@@ -24,6 +24,8 @@ import time
 import traceback
 import weakref
 
+from pyweb import telemetry
+
 from . import core
 
 log = logging.getLogger("pyweb.jobs")
@@ -176,6 +178,7 @@ class Worker:
                 self.running.pop(r.claim["id"], None)
         for r in overdue:
             r.ctx.cancelled.set()
+            telemetry.instruments.jobs_done.inc(job=r.claim["name"], outcome="timeout")
             self._failed(r.claim, f"TimeoutError: took longer than {r.claim['timeout']:g}s")
 
     # --------------------------------------------------------------- running
@@ -194,6 +197,9 @@ class Worker:
             token = core._current.set(run.ctx)
             same_db = _shares_app_database(b)
             completed = False
+            tel, tel_token = telemetry.tracing.begin("job", traceparent=payload.get("trace"), job=claim["name"],
+                                                     route=f"job:{claim['name']}")
+            outcome, failure = "done", None
             try:
                 from pyweb.db import request_scope
                 with request_scope():
@@ -204,14 +210,25 @@ class Worker:
                         if not self._still_mine(claim) or not b.complete(claim["id"], claim["token"], result):
                             raise _LostLease()
                         completed = True
+                if not completed and not self._still_mine(claim):
+                    outcome = "lost"                    # it ran past its timeout; that was counted then
             except _LostLease:
+                outcome = "lost"
                 return                                  # timed out or reclaimed: its writes rolled back
             except Exception as exc:  # noqa: BLE001
+                failure = exc
+                outcome = "retry" if claim["attempt"] < claim["max_attempts"] else "dead"
                 if self._still_mine(claim):
                     self._failed(claim, f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=20)}")
+                if outcome == "dead":       # out of attempts: that's an error someone should see
+                    telemetry.report_error(exc, "job", job=claim["name"], job_id=claim["id"],
+                                           attempt=claim["attempt"])
                 return
             finally:
                 core._current.reset(token)
+                telemetry.instruments.jobs_done.inc(job=claim["name"], outcome=outcome)
+                telemetry.instruments.job_seconds.observe(tel.elapsed_ms / 1000.0, job=claim["name"])
+                telemetry.tracing.end(tel_token, tel, status=outcome, error=failure)
             if not completed and self._still_mine(claim):
                 b.complete(claim["id"], claim["token"], result)
         except Exception:  # noqa: BLE001 - never kill the worker

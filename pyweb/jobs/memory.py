@@ -157,6 +157,14 @@ class MemoryBackend(Backend):
         rows.sort(key=lambda r: r["created_at"], reverse=True)
         return [_public(r) for r in rows[:limit]]
 
+    def counts(self):
+        with self.lock:
+            out: dict = {}
+            for r in self.rows.values():
+                if r["state"] != "done":
+                    out[r["state"]] = out.get(r["state"], 0) + 1
+            return out
+
     def retry(self, job_id):
         with self.lock:
             row = self.rows.get(job_id)
@@ -190,9 +198,18 @@ def _claimed(row):
             "queue": row["queue"]}
 
 
+def split_payload(raw):
+    """``(args, traceparent)`` from a stored payload: the trace isn't one of the job's arguments."""
+    if not raw:
+        return None, None
+    data = json.loads(raw)
+    trace = data.pop("trace", None) if isinstance(data, dict) else None
+    return data, trace
+
+
 def _public(row):
     out = {k: row[k] for k in ("id", "name", "queue", "state", "attempts", "max_attempts", "run_at",
                                "progress", "last_error", "created_at", "finished_at", "unique_key")}
-    out["args"] = json.loads(row["payload"]) if row.get("payload") else None
+    out["args"], out["trace"] = split_payload(row.get("payload"))
     out["result"] = json.loads(row["result"]) if row.get("result") else None
     return out

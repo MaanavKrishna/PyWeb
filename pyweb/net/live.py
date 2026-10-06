@@ -44,6 +44,7 @@ import urllib.parse
 import weakref
 
 from pyweb import rooms as presence
+from pyweb.telemetry import instruments as _I
 
 MAX_SUBS = 256
 MAX_MESSAGE = 64 * 1024
@@ -175,6 +176,8 @@ class LiveSession:
             await asyncio.wait_for(self._send(text), SEND_TIMEOUT)
         except asyncio.TimeoutError:
             raise _TooSlow() from None
+        _I.live_messages.inc()
+        _I.live_bytes.inc(len(text))
 
     async def _reader(self, recv):
         while not self.closed:

@@ -29,6 +29,8 @@ import urllib.parse
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
+from .telemetry import instruments as _I
+
 log = logging.getLogger("pyweb.mail")
 
 #: Messages "sent" while developing (newest last).
@@ -150,20 +152,32 @@ def send(to, subject, text, *, html=None, sender_address=None, reply_to=None):
     as a job: it's sent only if the current request's writes commit, and
     retried if the mail server is down. Otherwise it's sent now.
     """
+    from .telemetry import note
     message = Message(to, subject, text, html, sender_address, reply_to)
     current = sender()
+    note("mail", to=message.to, subject=message.subject)
     if not isinstance(current, ConsoleSender) and outbox_enabled():
         from .jobs.builtin import deliver
         deliver.enqueue(message.to_dict())
+        _I.mail_sent.inc(outcome="queued")
         return message
-    current.send(message)
+    _send_counted(current, message)
     return message
 
 
 def deliver_now(message):
     """Send ``message`` with the configured sender right away (what the outbox job does)."""
-    sender().send(message)
+    _send_counted(sender(), message)
     return message
+
+
+def _send_counted(via, message):
+    try:
+        via.send(message)
+    except Exception:
+        _I.mail_sent.inc(outcome="failed")
+        raise
+    _I.mail_sent.inc(outcome="sent")
 
 
 def address(name, email):

@@ -87,9 +87,19 @@ class JobDef:
             key = f"{self.name}:" + hashlib.sha256(text.encode()).hexdigest()[:24]
         if key is not None and self.unique_for:
             unique_until = now + float(self.unique_for)
+        from pyweb.telemetry import current as _tel
+        from pyweb.telemetry import instruments, note
+        tel = _tel()
+        if tel is not None:
+            # The run joins the trace of the request (or job) that queued it (after the dedupe hash,
+            # so the same arguments still dedupe across requests).
+            payload["trace"] = tel.traceparent
+            text = json.dumps(payload, sort_keys=True)
         job_id = backend().enqueue(name=self.name, queue=self.queue, payload=text, run_at=run_at,
                                    max_attempts=self.retries + 1, timeout=self.timeout,
                                    unique_key=key, unique_until=unique_until)
+        instruments.jobs_enqueued.inc(job=self.name)
+        note("job", name=self.name, id=job_id, queue=self.queue, delay=round(run_at - now, 1) or None)
         return JobHandle(job_id)
 
 

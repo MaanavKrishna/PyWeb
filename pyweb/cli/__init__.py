@@ -238,10 +238,21 @@ class _DevSite:
             return 200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], str(state.version).encode()
         if state.error is not None or state.site is None:
             return 500, [("Content-Type", "text/html; charset=utf-8")], _error_overlay(state.error, state.path).encode()
+        from pyweb.telemetry import RECENT, devtools
+        if path.startswith(devtools.PREFIX):
+            answer = devtools.handle(method, path, headers)
+            if answer is not None:
+                return answer
+        # No gzip on localhost: pages stay plain, so the reload script and the toolbar can be added.
+        headers = {k: v for k, v in (headers or {}).items() if k.lower() != "accept-encoding"}
         status, hdrs, raw = state.site.respond(method, path, headers, body, client=client)
         ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
         if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
             raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
+            if not os.environ.get("PYWEB_DEVTOOLS", "1").lower() in ("0", "false", "off"):
+                rid = next((v for k, v in hdrs if k.lower() == "x-request-id"), None)
+                summary = next((r for r in reversed(RECENT) if r["id"] == rid), None)
+                raw = devtools.inject(raw, summary)
             hdrs = [(k, v) for k, v in hdrs if k.lower() != "content-length"]
         return status, hdrs, raw
 
@@ -481,6 +492,12 @@ def cmd_worker(args):
     if args.alive:
         # A container health check: no app loading, just "did a worker finish a round recently?"
         raise SystemExit(0 if _worker.alive(max_age=args.max_age) else 1)
+    from pyweb import telemetry
+    telemetry.logs.setup()
+    telemetry.install()
+    metrics_port = args.metrics_port or int(os.environ.get("PYWEB_METRICS_PORT") or 0)
+    if metrics_port:
+        telemetry.serve_metrics(metrics_port)
     _load_app_for_jobs(args.app)
     queues = [q.strip() for q in (args.queues or "").split(",") if q.strip()] or None
     worker = jobs.Worker(queues=queues, concurrency=args.concurrency, schedule=not args.no_schedule,
@@ -706,6 +723,8 @@ def main(argv=None):
     p.add_argument("--alive", action="store_true",
                    help="health check: exit 0 if a worker here finished a healthy round recently, else 1")
     p.add_argument("--max-age", type=float, default=90.0, help="--alive: seconds since the last round (default 90)")
+    p.add_argument("--metrics-port", type=int, default=0,
+                   help="serve Prometheus /metrics on this port (default: $PYWEB_METRICS_PORT, else off)")
     p.set_defaults(fn=cmd_worker)
     p = sub.add_parser("jobs", help="list, retry and purge background jobs")
     p.add_argument("jobs_action", choices=["list", "retry", "purge", "run"])

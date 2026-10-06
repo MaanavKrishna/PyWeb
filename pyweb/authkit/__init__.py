@@ -252,6 +252,8 @@ class AuthKit:
 
     def event(self, kind, *, user=None, email=None, ok=True, detail=None):
         from pyweb.context import request
+        from pyweb.telemetry import instruments
+        instruments.auth_events.inc(kind=kind, ok="true" if ok else "false")
         try:
             ua = (request.headers.get("User-Agent") or "")[:300]
             ip = self._ip()

@@ -285,8 +285,8 @@
   // ------------------------------------------------------------ python
   function call(fn, ...args) { return JSON.parse(host[fn](...args)); }
 
-  function request(method, url, body = "", type = "") {
-    const r = call("request", method, url, body || "", type || "");
+  function request(method, url, body = "", type = "", headers = null) {
+    const r = call("request", method, url, body || "", type || "", headers ? JSON.stringify(headers) : "");
     printed(r.output);
     for (const j of r.jobs || []) {
       log(j.state === "done" ? "job" : "error", `${j.name} ${j.state === "done" ? "ran" : j.state}`, j.error || "");
@@ -438,7 +438,19 @@
       window.WebSocket = undefined;
       window.fetch = (input, init) => {
         const url = typeof input === "string" ? input : input.url;
-        return url.startsWith("/__pyweb/") ? host.fetch(url, init || {}) : realFetch(input, init);
+        if (!url.startsWith("/__pyweb/")) return realFetch(input, init);
+        init = Object.assign({}, init);
+        if (init.body instanceof FormData || init.body instanceof URLSearchParams) {
+          // Forms post FormData; the bridge carries text, so send what a no-JS form would.
+          const fields = new URLSearchParams();
+          for (const [k, v] of init.body.entries()) {
+            if (typeof v === "string") fields.append(k, v);
+            else console.warn("The playground can't upload files; " + k + " was left out");
+          }
+          init.headers = Object.assign({}, init.headers, { "Content-Type": "application/x-www-form-urlencoded" });
+          init.body = fields.toString();
+        }
+        return host.fetch(url, init);
       };
       const show = (v) => { try { return typeof v === "string" ? v : JSON.stringify(v); } catch { return String(v); } };
       for (const [name, kind] of [["log", "browser"], ["info", "browser"], ["warn", "warn"], ["error", "error"]]) {
@@ -472,7 +484,8 @@
     fetch: async (url, init) => {
       const headers = new Headers(init.headers || {});
       const method = init.method || "GET";
-      const r = request(method, url, typeof init.body === "string" ? init.body : "", headers.get("content-type") || "");
+      const r = request(method, url, typeof init.body === "string" ? init.body : "", headers.get("content-type") || "",
+        Object.fromEntries(headers.entries()));   // Accept, idempotency keys, ... as the app would see them
       const m = url.match(/^\/__pyweb\/rpc\/(\w+)/);
       if (m) {
         let args = "";

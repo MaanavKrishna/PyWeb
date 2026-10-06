@@ -233,7 +233,7 @@ def test_database_jobs_and_sign_in(page, site):
     page.locator(".pg-db nav button", has_text="tasks").click()
     expect(page.locator(".pg-db td", has_text="Invite your team")).to_be_visible()
     page.locator(".pg-db nav button", has_text="users").click()
-    expect(page.locator(".pg-db td", has_text="[redacted]")).to_be_visible()
+    expect(page.locator(".pg-db td", has_text="[redacted]").first).to_be_visible()
     page.click('.pg-tabs [data-tab="requests"]')
     page.locator(".pg-req", has_text="create_project").locator("summary").click()
     expect(page.locator(".pg-req", has_text="create_project")).to_contain_text("INSERT")

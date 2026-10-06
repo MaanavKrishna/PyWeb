@@ -622,7 +622,8 @@ def build_args(action, fid, fields, files):
             if m2m:
                 row.__dict__.setdefault("_pending_m2m", {}).update(m2m)
         try:
-            row.validate()
+            # Read-only and private fields aren't in the form: the server function sets them before save().
+            row.validate(skip={f.name for f in model._meta.fields.values() if f.readonly or f.private})
         except ValidationError as exc:
             errors = {**exc.errors, **errors}            # a value that couldn't be read wins
         if errors:

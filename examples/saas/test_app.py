@@ -1,6 +1,8 @@
 """Tests for Teamboard. Run them with `pytest` (or the pyweb_test MCP tool)."""
 
+import re
 from pathlib import Path
+from urllib.parse import urlencode
 
 import pytest
 
@@ -35,6 +37,16 @@ def test_forms_check_their_fields(client):
     with pytest.raises(RPCError) as err:
         client.rpc("create_project", project={"name": "x"})
     assert err.value.code == "validation_error"
+
+
+def test_the_form_works_without_javascript(client):
+    client.login("ann@example.com")
+    page = client.get("/projects").text
+    hidden = dict(re.findall(r'name="(__pw_\w+)" value="([^"]*)"', page))
+    res = client.request("POST", "/__pyweb/form/create_project", urlencode({**hidden, "name": "Launch"}).encode(),
+                         {"Content-Type": "application/x-www-form-urlencoded"})
+    assert res.status == 303                          # to the new project's page, owned by Ann
+    assert "Launch" in client.get(res.header("Location")).text
 
 
 def test_people_only_see_their_own_projects(client):

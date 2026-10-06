@@ -182,9 +182,12 @@ def _run_jobs():
         return [{"name": "?", "state": "error", "error": f"{type(exc).__name__}: {exc}"}]
 
 
-def request(method, path, body="", content_type=""):
+def request(method, path, body="", content_type="", headers_json=""):
     """One HTTP request to the running app; JSON with status, headers, body."""
-    headers = {"Content-Type": content_type} if content_type else None
+    headers = {k: v for k, v in json.loads(headers_json or "{}").items() if k.lower() not in ("cookie", "host")}
+    if content_type:
+        headers["Content-Type"] = content_type
+    headers = headers or None
     start = time.perf_counter()
     with _captured() as printed:
         r = _client.request(method, path, body.encode() if body else b"", headers)

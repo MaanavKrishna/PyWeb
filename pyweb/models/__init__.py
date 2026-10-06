@@ -886,13 +886,16 @@ class Model(metaclass=ModelMeta):
         use_database(SQLiteDB(path), auto_create=True)
 
     # -- validation ----------------------------------------------------------------
-    def validate(self):
-        """Check every field's rules and ``@validates`` methods; raise :class:`ValidationError`."""
+    def validate(self, *, skip=()):
+        """Check every field's rules and ``@validates`` methods; raise :class:`ValidationError`.
+
+        ``skip`` names fields left for the server to fill in (a form checks what
+        people typed; ``save()`` checks everything)."""
         meta = type(self)._meta
         d = self.__dict__
         errors = {}
         for f in meta.fields.values():
-            if f.primary_key:
+            if f.primary_key or f.name in skip:
                 continue
             value = d.get(f.name)
             rel = getattr(f, "relation", None)

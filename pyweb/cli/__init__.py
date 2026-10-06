@@ -477,9 +477,14 @@ def cmd_worker(args):
     import signal
     import threading
     from pyweb import jobs
+    from pyweb.jobs import worker as _worker
+    if args.alive:
+        # A container health check: no app loading, just "did a worker finish a round recently?"
+        raise SystemExit(0 if _worker.alive(max_age=args.max_age) else 1)
     _load_app_for_jobs(args.app)
     queues = [q.strip() for q in (args.queues or "").split(",") if q.strip()] or None
-    worker = jobs.Worker(queues=queues, concurrency=args.concurrency, schedule=not args.no_schedule)
+    worker = jobs.Worker(queues=queues, concurrency=args.concurrency, schedule=not args.no_schedule,
+                         heartbeat=_worker.heartbeat_path())
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
@@ -698,6 +703,9 @@ def main(argv=None):
     p.add_argument("--concurrency", type=int, default=8, help="jobs at once (default 8)")
     p.add_argument("--grace", type=float, default=25.0, help="seconds running jobs get on shutdown")
     p.add_argument("--no-schedule", action="store_true", help="don't queue cron/interval jobs from this worker")
+    p.add_argument("--alive", action="store_true",
+                   help="health check: exit 0 if a worker here finished a healthy round recently, else 1")
+    p.add_argument("--max-age", type=float, default=90.0, help="--alive: seconds since the last round (default 90)")
     p.set_defaults(fn=cmd_worker)
     p = sub.add_parser("jobs", help="list, retry and purge background jobs")
     p.add_argument("jobs_action", choices=["list", "retry", "purge", "run"])

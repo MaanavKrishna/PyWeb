@@ -83,6 +83,9 @@ def pyweb_requirement(plan):
     return spec
 
 
+# The worker container's health check (pyweb worker touches a file after each healthy round).
+WORKER_ALIVE = ["pyweb", "worker", "--alive"]
+
 DRIVERS = {"postgres": "psycopg[binary]>=3.1", "mysql": "PyMySQL>=1.1", "redis": "redis>=5", "auth": "argon2-cffi>=23.1"}
 
 
@@ -229,7 +232,9 @@ def compose(plan):
         if not web_deps:
             services["worker"].pop("depends_on")
         services["worker"]["stop_grace_period"] = "30s"
-        services["worker"]["healthcheck"] = {"disable": True}       # no HTTP here; the image's check is for web
+        # No HTTP here: healthy means the worker finished a round recently (it can reach its job store).
+        services["worker"]["healthcheck"] = {"test": ["CMD", *WORKER_ALIVE], "interval": "15s", "timeout": "5s",
+                                             "retries": 3, "start_period": "30s"}
         services["worker"].pop("image")
     if "postgres" in plan.provision:
         services["postgres"] = {
@@ -316,13 +321,15 @@ def k8s(plan):
                                                                                    "maxSurge": 1}},
                           "template": {"metadata": {"labels": labels}, "spec": web_spec}}})
     if plan.worker:
+        worker = container("worker", plan.worker_cmd, probes=False)
+        worker["livenessProbe"] = {"exec": {"command": WORKER_ALIVE}, "periodSeconds": 30, "failureThreshold": 3}
         wl = {"app.kubernetes.io/name": f"{name}-worker"}
         docs.append({"apiVersion": "apps/v1", "kind": "Deployment",
                      "metadata": {"name": f"{name}-worker", "labels": wl},
                      "spec": {"replicas": 1, "selector": {"matchLabels": wl},
                               "template": {"metadata": {"labels": wl}, "spec": {
                                   "terminationGracePeriodSeconds": 35,
-                                  "containers": [container("worker", plan.worker_cmd, probes=False)]}}}})
+                                  "containers": [worker]}}}})
     docs.append({"apiVersion": "v1", "kind": "Service", "metadata": {"name": name, "labels": labels},
                  "spec": {"selector": labels, "ports": [{"name": "http", "port": 80, "targetPort": "http"}]}})
     if plan.replicas > 1:

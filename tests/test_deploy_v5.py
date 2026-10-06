@@ -148,7 +148,7 @@ def test_compose_wires_everything(tmp_path):
     assert set(s) == {"migrate", "web", "worker", "postgres", "redis", "caddy"}
     assert s["web"]["deploy"]["replicas"] == 2 and "ports" not in s["web"]
     assert s["web"]["depends_on"]["migrate"] == {"condition": "service_completed_successfully"}
-    assert s["worker"]["command"] == ["pyweb", "worker", "dist"] and s["worker"]["healthcheck"] == {"disable": True}
+    assert s["worker"]["command"] == ["pyweb", "worker", "dist"] and s["worker"]["healthcheck"]["test"] == ["CMD", "pyweb", "worker", "--alive"]
     assert s["web"]["environment"]["PYWEB_REDIS_URL"] == "redis://redis:6379/0"
     assert s["web"]["environment"]["DATABASE_URL"].startswith("postgresql://pyweb:${DB_PASSWORD")
     assert s["caddy"]["ports"] == ["80:80", "443:443"]
@@ -265,3 +265,41 @@ def test_check_production_reports_pending_migrations(tmp_path, monkeypatch):
         "def up(op):\n    op.run_sql('CREATE TABLE x (id INTEGER)')\n\n\ndef down(op):\n    op.run_sql('DROP TABLE x')\n")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'p.db'}")
     assert any("1 migration(s) not applied yet" in p for p in _topology_problems(str(root)))
+
+
+def test_worker_heartbeat_health_check(tmp_path, monkeypatch):
+    import time
+    from pyweb.jobs import Worker, worker as W
+    from pyweb.jobs.memory import MemoryBackend
+    beat = tmp_path / "alive"
+    monkeypatch.setenv("PYWEB_WORKER_HEARTBEAT", str(beat))
+    assert W.heartbeat_path() == str(beat)
+    assert not W.alive()                                   # never ran
+    w = Worker(MemoryBackend(), schedule=False, poll=0.05, heartbeat=str(beat)).start()
+    try:
+        deadline = time.time() + 5
+        while not beat.exists() and time.time() < deadline:
+            time.sleep(0.02)
+        assert W.alive()
+    finally:
+        w.stop(1)
+    old = time.time() - 300
+    import os
+    os.utime(beat, (old, old))
+    assert not W.alive()                                   # stale: hung or can't reach its store
+    from pyweb.cli import main
+    with pytest.raises(SystemExit) as e:
+        main(["worker", "--alive"])
+    assert e.value.code == 1
+    W.touch(str(beat))
+    with pytest.raises(SystemExit) as e:
+        main(["worker", "--alive"])
+    assert e.value.code == 0
+
+
+def test_k8s_worker_liveness_probe(tmp_path):
+    plan = D.make_plan("k8s", D.read_app(make_app(tmp_path, SHOP)), replicas=2)
+    docs = list(yaml.safe_load_all(D.files_for(plan)["k8s.yaml"]))
+    worker = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"].endswith("-worker"))
+    c = worker["spec"]["template"]["spec"]["containers"][0]
+    assert c["livenessProbe"]["exec"]["command"] == ["pyweb", "worker", "--alive"]

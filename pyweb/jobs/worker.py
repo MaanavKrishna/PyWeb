@@ -52,8 +52,10 @@ class _Running:
 
 
 class Worker:
-    def __init__(self, backend=None, *, queues=None, concurrency=4, schedule=True, poll=1.0, name=None):
+    def __init__(self, backend=None, *, queues=None, concurrency=4, schedule=True, poll=1.0, name=None,
+                 heartbeat=None):
         self._backend = backend
+        self.heartbeat = heartbeat            # a file touched after every healthy round (container health checks)
         self.queues = tuple(queues) if queues else None      # None: every queue this app's jobs use
         self.concurrency = max(1, int(concurrency))
         self.schedule = schedule
@@ -128,6 +130,8 @@ class Worker:
         while not self.stopping.is_set():
             try:
                 self.tick()
+                if self.heartbeat:
+                    touch(self.heartbeat)
                 if failing is not None:
                     log.warning("job worker recovered")
                 delay, failing = self.poll, None
@@ -316,6 +320,33 @@ def _due(sched, catchup, mark, now_dt, started_at):
 
 
 # ------------------------------------------------------------------ embedded
+
+def heartbeat_path():
+    """Where ``pyweb worker`` records that it's healthy (``PYWEB_WORKER_HEARTBEAT`` overrides)."""
+    import tempfile
+    return os.environ.get("PYWEB_WORKER_HEARTBEAT") or os.path.join(tempfile.gettempdir(), "pyweb-worker.alive")
+
+
+def touch(path):
+    try:
+        with open(path, "a"):
+            pass
+        os.utime(path, None)
+    except OSError:
+        pass
+
+
+def alive(path=None, max_age=90.0):
+    """True when a worker finished a healthy round in the last ``max_age`` seconds.
+
+    A worker whose job store is unreachable stops touching the file (it backs
+    off up to 60 s between attempts), so it turns unhealthy, and a hung one does too.
+    """
+    try:
+        return time.time() - os.path.getmtime(path or heartbeat_path()) <= max_age
+    except OSError:
+        return False
+
 
 def worker_enabled():
     return os.environ.get("PYWEB_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")

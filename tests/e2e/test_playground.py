@@ -214,9 +214,17 @@ def test_requests_tab_and_user_switcher(page, site):
 @pytest.mark.skipif(not SQLITE, reason="the pyodide package has no sqlite3 wheel (CI downloads it)")
 def test_database_jobs_and_sign_in(page, site):
     app = open_playground(page, site, "#saas")
-    page.select_option("#pg-user", "admin")
-    page.fill("#pg-url", "/projects")
-    page.press("#pg-url", "Enter")
+    try:
+        page.select_option("#pg-user", "admin")
+        expect(page.locator("#pg-console")).to_contain_text("signed in as admin@example.com", timeout=15000)
+        page.fill("#pg-url", "/projects")
+        page.press("#pg-url", "Enter")
+        expect(app.locator("h1")).to_have_text("Projects", timeout=15000)
+    except AssertionError:
+        print("console:", page.locator("#pg-console").inner_text())
+        print("error:", page.locator("#pg-error").inner_text(), "| status:", page.locator("#pg-status").inner_text())
+        print("frame:", app.locator("body").inner_text()[:2000])
+        raise
     app.locator("input[name=name]").fill("Launch")
     app.locator("button[type=submit]").click()
     expect(app.locator("#tasks li")).to_have_count(3, timeout=15000)       # the welcome_tasks job ran

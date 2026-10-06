@@ -330,6 +330,7 @@ Upgrade with `pip install -U pyweb-stack`.
 
 | Version | Highlights |
 |---|---|
+| 0.5 | Models with migrations, forms, auth kit with passkeys, OAuth and an admin, row-level live updates over WebSockets on PyWeb's own server, durable jobs and schedules, `pyweb deploy` for docker, compose, k8s, fly, render and railway, logs, metrics, tracing and a dev toolbar, data-aware editor and MCP tools, the `saas` template, `pyweb upgrade` |
 | 0.4 | npm packages without Node, layouts and client-side navigation, streaming server functions and `<Markdown>` for AI apps, live queries, page head tags, `.pyweb` error pages; 0.4.1: richer MCP tools; 0.4.2: VS Code run, new-app and MCP commands; 0.4.3: fixes, security hardening, gzip and caching; 0.4.4: key rotation, session revocation, typed arguments, Redis-shared limits, `check --production` |
 | 0.3 | Hydration, live updates (SSE), multi-file apps, language server + VS Code extension, browser playground, faster rendering, screenshot/test MCP tools |
 | 0.2 | MCP server for AI assistants, AI guide, project templates, `AGENTS.md`/`CLAUDE.md`, `llms.txt` |

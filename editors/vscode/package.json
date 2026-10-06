@@ -2,7 +2,7 @@
   "name": "pyweb",
   "displayName": "PyWeb",
   "description": "PyWeb (.pyweb) support: highlighting, errors as you type, hover that shows what runs in the browser or on the server, completion for Models, queries and forms, N+1 and migration warnings with a one-click fix, go to definition, tag closing, Emmet, and commands to create and run apps.",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "publisher": "maanavkrishna",
   "license": "MIT",
   "homepage": "https://maanavkrishna.github.io/PyWeb/",

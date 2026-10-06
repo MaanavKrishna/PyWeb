@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- Completion knows your data: Model fields and query methods after `Post.`,
+  field names in `where(`/`create(`, relations in `include("`, columns in
+  `order("`, `Field(` options, and a `<Form>`'s fields in `name="`.
+- New warnings: a form field the action doesn't have, a loop that reads a
+  relation its query didn't `include()` (N+1), and Models changed without a
+  migration, with a code lens that writes it.
+- New commands: Create Migration from Model Changes, Apply Migrations.
+- New snippets: `model`, `fk`, `formpage`, `livepage`, `job`, `cron`,
+  `policy`, `useauth`.
+- Needs PyWeb 0.5 for the data features.
+
 ## 0.4.4
 
 - Released with PyWeb 0.4.4 (security and production hardening; see the

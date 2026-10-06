@@ -4,9 +4,14 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [semantic versioning](https://semver.org).
 
-## [Unreleased]
+## [0.5.0]
 
-Work towards 0.5.0: production apps in one Python file.
+Production apps in one Python file: Models with migrations, forms, an
+auth kit with an admin, row-level live updates over WebSockets on PyWeb's
+own server, durable background jobs and schedules, one-command
+deployment for six targets, built-in observability, and editors and AI
+assistants that understand your data. Most 0.4 apps run unchanged; see
+[Upgrading to 0.5](docs/27-upgrading.md) and run `pyweb upgrade --check`.
 
 ### Added
 - **Models on `pyweb.db`.** `class Post(Model): title: str = Field(max=120)`

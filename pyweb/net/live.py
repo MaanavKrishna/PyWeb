@@ -115,8 +115,12 @@ class LiveSession:
             next_check = time.monotonic() + REVALIDATE
             next_renew = time.monotonic() + presence.BEAT
             while not self.closed:
+                # Poll every second only for feeds from other processes (a shared bus);
+                # local ones wake us themselves, so idle sockets cost almost nothing.
+                remote = any(not sub.local for sub in self.subs.values())
+                timeout = min(1.0 if remote else 5.0, max(0.05, next_check - time.monotonic()))
                 try:
-                    await asyncio.wait_for(self.wake.wait(), 1.0)
+                    await asyncio.wait_for(self.wake.wait(), timeout)
                 except asyncio.TimeoutError:
                     for sub in self.subs.values():
                         if not sub.local:

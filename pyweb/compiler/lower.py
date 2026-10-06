@@ -185,7 +185,7 @@ class PageInfo:
 def npm_alias(spec, export):
     """The JavaScript name a page module imports ``npm(spec, export)`` as."""
     import hashlib
-    tag = hashlib.sha1(f"{spec}|{export}".encode()).hexdigest()[:6]
+    tag = hashlib.sha1(f"{spec}|{export}".encode(), usedforsecurity=False).hexdigest()[:6]
     return f"$npm_{re.sub(r'[^A-Za-z0-9]', '_', spec)}_{re.sub(r'[^A-Za-z0-9]', '_', export)}_{tag}"
 
 

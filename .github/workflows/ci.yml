@@ -137,7 +137,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[all,test]"
-      - run: python -m pytest tests/integration -q -p no:cacheprovider -rs
+      # Everything but the browser tests, with the services: the job-store contract,
+      # Redis-backed sessions/rate limits/throttles and the integration suites all run here.
+      - run: python -m pytest tests -q -p no:cacheprovider -rs --ignore=tests/e2e
 
   examples:
     name: examples, budgets, package

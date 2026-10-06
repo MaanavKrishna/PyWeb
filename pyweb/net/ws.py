@@ -38,7 +38,7 @@ _VALID_CLOSE = {1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013
 
 def accept_key(key: str) -> str:
     """The ``Sec-WebSocket-Accept`` value for a client's ``Sec-WebSocket-Key``."""
-    return base64.b64encode(hashlib.sha1(key.encode() + GUID).digest()).decode()  # noqa: S324 - the RFC's choice
+    return base64.b64encode(hashlib.sha1(key.encode() + GUID, usedforsecurity=False).digest()).decode()  # noqa: S324 - the RFC's choice
 
 
 def handshake_problem(method, headers):

@@ -714,11 +714,15 @@ class Model(metaclass=ModelMeta):
             if table not in made:
                 with _lock:
                     if table not in made:
-                        tables = [m._meta.table for m in _closure([cls])]
+                        tables = [m._meta.table for m in _closure([cls])] + [m.table for m in cls._meta.m2m.values()]
                         ensure_tables(db, [cls])
-                        made.update(tables)
-                        for m in cls._meta.m2m.values():
-                            made.add(m.table)
+                        # Inside a transaction the CREATE only counts once it commits (a rollback undoes it,
+                        # and the next use creates the table again).
+                        mark = getattr(db, "after_commit", None)
+                        if mark is not None:
+                            mark(lambda: made.update(tables))
+                        else:
+                            made.update(tables)
         return db
 
     def _db_used(self):

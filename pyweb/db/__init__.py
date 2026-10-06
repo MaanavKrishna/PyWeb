@@ -339,6 +339,7 @@ class _PooledDB:
             self._local.conn = None
             pending, self._local.pending = getattr(self._local, "pending", None), None
             callbacks, self._local.callbacks = getattr(self._local, "callbacks", None), None
+            finals, self._local.finals = getattr(self._local, "finals", None), None
             self._pool.put(conn)
         if commit and pending:
             from pyweb import livedata
@@ -349,6 +350,22 @@ class _PooledDB:
                     fn()
                 except Exception:  # noqa: BLE001 - the transaction already committed
                     log.exception("after_commit callback failed")
+        for fn in finals or ():
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                log.exception("after_end callback failed")
+
+    def after_end(self, fn):
+        """Call ``fn()`` when the current transaction ends, committed or rolled back (at once outside
+        one). For records that must survive a failed request, such as an audit log."""
+        if self._current() is None:
+            fn()
+            return
+        finals = getattr(self._local, "finals", None)
+        if finals is None:
+            finals = self._local.finals = []
+        finals.append(fn)
 
     def after_commit(self, fn):
         """Call ``fn()`` once the current transaction commits (at once outside a transaction).

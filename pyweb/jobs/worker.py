@@ -34,6 +34,16 @@ CRON_KEY_DAYS = 2              # a schedule slot's key blocks duplicates this lo
 WORKERS: "weakref.WeakSet[Worker]" = weakref.WeakSet()
 
 
+class _LostLease(Exception):
+    pass
+
+
+def _shares_app_database(b):
+    from pyweb import models as M
+    from .db import DatabaseBackend
+    return isinstance(b, DatabaseBackend) and b.db is M.database()
+
+
 class _Running:
     __slots__ = ("claim", "ctx", "thread", "deadline")
 
@@ -114,12 +124,20 @@ class Worker:
         return len(left)
 
     def _loop(self):
+        delay, failing = self.poll, None
         while not self.stopping.is_set():
             try:
                 self.tick()
-            except Exception:  # noqa: BLE001 - e.g. the database is briefly unreachable
-                log.exception("job worker tick failed")
-            self.wake.wait(self.poll)
+                if failing is not None:
+                    log.warning("job worker recovered")
+                delay, failing = self.poll, None
+            except Exception as exc:  # noqa: BLE001 - e.g. the database is unreachable or refuses
+                text = f"{type(exc).__name__}: {exc}"
+                if text != failing:
+                    log.exception("job worker can't reach its job store (retrying with backoff)")
+                failing = text
+                delay = min(60.0, max(self.poll, delay * 2))
+            self.wake.wait(delay)
             self.wake.clear()
 
     def tick(self, now=None):
@@ -170,17 +188,27 @@ class Worker:
                 return
             payload = json.loads(claim["payload"] or "{}")
             token = core._current.set(run.ctx)
+            same_db = _shares_app_database(b)
+            completed = False
             try:
                 from pyweb.db import request_scope
                 with request_scope():
                     result = definition.fn(*payload.get("args", ()), **payload.get("kwargs", {}))
+                    if same_db:
+                        # The job's writes and its "done" commit together: a crash can't leave work
+                        # done but the job queued (which would run it twice).
+                        if not self._still_mine(claim) or not b.complete(claim["id"], claim["token"], result):
+                            raise _LostLease()
+                        completed = True
+            except _LostLease:
+                return                                  # timed out or reclaimed: its writes rolled back
             except Exception as exc:  # noqa: BLE001
                 if self._still_mine(claim):
                     self._failed(claim, f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=20)}")
                 return
             finally:
                 core._current.reset(token)
-            if self._still_mine(claim):
+            if not completed and self._still_mine(claim):
                 b.complete(claim["id"], claim["token"], result)
         except Exception:  # noqa: BLE001 - never kill the worker
             log.exception("job %s crashed the runner", claim.get("id"))

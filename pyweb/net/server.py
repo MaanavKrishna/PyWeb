@@ -96,7 +96,7 @@ class Server:
                 await asyncio.wait_for(writer.drain(), 2)
             except (OSError, asyncio.TimeoutError):
                 pass
-            writer.close()
+            await _linger_close(reader, writer)
             return
         self.active += 1
         self.writers.add(writer)
@@ -113,10 +113,7 @@ class Server:
             self.active -= 1
             self.idle_writers.discard(writer)
             self.writers.discard(writer)
-            try:
-                writer.close()
-            except Exception:  # noqa: BLE001
-                pass
+            await _linger_close(reader, writer)
 
     async def _serve(self, reader, writer, client):
         first = True
@@ -212,16 +209,19 @@ class Server:
 
     async def _read_body(self, reader, head, limit):
         if head.chunked:
+            # Read exactly the chunked body (size lines, data, trailers) so a pipelined
+            # request after it stays in the reader untouched.
             decoder = H.ChunkedDecoder(limit)
             parts = []
             while not decoder.done:
-                chunk = await asyncio.wait_for(reader.read(65536), self.timeout)
-                if not chunk:
-                    raise asyncio.IncompleteReadError(b"", None)
-                parts.append(decoder.feed(chunk))
-            rest = decoder.leftover()
-            if rest:                                       # pipelined bytes: put them back
-                reader._buffer[:0] = rest                  # noqa: SLF001 - StreamReader has no unread()
+                if decoder.state == "data":
+                    piece = await asyncio.wait_for(reader.readexactly(decoder.left), self.timeout)
+                else:
+                    try:
+                        piece = await asyncio.wait_for(reader.readuntil(b"\r\n"), self.timeout)
+                    except asyncio.LimitOverrunError:
+                        raise H.HTTPError(400, "chunk line too long") from None
+                parts.append(decoder.feed(piece))
             return b"".join(parts)
         if not head.length:
             return b""
@@ -289,7 +289,7 @@ class _WSConnection:
 
     def __init__(self, reader, writer, timeout):
         self.reader, self.writer, self.timeout = reader, writer, timeout
-        self.parser = W.Parser(max_message=1 << 20)
+        self.parser = W.Parser(max_message=128 * 1024)     # the live hub accepts at most 64 KB anyway
         self.pending = []
         self.closed = False
         self.lock = asyncio.Lock()
@@ -338,6 +338,32 @@ class _WSConnection:
         try:
             await self._raw(W.close_frame(code, reason))
         except (OSError, asyncio.TimeoutError):
+            pass
+
+
+async def _linger_close(reader, writer, *, seconds=1.0, limit=256 * 1024):
+    """Close politely: stop sending, read (and drop) what the client still sends for a moment, then
+    close. Closing with unread request bytes makes the kernel send a reset, which can destroy the
+    response (a 503, 413 or 400) before the client reads it."""
+    try:
+        if writer.can_write_eof() and not writer.is_closing():
+            writer.write_eof()
+        end = time.monotonic() + seconds
+        got = 0
+        while got < limit and not reader.at_eof():
+            left = end - time.monotonic()
+            if left <= 0:
+                break
+            chunk = await asyncio.wait_for(reader.read(65536), left)
+            if not chunk:
+                break
+            got += len(chunk)
+    except (OSError, asyncio.TimeoutError, RuntimeError):
+        pass
+    finally:
+        try:
+            writer.close()
+        except Exception:  # noqa: BLE001
             pass
 
 

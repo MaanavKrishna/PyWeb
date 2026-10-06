@@ -136,7 +136,11 @@ Work towards 0.5.0: production apps in one Python file.
 - **Nightly cleanup** of finished jobs, expired sign-in links and old audit
   entries.
 - `db.after_commit(fn)`: run code once the current transaction commits
-  (dropped on rollback, including a rolled-back savepoint).
+  (dropped on rollback, including a rolled-back savepoint), and
+  `db.after_end(fn)` for code that must run either way.
+- Jobs stored in the app's database are marked done in the job's own
+  transaction, so a job's database writes happen exactly once even if a
+  worker crashes or loses its lease.
 - **Read replicas** with `DATABASE_REPLICA_URL` (read-your-writes inside a
   request), slow query logging with query plans (`PYWEB_SLOW_QUERY_MS`),
   `pyweb.db.QUERY_HOOKS`, seeds (`pyweb.db.seeds`) and
@@ -154,6 +158,17 @@ Work towards 0.5.0: production apps in one Python file.
   in-memory SQLite file.
 
 ### Fixed
+- The server answered a refused connection (503) or a rejected request and
+  closed at once; unread request bytes then made the kernel reset the
+  connection, which could destroy the response. It now closes politely
+  (half-close, drain briefly).
+- While developing, a Model's table made on first use inside a request that
+  then failed was rolled back but still counted as made ("no such table"
+  until a restart). Tables are now made when the app loads, and a lazily
+  made one only counts once its transaction commits.
+- Audit log entries written during a request that rolls back are kept
+  (written when the transaction ends, committed or not), and a failing
+  audit insert can no longer abort the request's transaction.
 - `Site(..., rate_limit=False)` (used by `pyweb.testing.serve`) passed
   `False` to the server instead of turning rate limits off.
 

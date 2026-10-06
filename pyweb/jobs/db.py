@@ -48,7 +48,7 @@ class JobRecord(Model):
 
     class Meta:
         table = TABLE
-        indexes = [Index("queue", "state", "run_at")]
+        indexes = [Index("queue", "state", "run_at"), Index("state", "locked_until")]
 
     @property
     def when(self):
@@ -136,17 +136,32 @@ class DatabaseBackend(Backend):
             pass
 
     # ---------------------------------------------------------------- claim
+    def reclaim(self, now=None):
+        """Put jobs whose lease ran out (their worker died) back in the queue. Returns how many.
+
+        Kept apart from claiming so the claim query only ever reads the
+        ``(queue, state, run_at)`` index, never every finished job.
+        """
+        now = time.time() if now is None else now
+        res = self.db.execute(f"UPDATE {self.t} SET state = 'queued', locked_by = NULL, locked_until = NULL "
+                              f"WHERE state = 'running' AND locked_until < ?", (now,))
+        if res.rowcount:
+            self.db.after_commit(lambda: self._announce("default"))
+        return res.rowcount or 0
+
     def claim(self, queues, worker, limit, now=None):
         if limit <= 0 or not queues:
             return []
         self._ensure()
         db, t = self.db, self.t
         now = time.time() if now is None else now
+        if now >= getattr(self, "_next_reclaim", 0):
+            self._next_reclaim = now + 5
+            self.reclaim(now)
         token = f"{worker}:{secrets.token_hex(4)}"[:80]
         marks = ", ".join("?" * len(queues))
-        due = (f"queue IN ({marks}) AND ((state = 'queued' AND run_at <= ?) "
-               f"OR (state = 'running' AND locked_until < ?))")
-        params = (*queues, now, now)
+        due = f"queue IN ({marks}) AND state = 'queued' AND run_at <= ?"
+        params = (*queues, now)
         claim = (f"UPDATE {t} SET state = 'running', locked_by = ?, locked_until = ? + timeout + 30, "
                  f"attempts = attempts + 1")
         if self.dialect.name == "sqlite":

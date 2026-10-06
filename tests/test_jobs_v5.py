@@ -340,3 +340,48 @@ def test_backend_follows_the_app_database(tmp_path, monkeypatch):
         jobs.backend()
     monkeypatch.delenv("PYWEB_JOBS")
     jobs.use_backend(None)
+
+
+def test_db_jobs_commit_their_writes_with_done(tmp_path, monkeypatch):
+    """With jobs in the app's database, a job whose lease was taken over can't also commit its writes."""
+    monkeypatch.setattr(M._state, "db", None)
+    db = connect(f"sqlite:///{tmp_path / 'once.db'}")
+    M.use_database(db)
+    from pyweb.jobs.db import DatabaseBackend
+    store = jobs.use_backend(DatabaseBackend(db))
+    db.execute("create table effects (note text)")
+    try:
+        @define
+        def write(note, steal=False):
+            db.execute("insert into effects values (?)", (note,))
+            if steal:      # another worker reclaimed this job meanwhile
+                db.execute("update pyweb_jobs set locked_by = 'someone-else' where id = ?", (jobs.current().id,))
+            return note
+
+        ok = write.enqueue("kept")
+        lost = write.enqueue("dropped", steal=True)
+        w = jobs.Worker(store, schedule=False)
+        w.tick()
+        time.sleep(0.3)
+        assert store.get(ok.id)["state"] == "done"
+        assert store.get(lost.id)["state"] == "running"      # left for whoever owns it now
+        assert [r[0] for r in db.execute("select note from effects").fetchall()] == ["kept"]
+    finally:
+        jobs.use_backend(None)
+        M._state.db = None
+
+
+def test_a_failing_store_is_retried_with_backoff():
+    calls = []
+
+    class Broken(MemoryBackend):
+        def claim(self, *a, **k):
+            calls.append(time.monotonic())
+            raise ConnectionError("database down")
+
+    w = jobs.Worker(Broken(), schedule=False, poll=0.05).start()
+    time.sleep(0.8)
+    w.stop(0)
+    assert 2 <= len(calls) <= 6                           # 0.05, 0.1, 0.2, 0.4 ... not every 50 ms
+    gaps = [b - a for a, b in zip(calls, calls[1:])]
+    assert gaps == sorted(gaps)

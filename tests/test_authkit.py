@@ -634,3 +634,17 @@ def test_check_production_asks_for_an_origin(monkeypatch):
     assert any("PYWEB_ORIGIN" in p for p in production_problems(src))
     monkeypatch.setenv("PYWEB_ORIGIN", "https://acme.dev")
     assert not any("PYWEB_ORIGIN" in p for p in production_problems(src))
+
+
+def test_audit_entries_survive_a_rolled_back_request(make):
+    from pyweb.authkit import AuthEvent, User
+    from pyweb.db import request_scope
+    site = make()
+    kit = kit_of(site)
+    with pytest.raises(RuntimeError):
+        with request_scope():
+            User.create(email="temp@example.com")                 # the request's transaction is open
+            kit.event("login_failed", email="mallory@example.com", ok=False)
+            raise RuntimeError("the request failed")
+    assert User.where(email="temp@example.com").first() is None     # its writes rolled back
+    assert AuthEvent.where(kind="login_failed", email="mallory@example.com").exists()   # the audit entry didn't

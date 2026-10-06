@@ -123,7 +123,7 @@ def breach_check_enabled():
 
 def breached(password, *, timeout=3.0):
     """How many times ``password`` appears in known breaches (0 if not, or if the check can't run)."""
-    digest = hashlib.sha1(password.encode()).hexdigest().upper()  # noqa: S324 - the API's format
+    digest = hashlib.sha1(password.encode(), usedforsecurity=False).hexdigest().upper()  # noqa: S324 - the API's format
     prefix, suffix = digest[:5], digest[5:]
     req = urllib.request.Request(f"https://api.pwnedpasswords.com/range/{prefix}",
                                  headers={"Add-Padding": "true", "User-Agent": "pyweb"})

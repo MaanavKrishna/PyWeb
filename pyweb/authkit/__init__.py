@@ -69,6 +69,11 @@ def _b64(raw):
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
+def system_writes():
+    from pyweb.models import system
+    return system()
+
+
 class _DBSessionVersions:
     """Session versions in the users table: durable and shared by every server."""
 
@@ -252,9 +257,22 @@ class AuthKit:
             ip = self._ip()
         except RuntimeError:
             ua, ip = None, None
+        values = dict(user_id=getattr(user, "id", None), kind=kind, ok=ok,
+                      email=(email or (user.email if user else None) or "")[:254] or None,
+                      ip=(ip or "")[:64] or None, user_agent=ua, detail=(detail or None) and str(detail)[:300])
+
+        def write():
+            try:
+                with system_writes():
+                    AuthEvent.create(**values)
+            except Exception:  # noqa: BLE001 - the audit log must never break sign-in
+                import logging
+                logging.getLogger("pyweb.auth").exception("couldn't record auth event %s", kind)
+
         try:
-            AuthEvent.create(user=user, kind=kind, ok=ok, email=email or (user.email if user else None),
-                             ip=ip, user_agent=ua, detail=(detail or None) and str(detail)[:300])
+            # Inside a request's transaction the entry is written once it ends, committed or rolled
+            # back: a failed sign-in is recorded even when the request fails.
+            AuthEvent._database().after_end(write)
         except Exception:  # noqa: BLE001 - the audit log must never break sign-in
             import logging
             logging.getLogger("pyweb.auth").exception("couldn't record auth event %s", kind)

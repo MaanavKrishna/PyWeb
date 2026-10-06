@@ -677,3 +677,12 @@ def wait_for(check, tries=10):
         except AssertionError:
             pass
     return False
+
+
+def test_a_request_pipelined_after_a_chunked_body(running):
+    body = b'{"args": {"text": "a"}}'
+    wire = (b"POST /__pyweb/rpc/shout HTTP/1.1\r\nHost: a\r\nContent-Type: application/json\r\n"
+            b"Transfer-Encoding: chunked\r\n\r\n" + b"%x\r\n%s\r\n0\r\n\r\n" % (len(body), body) +
+            b"GET /healthz HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n")
+    out = raw(running, wire)
+    assert out.count(b"HTTP/1.1 200 OK") == 2 and b'"A"' in out

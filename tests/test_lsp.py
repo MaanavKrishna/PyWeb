@@ -162,6 +162,12 @@ def test_stdio_session(tmp_path):
         {"jsonrpc": "2.0", "id": 4, "method": "textDocument/definition",
          "params": {"textDocument": {"uri": uri}, "position": dict(zip(("line", "character"), pos(APP, "Card", "<Card")))}},
         {"jsonrpc": "2.0", "id": 5, "method": "textDocument/documentSymbol", "params": {"textDocument": {"uri": uri}}},
+        # Newer clients (vscode-languageclient 10, LSP 3.18) ask for things this server doesn't offer;
+        # those get "method not found", and replies to the server's own requests are ignored.
+        {"jsonrpc": "2.0", "id": 7, "method": "textDocument/diagnostic", "params": {"textDocument": {"uri": uri}}},
+        {"jsonrpc": "2.0", "id": 8, "method": "textDocument/inlayHint", "params": {"textDocument": {"uri": uri}}},
+        {"jsonrpc": "2.0", "id": 99, "result": None},
+        {"jsonrpc": "2.0", "method": "$/cancelRequest", "params": {"id": 3}},
         {"jsonrpc": "2.0", "id": 6, "method": "shutdown"},
         {"jsonrpc": "2.0", "method": "exit"},
     ]
@@ -176,6 +182,8 @@ def test_stdio_session(tmp_path):
     assert by_id[4]["result"]["uri"].endswith("/widgets.pyweb")
     assert [s["name"] for s in by_id[5]["result"]] == ["latest", "Home"]
     assert by_id[6]["result"] is None and proc.returncode == 0
+    assert by_id[7]["error"]["code"] == by_id[8]["error"]["code"] == -32601
+    assert 99 not in by_id
 
 
 def test_vscode_extension_version_matches_the_package():

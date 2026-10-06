@@ -458,8 +458,15 @@ class LanguageServer:
             break                       # one lens, on the first Model, is enough
         return lenses
 
+    #: Requests (messages with an id) the server answers; others get "method not found", as LSP asks.
+    REQUESTS = {"initialize", "shutdown", "textDocument/hover", "textDocument/completion", "textDocument/definition",
+                "textDocument/documentSymbol", "textDocument/codeLens"}
+
     def handle(self, msg):
         method, params, mid = msg.get("method"), msg.get("params") or {}, msg.get("id")
+        if mid is not None and method is not None and method not in self.REQUESTS:
+            self.send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unhandled method {method}"}})
+            return
         try:
             result = self.dispatch(method, params)
         except Exception as exc:  # noqa: BLE001 - never kill the editor session

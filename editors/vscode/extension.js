@@ -7,10 +7,11 @@ const { execFile } = require("child_process");
 const { LanguageClient } = require("vscode-languageclient/node");
 
 const TEMPLATES = [
+  ["saas", "Accounts, Models with migrations, forms, live updates, jobs and an admin"],
   ["counter", "A page with state and a button"],
-  ["todo", "A to-do list saved in SQLite"],
-  ["blog", "Pages, layouts and Markdown posts"],
-  ["auth", "Sign up, log in and a private page"],
+  ["todo", "A to-do list with filters, all in the browser"],
+  ["blog", "A Model, server functions and pages per post"],
+  ["auth", "Your own sign-up and login with sessions"],
   ["chat", "Live chat between browsers"],
   ["ai-chat", "A streaming AI chat"],
   ["blank", "Just the basics"],

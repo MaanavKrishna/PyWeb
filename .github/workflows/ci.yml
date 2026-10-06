@@ -63,8 +63,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ../..
       - run: npm ci
       - run: npm test
+      # The extension in a real VS Code (the oldest it supports and the current stable one),
+      # talking to the real language server: activation, errors, hover, completion, outline, lenses.
+      - run: xvfb-run -a npm run test:integration
+        env:
+          PYWEB_PYTHON: python
       - run: npx vsce package
       - uses: actions/upload-artifact@v4
         with:

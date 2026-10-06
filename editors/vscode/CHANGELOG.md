@@ -11,6 +11,10 @@
 - New commands: Create Migration from Model Changes, Apply Migrations.
 - New snippets: `model`, `fk`, `formpage`, `livepage`, `job`, `cron`,
   `policy`, `useauth`.
+- Updated to the current language client (vscode-languageclient 10, LSP
+  3.18). The extension now needs VS Code 1.91 or later.
+- Tested in a real VS Code (the oldest supported version and the current
+  stable one) against the real language server on every change.
 - Needs PyWeb 0.5 for the data features.
 
 ## 0.4.4

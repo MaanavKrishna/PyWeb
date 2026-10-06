@@ -1,0 +1,25 @@
+from pyweb import App, Field, Model, server
+
+app = App(title="Editor test", database="sqlite:///:memory:")
+
+
+class Post(Model):
+    title: str = Field(max=120)
+    views: int = 0
+
+
+@server
+def publish(title: str) -> int:
+    return Post.create(title=title).id
+
+
+@app.page("/")
+def Home():
+    count = 0
+
+    def add():
+        count += 1
+
+    <main>
+        <button onclick={add}>{count}</button>
+    </main>

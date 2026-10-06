@@ -15,7 +15,7 @@
     "url": "https://github.com/MaanavKrishna/PyWeb/issues"
   },
   "engines": {
-    "vscode": "^1.82.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages",
@@ -198,13 +198,15 @@
   },
   "scripts": {
     "test": "node test/grammar.test.js && node test/extension.test.js",
+    "test:integration": "node test/integration/run.js",
     "package": "vsce package"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^10.1.2"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.2.1",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.1.0"
   },

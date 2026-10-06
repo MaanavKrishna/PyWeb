@@ -178,7 +178,7 @@ def sign_key(purpose, ctx=None):
 
 
 def verify_keys(purpose, ctx=None):
-    """Every key a ``purpose`` token may carry: current, previous secrets, pre-0.4.4."""
+    """Every key a ``purpose`` token may be signed with: the current secret's, then previous secrets'."""
     from . import keys
     return keys.verify_keys(_secret(ctx or current()), purpose)
 

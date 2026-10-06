@@ -114,8 +114,9 @@ To change the secret without signing everyone out, set the new value as
 `PYWEB_AUTH_SECRET` and move the old one to `PYWEB_AUTH_SECRET_PREVIOUS`
 (comma-separate several). Tokens signed with an old secret keep working
 until they expire; remove it from the list after a month (the longest a
-session lasts). Tokens issued before 0.4.4 also keep working through
-0.4.x.
+session lasts). Every token is signed with a key derived for its purpose
+(sessions, feeds, forms, ...), never with the secret itself, so a token
+made for one purpose can't be used for another.
 
 ## Server function arguments
 

@@ -592,7 +592,15 @@ def cmd_db(args):
         elif action == "seed":
             from pyweb.db import seeds
             base = os.path.dirname(os.path.abspath(args.app)) if getattr(args, "app", None) else os.getcwd()
-            ran = seeds.run(args.seeds or os.path.join(base, "seeds.py"), db=db)
+            from pyweb import models as _models
+            previous = _models._state.db
+            # --database / DATABASE_URL: the seeds write there. Without migrations yet (prototype
+            # mode) tables are created on first use, as `pyweb dev` does.
+            _models.use_database(db, auto_create=not os.path.isdir(migrations))
+            try:
+                ran = seeds.run(args.seeds or os.path.join(base, "seeds.py"), db=db)
+            finally:
+                _models._state.db = previous
             print("seeded: " + (", ".join(ran) if ran else "nothing to run"))
         else:
             raise SystemExit(f"unknown db action {action!r}")
@@ -736,7 +744,7 @@ def main(argv=None):
     p.add_argument("--days", type=float, default=7, help="purge: finished more than this many days ago")
     p.add_argument("--timeout", type=float, default=60, help="run: give up after this many seconds")
     p.set_defaults(fn=cmd_jobs)
-    p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=["blank", "counter", "todo", "blog", "auth", "chat", "ai-chat"], help="starter app"); p.set_defaults(fn=cmd_new)
+    p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=list(__import__("pyweb.mcp", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (saas: accounts, data, jobs, admin)"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
     p = sub.add_parser("check"); p.add_argument("file")

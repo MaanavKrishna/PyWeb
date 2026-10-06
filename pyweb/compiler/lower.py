@@ -507,6 +507,11 @@ def _form_builtin(kind, n, ctx, filename, info, form):
     if n.children and kind != "Select":
         raise CompileError(f"<{n.tag}> takes no children; set label=\"...\" for its label", line, filename)
     D = f"{F}['fields'][{fname!r}]"
+    type_attr = n.attrs.get("type")
+    if kind == "Input" and isinstance(type_attr, tuple) and type_attr[:2] == ("lit", "hidden"):
+        # A value the page sets (e.g. the parent row's id): just the input, no label or error slot.
+        return [Element("input", {"type": _lit("hidden", line), "name": _lit(fname, line),
+                                  "value": _x(f"{D}['value']", line)}, [], line)]
     user = {k: v for k, v in n.attrs.items() if k not in ("name", "label", "class", "class_")}
     wrapper_class = n.attrs.get("class") or n.attrs.get("class_")
     label_attr = n.attrs.get("label")
@@ -514,6 +519,8 @@ def _form_builtin(kind, n, ctx, filename, info, form):
         label_kids = [TextNode(label_attr[1], line)] if label_attr[0] == "lit" else [ExprNode(label_attr[1], line)]
     else:
         label_kids = [ExprNode(f"{D}['label']", line)]
+    # label="": none shown, still named for screen readers
+    no_label = isinstance(label_attr, tuple) and label_attr[:2] == ("lit", "")
     common = {"id": _x(f"{D}['id']", line), "name": _lit(fname, line),
               "required": _x(f"{D}['required']", line), "aria-invalid": _x(f"{D}['invalid']", line),
               "aria-describedby": _x(f"{D}['describedby']", line)}
@@ -547,7 +554,9 @@ def _form_builtin(kind, n, ctx, filename, info, form):
                                         "maxlength": _x(f"{D}['maxlength']", line),
                                         "min": _x(f"{D}['min']", line), "max": _x(f"{D}['max']", line),
                                         "step": _x(f"{D}['step']", line), **user}, [], line)
-        body = ([marker] if kind == "Select" else []) + [label, control]
+        if no_label:
+            control.attrs.setdefault("aria-label", _x(f"{D}['label']", line))
+        body = ([marker] if kind == "Select" else []) + ([] if no_label else [label]) + [control]
     help_p = ControlIf(f"{D}['help']", [Element("p", {"class": _lit("pw-help", line)},
                                                       [ExprNode(f"{D}['help']", line)], line)], [], line)
     error_p = Element("p", {"class": _lit("pw-error", line), "id": _x(f"{D}['describedby']", line),

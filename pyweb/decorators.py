@@ -24,12 +24,61 @@ def server(fn=None, *, login=False, roles=(), fresh=None):
     guard = {"login": True, "roles": list(roles), "fresh": fresh} if (login or roles or fresh) else None
 
     def apply(target):
+        _field_defaults(target)
         _mark(target, location="server")
         if guard is not None:
             target.__pyweb_guard__ = guard
         return target
     return apply(fn) if fn is not None else apply
 
+
+
+def _field_defaults(fn):
+    """``title: str = Field(max=120)`` means ``title: Annotated[str, Field(max=120)]`` (with the
+    Field's default, or required): rewrite the signature so every layer sees the rules."""
+    import inspect
+    import typing
+    try:
+        from pyweb.models.fields import MISSING, Field
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError, ImportError):
+        return
+    params, changed = [], False
+    annotations = dict(getattr(fn, "__annotations__", {}) or {})
+    for p in sig.parameters.values():
+        if isinstance(p.default, Field):
+            field = p.default
+            ann = p.annotation if p.annotation is not p.empty else str
+            if isinstance(ann, str):          # `from __future__ import annotations`: resolve it now
+                try:
+                    ann = eval(ann, getattr(fn, "__globals__", {}))  # noqa: S307 - the function's own annotation
+                except Exception:  # noqa: BLE001
+                    ann = str
+            ann = typing.Annotated[ann, field]
+            default = p.empty if field.default is MISSING else field.default
+            p = p.replace(annotation=ann, default=default)
+            annotations[p.name] = ann
+            changed = True
+        params.append(p)
+    if not changed:
+        return
+    try:
+        new_sig = sig.replace(parameters=params)
+    except ValueError:                        # a required Field after a defaulted parameter: keep it optional
+        params = [p.replace(default=None) if p.default is p.empty and isinstance(sig.parameters[p.name].default, Field)
+                  else p for p in params]
+        new_sig = sig.replace(parameters=params)
+    fn.__signature__ = new_sig
+    fn.__annotations__ = annotations
+    defaults = tuple(p.default for p in params if p.default is not p.empty
+                     and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD))
+    kwdefaults = {p.name: p.default for p in params if p.kind is p.KEYWORD_ONLY and p.default is not p.empty}
+    if hasattr(fn, "__defaults__"):
+        try:
+            fn.__defaults__ = defaults or None
+            fn.__kwdefaults__ = kwdefaults or None
+        except (AttributeError, TypeError):
+            pass
 
 
 def edge(fn=None):

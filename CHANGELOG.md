@@ -189,6 +189,21 @@ Work towards 0.5.0: production apps in one Python file.
   touches a heartbeat file after each round that reached its job store);
   compose and Kubernetes use it.
 
+- **`pyweb new --template saas`**: accounts, projects and tasks with row
+  policies, `<Form>`s, live pages, a background job, a weekday cron email,
+  `/admin`, seeds, tests and a first migration, ready for `pyweb deploy`.
+  Templates with a database get `migrations/0001_initial.py` and a README.
+- `TestClient.login(email, roles=[...])` signs a test in (creating the
+  account with the auth kit) without going through the sign-in form;
+  `logout()` signs out.
+- `seeds.py` sees the app's Models by name; `pyweb.models.model("Post")`
+  looks one up anywhere.
+- A server function parameter can take its rules from a default:
+  `title: str = Field(min=1, max=120)` (same as `Annotated[str, Field(...)]`).
+- `<Input name="project_id" type="hidden" />` is just the input (for ids the
+  page sets with `values=`); `label=""` hides a field's label but keeps it as
+  the input's `aria-label`.
+
 ### Changed
 - `PYWEB_MAX_CONNECTIONS` defaults to 10,000 per process (it was 256 for
   the threaded server, which `pyweb serve --app module:factory` still uses).
@@ -201,6 +216,15 @@ Work towards 0.5.0: production apps in one Python file.
   in-memory SQLite file.
 
 ### Fixed
+- Rules on server function parameters (`Annotated[str, Field(max=40)]`) were
+  ignored: a direct call could send any value, and forms didn't get the
+  matching browser checks. They're enforced on every call now, with errors
+  per field (422).
+- `owner: User = Field(readonly=True)` made a plain column instead of a
+  foreign key; options given with `Field(...)` now apply to the relation.
+- `pyweb db seed --database URL` wrote to the app's own database; apps
+  without migrations yet couldn't be seeded before `pyweb dev` created
+  their tables.
 - `pyweb dev` didn't reload pages larger than 1 KB after a change: they were
   gzipped before the reload script could be added.
 - `Model.query()...live()` in a page made a static page: the compiler only

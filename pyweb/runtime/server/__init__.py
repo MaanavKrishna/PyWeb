@@ -509,6 +509,9 @@ class Server:
             args = payload.get("args", {}) if isinstance(payload, dict) else {}
             try:
                 clean = self._validate(fn, args if isinstance(args, dict) else {})
+            except ValidationError as exc:              # a parameter's rules: errors per field
+                return self._err(_rpc.Code.VALIDATION, str(exc), details={"errors": exc.errors},
+                                 trace_id=trace_id, traceparent=traceparent)
             except (TypeError, ValueError) as exc:
                 return self._err(_rpc.Code.VALIDATION, str(exc),
                                  trace_id=trace_id, traceparent=traceparent)

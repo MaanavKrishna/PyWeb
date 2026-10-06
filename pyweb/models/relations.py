@@ -103,8 +103,9 @@ class ForeignKey(Relation):
     annotation means the same. ``on_delete``: ``cascade``, ``set null``, ``restrict``."""
 
     def __init__(self, to=None, *, on_delete="cascade", related_name=None, nullable=None, index=True,
-                 unique=False, column=None, label=None, required=None):
+                 unique=False, column=None, label=None, required=None, readonly=False, private=False):
         super().__init__(to, related_name=related_name)
+        self.readonly, self.private = readonly, private
         if on_delete not in ON_DELETE:
             raise ValueError(f"on_delete must be one of {', '.join(ON_DELETE)}")
         self.on_delete = on_delete
@@ -132,6 +133,8 @@ class ForeignKey(Relation):
         self.field = Field(nullable=self.nullable, kind="bigint", column=self.column or f"{name}_id",
                            unique=self.unique, index=self.index, label=self.label, required=self.required)
         self.field.relation = self
+        self.field.readonly = self.field.readonly or self.readonly     # never set from a browser
+        self.field.private = self.field.private or self.private
         self.field.bind(model, f"{name}_id", MISSING)
         self.field.nullable = self.nullable
         if self.required is None:

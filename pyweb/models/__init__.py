@@ -154,6 +154,15 @@ def _closure(models):
     return out
 
 
+def model(name):
+    """The Model class called ``name`` (for scripts and ``seeds.py``): ``Post = model("Post")``."""
+    _finalize_pending()
+    found = _by_name.get(name)
+    if found is None:
+        raise LookupError(f"no Model named {name!r}; known: {', '.join(sorted(_by_name)) or 'none'}")
+    return found
+
+
 def all_models():
     """Every concrete Model class defined so far (the latest class for each name)."""
     _finalize_pending()
@@ -519,6 +528,15 @@ class ModelMeta(type):
                     m2m[key] = rel
                     type.__setattr__(cls, key, rel)
                     continue
+                if isinstance(value, Field) and not isinstance(value, Relation) and _is_model_type(inner):
+                    # `owner: User = Field(readonly=True)`: still a foreign key, with the Field's options.
+                    if value.default is not MISSING and value.default is not None:
+                        raise TypeError(f"{cls.__name__}.{key}: a relation to {inner.__name__} can't have a "
+                                        f"default row; use `{key}: {inner.__name__} | None = None`")
+                    value = ForeignKey(inner, on_delete="set null" if _optional else "cascade",
+                                       nullable=True if _optional else None, index=value.index or not value.unique,
+                                       unique=value.unique, label=value.label, required=value.required,
+                                       readonly=value.readonly, private=value.private)
                 if isinstance(value, ForeignKey) or (not isinstance(value, (Field, Relation))
                                                      and _is_model_type(inner)):
                     rel = value if isinstance(value, ForeignKey) else ForeignKey(

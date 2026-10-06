@@ -25,13 +25,19 @@ def seed(fn):
     return fn
 
 
-def run(path="seeds.py", *, db=None, only=None):
-    """Run the seeds in ``path`` (a file). Returns the names that ran."""
+def run(path="seeds.py", *, db=None, only=None, names=None):
+    """Run the seeds in ``path`` (a file). Returns the names that ran.
+
+    The app's Models are available in ``seeds.py`` by name (``User``, ``Post``, ...), as are
+    ``names`` passed here; ``from pyweb.models import model; Post = model("Post")`` also works.
+    """
     from pyweb import models as M
     if not os.path.isfile(path):
         raise FileNotFoundError(f"no seeds file at {path}")
     start = len(_SEEDS)
-    ns = {"__file__": os.path.abspath(path), "__name__": "pyweb_seeds"}
+    ns = {m.__name__: m for m in M.all_models()}
+    ns.update(names or {})
+    ns.update({"__file__": os.path.abspath(path), "__name__": "pyweb_seeds"})
     with open(path, encoding="utf-8") as fh:
         exec(compile(fh.read(), path, "exec"), ns)  # noqa: S102 - the app's own seeds
     fns = _SEEDS[start:]

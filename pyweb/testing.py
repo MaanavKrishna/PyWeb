@@ -99,6 +99,51 @@ class TestClient:
         body = json.dumps(data).encode() if data is not None else b""
         return self.request("POST", path, body, {"Content-Type": "application/json", **(headers or {})})
 
+    def login(self, email="user@example.com", *, roles=(), name=None, **claims):
+        """Sign in as someone without going through the sign-in form; returns the user.
+
+        With the auth kit (``app.use_auth()``) the account is created if it doesn't exist
+        (with ``roles``) and signed in like a real sign-in. Without it, the session's user is
+        ``{"sub": email, "roles": [...], ...claims}``.
+        """
+        from .context import session
+        from .runtime.server import Request
+        server = self.site.server
+        kit = server._auth_kit()
+
+        def sign_in():
+            if kit is None:
+                session.login(email, roles=list(roles), **({"name": name} if name else {}), **claims)
+                return session.user()
+            from .authkit import User
+            from .models import system
+            with system():
+                user = User.where(email=email.strip().lower()).first()
+                if user is None:
+                    user = kit.create_user(email, name=name or email.split("@")[0], roles=roles, verified=True)
+                elif roles and set(roles) - set(user.roles or []):
+                    user.roles = sorted(set(user.roles or []) | set(roles))
+                    user.save(validate=False)
+                return kit.login(user, method="test")
+
+        req = Request("GET", "/", self._headers())
+        from .context import current
+        captured = {}
+
+        def run():
+            result = sign_in()
+            captured["cookies"] = list(current().set_cookies)
+            return result
+        from .db import request_scope
+        with request_scope():
+            user = server.in_request(req, run)
+        self._store_cookies([("Set-Cookie", c) for c in captured["cookies"]])
+        return user
+
+    def logout(self):
+        """Forget the session cookie (sign out)."""
+        self.cookies.clear()
+
     def rpc(self, function, /, **args):
         """Call a server function like the browser does; raise RPCError on failure.
 

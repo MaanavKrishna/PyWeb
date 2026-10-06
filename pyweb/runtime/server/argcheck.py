@@ -28,7 +28,8 @@ def hints(fn):
     found = _HINTS.get(fn)
     if found is None:
         try:
-            found = typing.get_type_hints(fn)
+            # Keep Annotated[...] metadata: `Annotated[str, Field(max=40)]` carries a parameter's rules.
+            found = typing.get_type_hints(fn, include_extras=True)
         except Exception:  # noqa: BLE001 - unresolvable names: fall back to the raw annotations
             found = {k: p.annotation for k, p in inspect.signature(fn).parameters.items()
                      if p.annotation is not inspect.Parameter.empty}
@@ -48,6 +49,8 @@ def check(value, ann, where):
         return _by_name(value, ann, where)
     origin = typing.get_origin(ann)
     args = typing.get_args(ann)
+    if origin is typing.Annotated:                 # the type; its rules are checked in check_args
+        return check(value, args[0], where)
     if origin is typing.Union or (types.UnionType is not None and isinstance(ann, types.UnionType)):
         if value is None and type(None) in args:
             return None
@@ -178,17 +181,59 @@ def check_args(fn, args: dict, signature):
         raise ArgError(f"{fn.__name__} got unknown argument(s): {', '.join(sorted(unknown))}")
     found = hints(fn)
     out = {}
+    problems = {}
     for pname, param in params.items():
         if param.kind in (param.VAR_KEYWORD, param.VAR_POSITIONAL):
             continue
+        ann = found.get(pname, param.annotation)
+        rules = param_rules(fn, pname, ann, required=param.default is inspect.Parameter.empty)
         if pname in args:
             value = args[pname]
             if value is None and param.default is None:
                 out[pname] = None
                 continue
-            out[pname] = check(value, found.get(pname, param.annotation), f"{fn.__name__}.{pname}")
+            out[pname] = check(value, ann, f"{fn.__name__}.{pname}")
+            if rules is not None:
+                problem = rules.check(out[pname])
+                if problem:
+                    problems[pname] = problem
         elif param.default is inspect.Parameter.empty:
+            if rules is not None:
+                problems[pname] = rules.message or "is required"
+                continue
             raise ArgError(f"{fn.__name__} missing required argument {pname!r}")
+    if problems:
+        from pyweb.rules import ValidationError
+        raise ValidationError({k: f"{_label(k)} {v}" if v[:1].islower() else v for k, v in problems.items()})
     if takes_kwargs:
         out.update({k: args[k] for k in unknown})
     return out
+
+
+_RULES: dict = {}
+
+
+def param_rules(fn, pname, ann, required=False):
+    """The :class:`pyweb.rules.Rules` of an ``Annotated[T, Field(...)]`` parameter, or None (cached)."""
+    key = (fn, pname)
+    if key in _RULES:
+        return _RULES[key]
+    rules = None
+    if typing.get_origin(ann) is typing.Annotated:
+        from pyweb.models.fields import Field
+        base, *meta = typing.get_args(ann)
+        field = next((m for m in meta if isinstance(m, Field)), None)
+        if field is not None:
+            if getattr(field, "rules", None) is None or getattr(field, "name", None) != pname:
+                field.bind(None, pname, base)
+            rules = field.rules
+            if required and not rules.required:
+                import copy
+                rules = copy.copy(rules)
+                rules.required = True
+    _RULES[key] = rules
+    return rules
+
+
+def _label(name):
+    return name.replace("_", " ").strip().capitalize()

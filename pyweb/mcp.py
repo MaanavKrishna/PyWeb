@@ -35,7 +35,7 @@ import traceback
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 HERE = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES = ("blank", "counter", "todo", "blog", "auth", "chat", "ai-chat")
+TEMPLATES = ("blank", "counter", "todo", "blog", "saas", "auth", "chat", "ai-chat")
 
 INSTRUCTIONS = (
     "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). "
@@ -136,11 +136,19 @@ def _guide_text(section=None):
     return f"No section matching {section!r}. Sections: " + "; ".join(titles)
 
 
+def _template_dir(name):
+    """The folder of a multi-file template (``templates/<name>/``), or None."""
+    path = os.path.join(HERE, "templates", name)
+    return path if os.path.isdir(path) else None
+
+
 def _template_source(name, title=None):
     if name == "blank":
         source = BLANK_APP
     else:
-        with open(os.path.join(HERE, "templates", f"{name}.pyweb"), encoding="utf-8") as fh:
+        folder = _template_dir(name)
+        path = os.path.join(folder, "app.pyweb") if folder else os.path.join(HERE, "templates", f"{name}.pyweb")
+        with open(path, encoding="utf-8") as fh:
             source = fh.read()
     if title:
         source = re.sub(r'App\(title="[^"]*"', f'App(title={json.dumps(title)}', source, count=1)
@@ -225,7 +233,15 @@ def scaffold(directory, template="blank", title=None, overwrite=False):
              "test_app.py": STARTER_TEST,
              "AGENTS.md": agent_instructions(),
              "CLAUDE.md": "@AGENTS.md\n",
-             ".gitignore": "/dist/\n__pycache__/\n*.db\n"}
+             ".gitignore": "/dist/\n__pycache__/\n*.db\n.env\n"}
+    folder = _template_dir(template)
+    if folder:                    # multi-file templates bring their own tests, seeds, ...
+        for fn in sorted(os.listdir(folder)):
+            if fn != "app.pyweb" and os.path.isfile(os.path.join(folder, fn)) and not fn.endswith(".pyc"):
+                with open(os.path.join(folder, fn), encoding="utf-8") as fh:
+                    files[fn] = fh.read()
+    if "database=" in source:
+        files["README.md"] = _readme(title, template, "seeds.py" in files)
     if "/static/app.css" in source:
         with open(os.path.join(HERE, "templates", "app.css"), encoding="utf-8") as fh:
             files["static/app.css"] = fh.read()
@@ -237,7 +253,59 @@ def scaffold(directory, template="blank", title=None, overwrite=False):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
         written.append(path)
+    if "database=" in source and not os.path.isdir(os.path.join(directory, "migrations")):
+        written += _initial_migration(directory)
     return written
+
+
+def _initial_migration(directory):
+    """``migrations/0001_initial.py`` for the template's Models (in a separate process, on a
+    throwaway database, so nothing is created in the project and no Models leak into this one)."""
+    import subprocess
+    import tempfile
+    app = os.path.abspath(os.path.join(directory, "app.pyweb"))
+    out = os.path.abspath(os.path.join(directory, "migrations"))
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {**os.environ, "PYWEB_WORKER": "0", "PYWEB_ENV": "development"}
+        env.pop("DATABASE_URL", None)
+        done = subprocess.run([sys.executable, "-m", "pyweb.cli", "db", "diff", "--app", app, "--database",
+                               "sqlite:///:memory:", "--migrations", out, "--name", "initial"],
+                              cwd=tmp, env=env, capture_output=True, text=True, timeout=120)
+    if done.returncode != 0:
+        raise RuntimeError(f"couldn't write the first migration: {(done.stderr or done.stdout).strip()[-500:]}")
+    return sorted(os.path.join(out, f) for f in os.listdir(out) if f.endswith(".py"))
+
+
+def _readme(title, template, has_seeds):
+    seed = "pyweb db seed                # example data (see seeds.py)\n" if has_seeds else ""
+    return f"""# {title}
+
+A [PyWeb](https://maanavkrishna.github.io/PyWeb/) app, from the `{template}` template.
+
+```bash
+pip install "pyweb-stack[auth]"
+pyweb dev app.pyweb          # http://localhost:8000, reloads on save, with the dev toolbar
+{seed}pytest                       # the tests in test_app.py
+```
+
+## Changing the data
+
+Edit the Models in `app.pyweb`, then:
+
+```bash
+pyweb db diff                # writes migrations/NNNN_*.py from your changes (commit it)
+pyweb db upgrade             # applies it (`pyweb dev` does this for you)
+```
+
+## Shipping it
+
+```bash
+pyweb deploy compose         # or: docker, k8s, fly, render, railway
+```
+
+`pyweb deploy` explains what it will run (database, Redis, workers) and why,
+then writes the files. `pyweb check --production` checks the settings.
+"""
 
 
 class _Apps:

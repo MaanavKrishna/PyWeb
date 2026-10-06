@@ -132,6 +132,10 @@ def load(source, files_json="", keep_data=False):
             file, line = _app_frame(exc)
             return json.dumps({"ok": False, "output": printed.getvalue(),
                                "error": {"file": file, "line": line, "message": f"{type(exc).__name__}: {exc}"}})
+    if M.database() is not None and not _have_sqlite():
+        # pyweb.db imports sqlite3 at the first query; ask the page for it now, before any request.
+        return json.dumps({"ok": False, "needs": "sqlite3", "output": printed.getvalue(),
+                           "error": {"line": None, "message": "Loading SQLite for the app's database…"}})
     if _client is not None:
         client.cookies = dict(_client.cookies)  # stay logged in across edits
     _client = client
@@ -143,6 +147,16 @@ def load(source, files_json="", keep_data=False):
                       "placement": {k: list(v) for k, v in page["placement"].items() if not k.startswith("__")}})
     return json.dumps({"ok": True, "pages": pages, "output": printed.getvalue(), "database": M.database() is not None,
                        "auth": _has_auth()})
+
+
+def _have_sqlite():
+    import importlib
+    importlib.invalidate_caches()       # loadPackage just unpacked it; don't trust the cached directory listing
+    try:
+        import sqlite3  # noqa: F401 - Pyodide ships it as a separate package
+    except ModuleNotFoundError:
+        return False
+    return True
 
 
 def _has_auth():

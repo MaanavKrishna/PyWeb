@@ -13,7 +13,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from test_net import Client  # noqa: E402
+from wsclient import Client  # noqa: E402
 
 BASE = os.environ.get("BASE", "http://127.0.0.1:80")
 

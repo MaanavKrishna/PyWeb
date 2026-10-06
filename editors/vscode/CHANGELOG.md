@@ -13,6 +13,8 @@
   `policy`, `useauth`.
 - Updated to the current language client (vscode-languageclient 10, LSP
   3.18). The extension now needs VS Code 1.91 or later.
+- Bundled with esbuild: the package is 12 files instead of 364, and the
+  extension loads faster.
 - Tested in a real VS Code (the oldest supported version and the current
   stable one) against the real language server on every change.
 - Needs PyWeb 0.5 for the data features.

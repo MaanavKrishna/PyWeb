@@ -30,7 +30,7 @@
     "html",
     "mcp"
   ],
-  "main": "./extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "languages": [
       {
@@ -197,8 +197,10 @@
     }
   },
   "scripts": {
+    "bundle": "esbuild extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --minify --sourcemap=external",
+    "vscode:prepublish": "npm run bundle",
     "test": "node test/grammar.test.js && node test/extension.test.js",
-    "test:integration": "node test/integration/run.js",
+    "test:integration": "npm run bundle && node test/integration/run.js",
     "package": "vsce package"
   },
   "dependencies": {
@@ -207,6 +209,7 @@
   "devDependencies": {
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.1.0"
   },

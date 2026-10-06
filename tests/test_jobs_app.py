@@ -168,6 +168,9 @@ def test_nightly_cleanup(shop, monkeypatch):
     import datetime as dt
 
     from pyweb.authkit import AuthEvent, AuthToken
+    from pyweb.authkit import models as kit_models
+    # issue() clears old links itself on 1 call in 100; keep that out of this test.
+    monkeypatch.setattr(kit_models.secrets, "randbelow", lambda n: 1)
     AuthToken.issue("reset", email="x@example.com", ttl=-3 * 86400)
     AuthToken.issue("reset", email="y@example.com", ttl=600)
     old = AuthEvent.create(kind="login")

@@ -495,3 +495,10 @@ def test_strict_deprecations(monkeypatch):
     from pyweb.jobs import Queue
     with pytest.raises(PyWebDeprecationError, match="app.job"):
         Queue()
+
+
+def test_validation_messages_name_each_field_once():
+    from pyweb.rules import ValidationError
+    assert str(ValidationError({"body": "Body is required"})) == "Body is required"
+    assert str(ValidationError({"title": "is too long"})) == "title is too long"
+    assert str(ValidationError("Pick a date")) == "Pick a date"

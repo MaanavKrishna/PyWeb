@@ -108,4 +108,6 @@ class ValidationError(ValueError):
         if isinstance(errors, str):
             errors = {"__all__": errors}
         self.errors = dict(errors)
-        super().__init__(message or "; ".join(f"{k} {v}" if k != "__all__" else v for k, v in self.errors.items()))
+        # "is required" reads as "title is required"; a message that names its field ("Title is required") stays.
+        super().__init__(message or "; ".join(f"{k} {v}" if k != "__all__" and str(v)[:1].islower() else str(v)
+                                               for k, v in self.errors.items()))

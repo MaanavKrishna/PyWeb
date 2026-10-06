@@ -1,3 +1,5 @@
 test/**
 .gitignore
 **/*.map
+node_modules/**
+extension.js

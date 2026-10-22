@@ -25,6 +25,8 @@ live_messages = REGISTRY.counter("pyweb_live_messages_total", "Messages sent to 
 live_bytes = REGISTRY.counter("pyweb_live_bytes_total", "Bytes sent to browsers over live sockets")
 mail_sent = REGISTRY.counter("pyweb_mail_total", "Emails by outcome", ("outcome",))
 auth_events = REGISTRY.counter("pyweb_auth_events_total", "Sign-in activity", ("kind", "ok"))
+csp_violations = REGISTRY.counter("pyweb_csp_violations_total", "Content-Security-Policy violations browsers "
+                                  "reported", ("directive",))
 errors = REGISTRY.counter("pyweb_errors_total", "Unhandled errors", ("where",))
 
 

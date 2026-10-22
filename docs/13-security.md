@@ -77,7 +77,8 @@ reads, credential-like literals) and exits non-zero on findings.
   default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self';
   frame-ancestors 'self'; form-action 'self'; img-src 'self' data: https:;
   style-src 'self' https:; style-src-attr 'unsafe-inline'; font-src 'self' data: https:;
-  connect-src 'self'; worker-src 'self' blob:
+  connect-src 'self'; worker-src 'self' blob:; require-trusted-types-for 'script';
+  trusted-types pyweb-md pyweb-nav; report-uri /__pyweb/csp-report
   ```
 
   No inline script runs, ever. A page's own inline `<style>` blocks are
@@ -94,6 +95,22 @@ reads, credential-like literals) and exits non-zero on findings.
   uses npm packages, the hash of its import map is added to
   `script-src`. Override the policy with `PYWEB_CSP` if you load
   scripts from a CDN.
+- **Trusted Types.** The browser refuses plain strings in places that turn
+  text into HTML or script (`innerHTML`, `insertAdjacentHTML`, parsing HTML,
+  a `<script>`'s text, an iframe's `srcdoc`). PyWeb's runtime uses two
+  private policies for the two places it needs this: rendering Markdown
+  (whose output escapes everything it doesn't build itself) and parsing
+  pages during client navigation. So even a bug that handed visitor text to
+  one of those places couldn't run script. Pages that use npm packages don't
+  get this rule, because many libraries write `innerHTML` themselves; the
+  rest of the policy still applies to them.
+- **Violation reports.** Browsers send what the policy blocked to
+  `/__pyweb/csp-report`. Each report is a `pyweb.csp` warning in the logs
+  (query strings removed, at most 120 lines a minute) and a count in the
+  `pyweb_csp_violations_total` metric, by directive. A steady trickle is
+  usually browser extensions; a page you need to fix shows up as many
+  reports from one page; a jump in `script-src` or `trusted-types` reports
+  can mean someone is trying to inject script.
 
 ## Cross-site request forgery
 

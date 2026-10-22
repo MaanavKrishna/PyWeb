@@ -363,6 +363,10 @@ class Site:
                 out = telemetry.metrics_response()
             else:   # without PYWEB_METRICS_TOKEN (or with a wrong one) there's nothing here
                 out = (404, [("Content-Type", "text/plain")], b"not found")
+        elif bare == "/__pyweb/csp-report":
+            from . import csp_report
+            tel.route = "csp_report"
+            out = csp_report.handle(method, headers, body)
         elif len(body or b"") > body_limit(bare, self.max_body):
             tel.route = "too_large"
             out = (413, [("Content-Type", "application/json")],

@@ -557,8 +557,9 @@ export function watch(get, fn) {
 // host element ([data-pw-root]). Shared through `window` so a page module that
 // loaded a different copy of this runtime still mounts with its own copy.
 const G = typeof window !== "undefined"
-  ? (window.__pyweb || (window.__pyweb = { mounts: new Map(), disposers: new Map(), nav: false }))
-  : { mounts: new Map(), disposers: new Map(), nav: false };
+  ? (window.__pyweb || (window.__pyweb = { mounts: new Map(), disposers: new Map(), navState: new Map(), nav: false }))
+  : { mounts: new Map(), disposers: new Map(), navState: new Map(), nav: false };
+if (!G.navState) G.navState = new Map();
 
 /** Where a layout puts its page: adopts the server's element (and the page inside it). */
 export function slot(name) {
@@ -582,9 +583,11 @@ export function mount(name, page) {
 
 function start(name, page) {
   const host = document.querySelector(`[data-pw-root="${name}"]`) || document.body;
-  const el = document.getElementById(host.hasAttribute("data-pw-layout") ? "pw-state-" + name : "pw-state");
+  const stateId = host.hasAttribute("data-pw-layout") ? "pw-state-" + name : "pw-state";
+  const el = document.getElementById(stateId);
+  const text = G.navState.has(stateId) ? G.navState.get(stateId) : el && el.textContent;
   let state = {};
-  if (el) { try { state = JSON.parse(el.textContent || "{}"); } catch (e) { reportError(e); } }
+  if (text) { try { state = JSON.parse(text); } catch (e) { reportError(e); } }
   const old = G.disposers.get(name);
   if (old) { G.disposers.delete(name); old(); }
   let mode = "rendered";
@@ -754,6 +757,13 @@ function fullLoad(url, push) {
   if (push) location.assign(url); else location.reload();
 }
 
+// Trusted Types: parsing HTML from a string needs a policy. Client navigation parses pages
+// fetched from this same origin (the document it makes is inert: its scripts never run).
+let navPolicy = null;
+try {
+  if (typeof trustedTypes !== "undefined") navPolicy = trustedTypes.createPolicy("pyweb-nav", { createHTML: (s) => s });
+} catch (e) { /* already created */ }
+
 /** Go to `url` without a full page load (falls back to one when it can't). */
 export async function navigate(url, opts = {}) {
   const push = opts.push !== false;
@@ -764,7 +774,7 @@ export async function navigate(url, opts = {}) {
   try {
     res = await load(url);
     if (seq !== navSeq) return;
-    doc = new DOMParser().parseFromString(res.html, "text/html");
+    doc = new DOMParser().parseFromString(navPolicy ? navPolicy.createHTML(res.html) : res.html, "text/html");
     const ok = doc.querySelector("body > [data-pw-root]") && document.querySelector("body > [data-pw-root]");
     const have = importMap(document);
     const need = importMap(doc);
@@ -852,17 +862,13 @@ async function swap(doc) {
   } finally {
     G.nav = false;
   }
+  // Scripts are never copied: page modules were imported above and state is handed over below
+  // (a copied <script> counts as script text written without Trusted Types, and is refused).
+  for (const s of (keep ? newRegion : newTop).querySelectorAll("script")) s.remove();
   if (keep) oldRegion.replaceChildren(...Array.from(newRegion.childNodes, (n) => document.importNode(n, true)));
   else oldTop.replaceWith(document.importNode(newTop, true));
   for (const m of modules) {
-    let el = document.getElementById(m.stateId);
-    if (!el) {
-      el = document.createElement("script");
-      el.type = "application/json";
-      el.id = m.stateId;
-      document.body.appendChild(el);
-    }
-    el.textContent = m.json;
+    G.navState.set(m.stateId, m.json);
     const run = G.mounts.get(m.name);
     if (run) run();
   }

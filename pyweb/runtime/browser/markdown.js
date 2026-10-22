@@ -180,6 +180,13 @@ export function renderMarkdown(text) {
   return mdBlocks(lines);
 }
 
+// Trusted Types: pages forbid assigning strings to innerHTML. This policy is private to this
+// module and only ever sees renderMarkdown's output, which escapes everything it doesn't build.
+let mdPolicy = null;
+try {
+  if (typeof trustedTypes !== "undefined") mdPolicy = trustedTypes.createPolicy("pyweb-md", { createHTML: (s) => s });
+} catch (e) { /* a policy with this name exists already (the module loaded twice) */ }
+
 /** `<Markdown text={...}>`: a <div class="markdown"> whose HTML follows the text. */
 export function markdown(get, props) {
   const el = element("div");
@@ -189,7 +196,7 @@ export function markdown(get, props) {
   let last = null;
   effect(() => {
     const html = renderMarkdown(typeof get === "function" ? get() : get);
-    if (html !== last) { last = html; el.innerHTML = html; }
+    if (html !== last) { last = html; el.innerHTML = mdPolicy ? mdPolicy.createHTML(html) : html; }
   });
   return el;
 }

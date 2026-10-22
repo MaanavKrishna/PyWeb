@@ -28,6 +28,11 @@ project uses [semantic versioning](https://semver.org).
   fails if they differ.
 - New docs page: [Performance](docs/29-performance.md), including why
   PyWeb has no Rust core.
+- **Trusted Types.** Pages tell the browser to refuse plain strings in
+  HTML and script sinks; PyWeb's runtime uses two private policies
+  (Markdown, client navigation). Pages that use npm packages are exempt.
+- **CSP violation reports** go to `/__pyweb/csp-report`: a `pyweb.csp` log
+  line and the `pyweb_csp_violations_total` metric.
 
 ### Changed
 - **About 2.5× more requests per second** over `pyweb serve`: pages render

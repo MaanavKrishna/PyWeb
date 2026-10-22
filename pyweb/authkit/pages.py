@@ -384,9 +384,24 @@ def account(c):
         if not c.csrf_ok():
             return forbidden(c)
         action = c.get("action")
-        sensitive = action in ("passkey_remove", "totp_start", "totp_confirm", "totp_disable", "unlink", "email")
+        sensitive = action in ("passkey_remove", "totp_start", "totp_confirm", "totp_disable", "unlink", "email",
+                               "delete_account")
         if sensitive and not kit.fresh(FRESH):
             return redirect("/login?" + urllib.parse.urlencode({"next": "/account", "fresh": "1"}))
+        if action == "delete_account":
+            if c.get("confirm").strip().lower() != (user.email or "").lower():
+                err = "Type your email address to confirm."
+                return page(c, "Your account", _account_body(c, user, msg, err, extra), wide=True,
+                            passkeys="passkey" in kit.methods, status=422)
+            try:
+                kit.delete_user(user)
+            except ValidationError as exc:
+                err = "; ".join(exc.errors.values())
+                return page(c, "Your account", _account_body(c, user, msg, err, extra), wide=True,
+                            passkeys="passkey" in kit.methods, status=422)
+            from pyweb.context import session
+            session.logout()
+            return page(c, "Account deleted", H.notice("Your account and its data were deleted.", "success"))
         try:
             msg, extra = _account_action(c, user, action)
         except ValidationError as exc:
@@ -394,6 +409,20 @@ def account(c):
                             for k, v in exc.errors.items())
     return page(c, "Your account", _account_body(c, user, msg, err, extra), wide=True,
                 passkeys="passkey" in kit.methods, status=422 if err else 200)
+
+
+def account_export(c):
+    import json as _json
+    kit = c.kit
+    user = kit.user()
+    if user is None:
+        return redirect("/login?" + urllib.parse.urlencode({"next": "/account"}))
+    if not kit.fresh(FRESH):
+        return redirect("/login?" + urllib.parse.urlencode({"next": "/account/export", "fresh": "1"}))
+    data = _json.dumps(kit.export_user(user), indent=2, default=str)
+    kit.event("data_exported", user=user)
+    return _resp(200, data, "application/json; charset=utf-8",
+                 {"Content-Disposition": 'attachment; filename="my-data.json"', "Cache-Control": "no-store"})
 
 
 def _account_action(c, user, action):
@@ -557,6 +586,13 @@ def _account_body(c, user, msg, err, extra):
     out += H.form("/account", '<input type="hidden" name="action" value="revoke">' +
                   H.button("Sign out of every other device", kind="secondary pw-inline"), csrf=c.csrf)
     out += H.form("/logout", H.button("Sign out", kind="secondary pw-inline"), csrf=c.csrf)
+    out += ('<h2>Your data</h2><p><a href="/account/export" download>Download everything stored about you</a> '
+            "(JSON).</p>")
+    out += ("<h3>Delete your account</h3><p>This deletes your account and everything that belongs only to you. "
+            "It can't be undone.</p>" +
+            H.form("/account", '<input type="hidden" name="action" value="delete_account">' +
+                   H.field("confirm", "Type your email address to confirm", form="del", autocomplete="off") +
+                   H.button("Delete my account", kind="danger"), csrf=c.csrf))
     if kit.orgs_enabled:
         out += '<p class="pw-links"><a href="/orgs">Organizations</a></p>'
     if kit.admin_enabled and user.has_role("admin"):
@@ -748,6 +784,7 @@ ROUTES = [
     (re.compile(r"^/reset$"), reset, ("GET", "POST")),
     (re.compile(r"^/reset/(?P<token>[\w-]{20,100})$"), reset_token, ("GET", "POST")),
     (re.compile(r"^/account$"), account, ("GET", "POST")),
+    (re.compile(r"^/account/export$"), account_export, ("GET",)),
     (re.compile(r"^/auth/(?P<provider>\w+)/start$"), oauth_start, ("GET",)),
     (re.compile(r"^/auth/(?P<provider>\w+)/callback$"), oauth_callback, ("GET",)),
 ]

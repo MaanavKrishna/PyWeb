@@ -40,7 +40,7 @@ JavaScript:
 | `/login/2fa` | The authenticator-app code (or a recovery code) for accounts with two-step sign-in. |
 | `/logout` | Signs out (a POST with the page's token; a GET only shows the button). |
 | `/reset` | Emails a link to choose a new password. Using it signs out every other device. |
-| `/account` | Name, email, password, passkeys, two-step sign-in with recovery codes, linked accounts, recent activity, and every device you're signed in on (browser and system, network, last seen) with a button to sign each one out, or all of them but this one. |
+| `/account` | Name, email, password, passkeys, two-step sign-in with recovery codes, linked accounts, recent activity, every device you're signed in on (browser and system, network, last seen) with a button to sign each one out, or all of them but this one, a download of everything stored about you (JSON) and deleting the account. |
 | `/admin` | Browse, search, edit and delete rows of every Model. Only for users with the `admin` role, who must have signed in within the hour to change anything. Private fields (password hashes, secrets) never appear. |
 
 To replace one, define a page at the same route; the others stay. The
@@ -56,6 +56,8 @@ kit's Python API does the work for custom pages:
 | `auth.set_password(user, pw)`, `auth.set_roles(user, roles)` | Both sign the user out of their other sessions. |
 | `auth.revoke(user)` | Signs the user out everywhere. |
 | `auth.sessions(user)` / `auth.end_session(user, id)` | The user's signed-in devices (`AuthSession` rows), and signing one out. |
+| `auth.export_user(user)` | Everything stored about the user: the account and every row of every Model with a foreign key to them, as JSON-ready data (encrypted fields decrypted, private fields such as password hashes left out). |
+| `auth.delete_user(user)` | Deletes the account. Rows pointing at the user follow their `on_delete` rule; organizations they own alone are deleted too, and one with other members needs a new owner first (`ValidationError` until then). The audit log keeps its entries without the email address. |
 | `auth.send_reset(email)`, `auth.send_magic_link(email)` | Email a link (nothing happens, silently, for unknown emails). |
 
 ### Guards

@@ -43,6 +43,9 @@ project uses [semantic versioning](https://semver.org).
   size limits. `PYWEB_FETCH_ALLOW` lets it reach internal services you name.
 - **`@server(rate="5/minute", per="user"|"ip"|"all")`** limits one server
   function (429 with `Retry-After`; shared through Redis when configured).
+- **Your data.** `/account` offers a JSON download of everything stored
+  about the user (`auth.export_user()`) and deleting the account
+  (`auth.delete_user()`, after a recent sign-in and typing the email).
 - **Signed-in devices.** `/account` lists each session (device, network,
   last seen) and can sign one out; `auth.sessions(user)` and
   `auth.end_session(user, id)` do the same from code. Apps with migrations

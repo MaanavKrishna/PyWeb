@@ -29,6 +29,7 @@ pyweb db diff [--name N] [--rename T.OLD=NEW] [--allow-destructive]
                                               write the next migration from the Models
 pyweb db check [--json]                       exit 1 if the Models changed without a migration (CI)
 pyweb db seed [--seeds seeds.py]              run seeds.py (the app's Models are in scope)
+pyweb db reencrypt                            rewrite encrypted fields with the current PYWEB_DATA_KEY
 pyweb db new|adopt|squash                     an empty migration / adopt an existing database / squash
         common: [--app app.pyweb] [--database URL] [--migrations DIR]
 

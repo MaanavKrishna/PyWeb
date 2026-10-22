@@ -96,6 +96,9 @@ class Field:
       ``auto_now`` for timestamps, ``private=True`` (never accepted from a browser
       and left out of ``to_dict()``; e.g. password hashes), ``readonly=True``
       (never accepted from a browser, still shown).
+    * ``encrypted=True``: stored encrypted (AES-256-GCM, see :mod:`pyweb.fieldcrypt`) and left
+      out of ``to_dict()``; ``searchable=True`` adds a blind index for ``==`` / ``in_()`` lookups.
+      For ``str``, ``Text``, ``bytes`` and JSON (``dict``/``list``) fields.
     """
 
     legacy_kind = None       # set by the 0.4 IntegerField/TextField/... subclasses
@@ -103,7 +106,8 @@ class Field:
     def __init__(self, default=MISSING, *, primary_key=False, nullable=None, unique=False, index=False,
                  min=None, max=None, pattern=None, choices=None, format=None, required=None, message=None,
                  label=None, help=None, column=None, precision=None, scale=None, kind=None,
-                 default_factory=None, auto_now=False, auto_now_add=False, private=False, readonly=False):
+                 default_factory=None, auto_now=False, auto_now_add=False, private=False, readonly=False,
+                 encrypted=False, searchable=False):
         self.default = default
         self.default_factory = default_factory
         self.primary_key = primary_key
@@ -122,6 +126,8 @@ class Field:
         self.auto_now = auto_now
         self.auto_now_add = auto_now_add
         self.private = private
+        self.encrypted = bool(encrypted or searchable)
+        self.searchable = bool(searchable)
         self.readonly = readonly or primary_key or auto_now or auto_now_add
         self.name = ""
         self.model = None
@@ -160,7 +166,37 @@ class Field:
                              and self.kind != "bool")
         self.rules = Rules(kind=self.kind, required=bool(self.required), min=self.min, max=self.max,
                            pattern=self.pattern, choices=self.choices, format=self.format, message=self.message)
+        if self.encrypted:
+            owner = getattr(model, "__name__", "?")
+            if self.kind not in ("str", "text", "json", "bytes"):
+                raise TypeError(f"{owner}.{name}: only str, Text, bytes and dict/list fields can be encrypted "
+                                f"(this one is {self.kind})")
+            if self.primary_key or self.unique or self.index:
+                raise TypeError(f"{owner}.{name}: an encrypted field can't be a key, unique or indexed "
+                                "(its stored values are random); use searchable=True to look rows up")
+            if self.searchable and self.kind not in ("str", "text"):
+                raise TypeError(f"{owner}.{name}: searchable=True works for text fields only")
+            from ..fieldcrypt import _require_crypto
+            _require_crypto()
         return self
+
+    # -- encryption --------------------------------------------------------
+    @property
+    def index_column(self):
+        """The blind index column of a searchable encrypted field."""
+        return self.column + "_bidx"
+
+    def _plain_bytes(self, value):
+        if self.kind == "json":
+            return json.dumps(value, separators=(",", ":"), default=str).encode()
+        if self.kind == "bytes":
+            return bytes(value)
+        return str(value).encode()
+
+    def blind_indexes(self, value):
+        """The blind index of ``value`` under each configured key (current first)."""
+        from ..fieldcrypt import blind_indexes
+        return blind_indexes(self.model._meta.table, self.column, self._plain_bytes(value))
 
     def __set_name__(self, owner, name):
         if not self.name:
@@ -203,6 +239,9 @@ class Field:
     def to_db(self, value, dialect):
         if value is None:
             return None
+        if self.encrypted:
+            from ..fieldcrypt import encrypt
+            return encrypt(self.model._meta.table, self.column, self._plain_bytes(value))
         k, name = self.kind, dialect.name
         if k == "bool":
             return int(bool(value)) if name == "sqlite" else bool(value)
@@ -239,6 +278,16 @@ class Field:
     def from_db(self, value):
         if value is None:
             return None
+        if self.encrypted:
+            from ..fieldcrypt import decrypt
+            if isinstance(value, (bytes, bytearray)):
+                value = value.decode()
+            raw = decrypt(self.model._meta.table, self.column, value)
+            value = raw if self.kind == "bytes" else raw.decode()
+            if self.kind == "json":
+                return json.loads(value)
+            if self.kind == "bytes":
+                return value
         k = self.kind
         try:
             if k == "bool":

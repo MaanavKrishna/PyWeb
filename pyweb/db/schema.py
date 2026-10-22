@@ -108,6 +108,12 @@ def from_models(models):
                 target = rel.target._meta
                 ref = (target.table, target.pk.column, rel.on_delete)
             auto = f.primary_key and f.kind in ("int", "bigint")
+            if getattr(f, "encrypted", False):        # ciphertext is text; the blind index is short and indexed
+                cols.append(Column(f.column, "text", nullable=f.nullable))
+                if f.searchable:
+                    cols.append(Column(f.index_column, "str", nullable=True, max_length=32))
+                    indexes.append(Index(index_name("ix", meta.table, [f.index_column]), (f.index_column,), False))
+                continue
             cols.append(Column(f.column, "bigint" if auto else f.kind, nullable=f.nullable,
                                default=None if f.primary_key else f.db_default(), primary_key=f.primary_key,
                                autoincrement=auto, max_length=f.max if (f.kind == "str" and isinstance(f.max, int)) else None,

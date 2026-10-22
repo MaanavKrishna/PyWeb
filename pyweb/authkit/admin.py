@@ -150,8 +150,9 @@ def _list(c, model):
     q = c.query.get("q", "").strip()
     query = model.query()
     if q:
-        text_fields = [f for f in _shown(model) if f.kind in ("str", "text")]
+        text_fields = [f for f in _shown(model) if f.kind in ("str", "text") and not f.encrypted]
         conds = [f.icontains(q) for f in text_fields]
+        conds += [f == q for f in _shown(model) if f.searchable]       # encrypted: exact matches only
         if q.isdigit():
             conds.append(model._meta.pk == int(q))
         if conds:
@@ -160,7 +161,7 @@ def _list(c, model):
         rows = query.order("-" + model._meta.pk.name).page(size=PAGE_SIZE, after=c.query.get("after") or None)
     except ValueError:
         rows = query.order("-" + model._meta.pk.name).page(size=PAGE_SIZE)
-    cols = _shown(model)[:6]
+    cols = [f for f in _shown(model) if not f.encrypted][:6]      # encrypted values only on a row's page
     head = "".join(f"<th>{H.esc(f.name)}</th>" for f in cols)
     body_rows = "".join(
         "<tr>" + "".join(

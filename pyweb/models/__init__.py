@@ -276,6 +276,16 @@ def validates(*names):
 
 # -------------------------------------------------------------------- metadata
 
+
+def _with_blind_indexes(meta, data, values):
+    """``data`` (column -> stored value) plus the blind index of each searchable encrypted field in it."""
+    for f in meta.searchable:
+        if f.column in data:
+            v = values.get(f.name)
+            data[f.index_column] = None if v is None else f.blind_indexes(v)[0]
+    return data
+
+
 class ModelInfo:
     """Everything PyWeb knows about a Model class (``Post._meta``)."""
 
@@ -310,6 +320,10 @@ class ModelInfo:
 
     def columns(self):
         return list(self.fields.values())
+
+    @property
+    def searchable(self):
+        return [f for f in self.fields.values() if f.searchable]
 
     def field(self, name):
         found = self.fields.get(name)
@@ -356,6 +370,12 @@ def _finalize_pending():
                 model._meta_finalize()
             except LookupError:
                 continue          # a target defined later; tried again on next use
+            except Exception:  # noqa: BLE001 - a broken Model must not break every other one
+                _pending.remove(model)      # its own error is raised again whenever it is used
+                if model in ModelMeta._registry:
+                    ModelMeta._registry.remove(model)
+                if _by_name.get(model.__name__) is model:
+                    del _by_name[model.__name__]
 
 
 def _resolve_annotation(model, ann, globalns):
@@ -703,7 +723,8 @@ class Model(metaclass=ModelMeta):
         """The row as plain data, with the related rows that were loaded."""
         meta = type(self)._meta
         d = self.__dict__
-        out = {f.name: d.get(f.name) for f in meta.fields.values() if include_private or not f.private}
+        out = {f.name: d.get(f.name) for f in meta.fields.values()
+               if include_private or not (f.private or f.encrypted)}
         for name in list(meta.relations) + list(meta.m2m) + list(meta.reverse):
             loaded = d.get("__rel_" + name, MISSING)
             if loaded is MISSING:
@@ -854,8 +875,8 @@ class Model(metaclass=ModelMeta):
             if f.auto_now:
                 obj.__dict__[f.name] = f.initial()
         obj.validate()
-        data = {f.column: f.to_db(obj.__dict__.get(f.name), d) for f in meta.fields.values()
-                if not (f.primary_key and obj.__dict__.get(f.name) is None)}
+        data = _with_blind_indexes(meta, {f.column: f.to_db(obj.__dict__.get(f.name), d) for f in meta.fields.values()
+                                          if not (f.primary_key and obj.__dict__.get(f.name) is None)}, obj.__dict__)
         key_cols = [meta.field(k).column for k in keys]
         update_cols = [c for c in data if c not in key_cols and c != meta.pk.column]
         update_cols = [c for c in update_cols if not any(f.column == c and f.auto_now_add for f in meta.fields.values())]
@@ -980,8 +1001,9 @@ class Model(metaclass=ModelMeta):
         q = d.quote
         try:
             if not state.get("_persisted"):
-                data = {f.column: f.to_db(state.get(f.name), d) for f in meta.fields.values()
-                        if not (f.primary_key and state.get(f.name) is None)}
+                data = _with_blind_indexes(meta, {f.column: f.to_db(state.get(f.name), d)
+                                                  for f in meta.fields.values()
+                                                  if not (f.primary_key and state.get(f.name) is None)}, state)
                 if data:
                     sql = (f"INSERT INTO {q(meta.table)} ({', '.join(q(c) for c in data)}) "
                            f"VALUES ({', '.join('?' for _ in data)})")
@@ -999,8 +1021,10 @@ class Model(metaclass=ModelMeta):
                 state["_db"] = db
             else:
                 orig = state.get("_orig", {})
-                changed = {f.column: f.to_db(state.get(f.name), d) for f in meta.fields.values()
-                           if not f.primary_key and state.get(f.name) != orig.get(f.name, MISSING)}
+                changed = _with_blind_indexes(meta, {f.column: f.to_db(state.get(f.name), d)
+                                                     for f in meta.fields.values()
+                                                     if not f.primary_key and state.get(f.name) != orig.get(f.name, MISSING)},
+                                              state)
                 if changed:
                     sql = (f"UPDATE {q(meta.table)} SET {', '.join(f'{q(c)} = ?' for c in changed)} "
                            f"WHERE {q(pk.column)} = ?")

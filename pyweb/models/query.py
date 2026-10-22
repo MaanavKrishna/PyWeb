@@ -41,6 +41,31 @@ class _Compiler:
         return "?"
 
 
+# ------------------------------------------------------------------ encrypted fields
+
+def _encrypted(field):
+    return field is not None and getattr(field, "encrypted", False)
+
+
+def _refuse(field, what):
+    hint = "" if field.searchable or field.kind not in ("str", "text") else \
+        " (add searchable=True to look rows up by an exact value)"
+    raise ValueError(f"{field.model.__name__}.{field.name} is encrypted: {what} isn't possible{hint}")
+
+
+def _blind_match(c, field, values, negate=False):
+    """``<column>_bidx IN (...)``: each value's blind index under every configured key."""
+    if not field.searchable:
+        _refuse(field, "comparing it in a query")
+    hashes = list(dict.fromkeys(h for v in values for h in field.blind_indexes(v)))
+    if not hashes:
+        return "1 = 1" if negate else "1 = 0"
+    col = c.d.qualified(field.model._meta.table, field.index_column)
+    marks = ", ".join("?" for _ in hashes)
+    c.params.extend(hashes)
+    return f"{col} {'NOT IN' if negate else 'IN'} ({marks})"
+
+
 # ------------------------------------------------------------------ conditions
 
 class Cond:
@@ -93,6 +118,8 @@ class Compare(Cond):
 
     def sql(self, c):
         left = c.col(self.field)
+        if isinstance(self.value, Field) and (_encrypted(self.field) or _encrypted(self.value)):
+            _refuse(self.field if _encrypted(self.field) else self.value, "comparing it with another column")
         if isinstance(self.value, Field):
             return f"{left} {self.op} {c.col(self.value)}"
         if self.value is None:
@@ -101,6 +128,10 @@ class Compare(Cond):
             if self.op == "!=":
                 return f"{left} IS NOT NULL"
             raise ValueError(f"can't compare {self.field.name} {self.op} None")
+        if _encrypted(self.field):
+            if self.op not in ("=", "!="):
+                _refuse(self.field, f"the comparison {self.op}")
+            return _blind_match(c, self.field, [self.value], negate=self.op == "!=")
         return f"{left} {self.op} {c.value(self.field, self.value)}"
 
 
@@ -111,6 +142,8 @@ class In(Cond):
     def sql(self, c):
         if not self.values:
             return "1 = 0"
+        if _encrypted(self.field):
+            return _blind_match(c, self.field, [v for v in self.values if v is not None])
         marks = ", ".join(c.value(self.field, v) for v in self.values)
         return f"{c.col(self.field)} IN ({marks})"
 
@@ -120,6 +153,8 @@ class Like(Cond):
         self.field, self.pattern, self.ci = field, pattern, ci
 
     def sql(self, c):
+        if _encrypted(self.field):
+            _refuse(self.field, "like()")
         c.params.append(str(self.pattern))
         return c.d.like(c.col(self.field), self.ci)
 
@@ -182,6 +217,8 @@ class Order:
         self.field, self.desc = field, desc
 
     def sql(self, c):
+        if _encrypted(self.field):
+            _refuse(self.field, "ordering by it")
         return f"{c.col(self.field)} {'DESC' if self.desc else 'ASC'}"
 
 

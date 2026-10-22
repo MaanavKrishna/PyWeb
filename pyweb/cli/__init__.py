@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 
 
@@ -43,8 +44,10 @@ def cmd_inspect(args):
 def cmd_check(args):
     from pyweb.compiler import compile_source
     from pyweb.security import check_source
+    from pyweb.secret_scan import scan_app
     src = _load(args.file)
     findings = check_source(src, args.file)
+    findings += scan_app(args.file)
     try:
         out = compile_source(src, filename=args.file)
         n_sig = sum(len(p["signals"]) for p in out["pages"].values())
@@ -53,14 +56,14 @@ def cmd_check(args):
         findings.append({"kind": "compile-error", "line": getattr(exc, "lineno", None) or getattr(exc, "line", None) or 0,
                          "message": getattr(exc, "pyweb_msg", None) or str(exc)})
     for f in findings:
-        print(f"{f['kind']} {args.file}:{f['line']}: {f['message']}")
+        print(f"{f['kind']} {f.get('file') or args.file}:{f['line']}: {f['message']}")
     problems = production_problems(src, os.path.dirname(os.path.abspath(args.file))) \
         if getattr(args, "production", False) else []
     for p in problems:
         print(f"production: {p}")
     if getattr(args, "production", False) and not problems:
         print("production: ready")
-    if problems or any(f["kind"] in ("secret-leak", "compile-error") for f in findings) \
+    if problems or any(f["kind"] in ("secret-leak", "compile-error", "hardcoded-secret") for f in findings) \
             or (getattr(args, "strict", False) and findings):
         raise SystemExit(1)
 
@@ -97,6 +100,21 @@ def production_problems(source="", app_dir="."):
     if "use_auth(" in (source or "") and not os.environ.get("PYWEB_ORIGIN") and "origin=" not in source:
         out.append("app.use_auth() without PYWEB_ORIGIN: password-reset and sign-in emails need the site's "
                    "public address (set PYWEB_ORIGIN=https://example.com)")
+    if re.search(r"\b(encrypted|searchable)\s*=\s*True", source or ""):
+        from pyweb import fieldcrypt
+        key = os.environ.get("PYWEB_DATA_KEY", "")
+        if not key:
+            out.append("the app has encrypted fields but PYWEB_DATA_KEY isn't set (generate one: python -c "
+                       "\"import secrets; print(secrets.token_urlsafe(32))\"; keep it safe: without it the data "
+                       "can't be read)")
+        elif len(key) < 32:
+            out.append("PYWEB_DATA_KEY is shorter than 32 characters; use a long random value")
+        elif key == os.environ.get("PYWEB_AUTH_SECRET"):
+            out.append("PYWEB_DATA_KEY is the same as PYWEB_AUTH_SECRET: keep them apart, so rotating the "
+                       "session secret never touches stored data")
+        if not fieldcrypt.available():
+            out.append('the app has encrypted fields but the cryptography package isn\'t installed '
+                       '(pip install "pyweb-stack[crypto]")')
     if "allow_pickle=True" in (source or ""):
         out.append("RedisCache(allow_pickle=True): anyone who can write to Redis could run code; store JSON")
     out += _topology_problems(app_dir)
@@ -622,6 +640,13 @@ def cmd_db(args):
             if len(paths) > 1 or (paths and plan.contract and not args.allow_destructive):
                 print("the *_contract migration removes things: deploy first, then run "
                       "`pyweb db upgrade --contract`")
+        elif action == "reencrypt":
+            from pyweb import fieldcrypt
+            if not models:
+                raise SystemExit("error: pass --app app.pyweb (the app whose encrypted fields to rewrite)")
+            done = fieldcrypt.reencrypt(db, models)
+            print("re-encrypted with the current PYWEB_DATA_KEY: "
+                  + (", ".join(f"{t} ({n} rows)" for t, n in done.items()) or "no encrypted fields"))
         elif action == "adopt":
             print(f"wrote {_migrate.adopt(db, migrations)} (recorded as applied; nothing changed)")
         elif action == "squash":
@@ -777,7 +802,7 @@ def main(argv=None):
     p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 8000), help="default: $PORT, else 8000"); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db", help="migrations and seed data")
     p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "check", "new", "adopt", "squash", "seed", "migrate",
-                                              "rollback"])
+                                              "rollback", "reencrypt"])
     p.add_argument("--app", default=None, help="the app whose Models to use (default: ./app.pyweb)")
     p.add_argument("--database", default=None, help="database URL (default: DATABASE_URL, then the app's)")
     p.add_argument("--migrations", default=None, help="migrations folder (default: next to the app)")

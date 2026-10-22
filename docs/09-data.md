@@ -62,6 +62,8 @@ class Post(Model):
 | `auto_now_add`, `auto_now` | set on insert / on every save |
 | `private=True` | never accepted from browsers, left out of `to_dict()` (password hashes) |
 | `readonly=True` | never accepted from browsers |
+| `encrypted=True` | stored encrypted, left out of `to_dict()` (see below) |
+| `searchable=True` | an encrypted field you can look rows up by (exact values) |
 | `precision`, `scale` | for `Decimal` columns |
 
 The same rules run when a row is saved, when an RPC argument arrives, when
@@ -84,6 +86,50 @@ Invalid rows raise `ValidationError`, whose `.errors` maps field names to
 messages. A `ValidationError` raised in a `@server` function reaches the
 browser as a 422 response with those errors, ready to show next to each
 input. A unique index that is violated becomes `{"email": "is already taken"}`.
+
+### Encrypted fields
+
+Personal data that only your server should read (phone numbers, notes,
+tax ids, tokens from other services) can be encrypted before it reaches
+the database:
+
+```python
+class Patient(Model):
+    name: str
+    phone: str = Field(encrypted=True, searchable=True)
+    notes: Text = Field("", encrypted=True)
+```
+
+Your code reads and writes `patient.phone` as usual. The database only
+ever holds ciphertext (AES-256-GCM, a fresh random nonce per value, bound
+to its table and column), so a leaked backup or a read-only SQL injection
+reveals nothing. It needs `pip install "pyweb-stack[crypto]"` and works
+for `str`, `Text`, `bytes` and JSON (`dict`/`list`) fields.
+
+Encrypted values are left out of `to_dict()`, so they don't reach a
+browser unless a page shows them on purpose. The admin shows them only on a
+row's own page.
+
+**Looking rows up.** Two encryptions of the same value differ, so the
+database can't compare them. `searchable=True` also stores an HMAC of the
+value, which `where(phone=...)`, `!=` and `in_()` use. Ordering, ranges
+and `like()` raise an error that says so. Someone holding the database can
+see which rows share a value (equal HMACs), but not the value itself.
+
+**The key** is `PYWEB_DATA_KEY`: any long random string, separate from
+`PYWEB_AUTH_SECRET` so that rotating the session secret never makes data
+unreadable. Store it as carefully as the database backups: without it the
+encrypted columns can't be read. In development a key derived from your
+machine and project folder is used. `pyweb check --production` reports a
+missing, short or shared key.
+
+To rotate it, set the new key as `PYWEB_DATA_KEY` and the old one in
+`PYWEB_DATA_KEY_PREVIOUS`. Old rows still read, and are written with the
+new key when saved. `pyweb db reencrypt` rewrites all of them now; then
+remove the old key.
+
+Raw SQL (`pyweb.db`, `live(db, sql)`) sees the ciphertext. Read encrypted
+fields through the Model.
 
 ### Creating, reading, changing
 

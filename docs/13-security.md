@@ -61,8 +61,14 @@ looks like a credential (`secret`, `password`, `token`, `api_key`,
 value is not an empty literal. Empty form fields (`password = ""` bound
 to an input) are allowed because the value comes from the user.
 
-`pyweb check` adds pattern-based checks over the source (environment
-reads, credential-like literals) and exits non-zero on findings.
+`pyweb check` also scans the app and the source files next to it for
+credentials written into them. Keys in a known format (AWS, GitHub,
+Stripe, OpenAI, Anthropic, Slack, Google, private keys) fail the check:
+move the value to an environment variable and revoke the key, because it
+is already in your git history. A long random-looking string assigned to
+a name like `api_key` or `password` is a warning (`--strict` fails on it).
+Found values are never printed in full. Add `# pyweb: allow-secret` to a
+line that holds a deliberate fake (a test fixture).
 
 ## Cross-site scripting
 
@@ -144,6 +150,43 @@ Arguments are checked against the function's type hints before it runs:
 gets only its own fields, and unknown argument names are refused, all
 with `422 validation_error` naming the field. Parameters without a type
 hint receive the JSON value as it is.
+
+## Data at rest
+
+`Field(encrypted=True)` encrypts a column with AES-256-GCM under its own
+key derived from `PYWEB_DATA_KEY` (see [Data](09-data.md)). A database
+dump, backup or read-only SQL injection shows only ciphertext, and a
+ciphertext copied into another column fails to decrypt instead of
+showing up there.
+
+## Requests your server makes
+
+When your app fetches a URL that someone else chose (a webhook endpoint, a
+link preview, an avatar, an import), use `pyweb.http.fetch` instead of
+`urllib`:
+
+```python
+from pyweb.http import FetchError, fetch
+
+try:
+    page = fetch(url, timeout=5, max_bytes=1_000_000)
+except FetchError as exc:
+    raise RPCError("bad_url", str(exc))
+title = page.text[:200]
+```
+
+A plain `urlopen(url)` would let anyone make your server request
+`http://169.254.169.254/` (cloud credentials) or `http://localhost:6379/`
+(your Redis): server-side request forgery. `fetch` only allows `http` and
+`https`, refuses every address that isn't public (loopback, private,
+link-local, carrier-grade NAT, multicast and reserved ranges, IPv4 hidden
+in IPv6), connects to the exact address it checked so DNS can't change
+under it, checks each redirect the same way, drops `Authorization` and
+cookies when a redirect leaves the site, and limits time and size.
+
+To call an internal service on purpose, allow it with
+`PYWEB_FETCH_ALLOW=hooks.internal,10.2.0.0/16` or
+`fetch(url, allow=["10.2.0.0/16"])`.
 
 ## SQL injection
 

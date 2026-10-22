@@ -31,6 +31,16 @@ project uses [semantic versioning](https://semver.org).
 - **Trusted Types.** Pages tell the browser to refuse plain strings in
   HTML and script sinks; PyWeb's runtime uses two private policies
   (Markdown, client navigation). Pages that use npm packages are exempt.
+- **Encrypted fields.** `Field(encrypted=True)` stores AES-256-GCM
+  ciphertext under `PYWEB_DATA_KEY` (kept apart from the session secret);
+  `searchable=True` adds a blind index for exact lookups. Rotate with
+  `PYWEB_DATA_KEY_PREVIOUS` and `pyweb db reencrypt`.
+- **Secret scanning.** `pyweb check` finds keys written into the app and
+  the files next to it: known formats fail the check, random-looking values
+  in secret-named variables are warnings.
+- **`pyweb.http.fetch`** for URLs other people choose: refuses internal
+  addresses (including through redirects and DNS rebinding), with time and
+  size limits. `PYWEB_FETCH_ALLOW` lets it reach internal services you name.
 - **CSP violation reports** go to `/__pyweb/csp-report`: a `pyweb.csp` log
   line and the `pyweb_csp_violations_total` metric.
 
@@ -45,6 +55,7 @@ project uses [semantic versioning](https://semver.org).
 - `pyweb check` reports the line of a Python syntax error.
 
 ### Fixed
+- A Model that fails to set up no longer breaks every Model defined after it.
 - Models on Python 3.14+ (annotations are evaluated lazily there, PEP 649).
 
 ## [0.5.0]

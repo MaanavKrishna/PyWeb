@@ -12,6 +12,9 @@ Variable                       Default      Meaning
 ``PYWEB_AUTH_SECRET``          (dev key)    root signing secret (sessions, feeds, live queries)
 ``PYWEB_AUTH_SECRET_PREVIOUS`` (none)       old secrets still accepted, comma-separated
 ``PYWEB_CSRF_SECRET``          (none)       token CSRF checks for ``@auth_required`` RPCs
+``PYWEB_DATA_KEY``             (dev key)    root key for ``Field(encrypted=True)`` (keep it apart)
+``PYWEB_DATA_KEY_PREVIOUS``    (none)       old data keys still read, comma-separated
+``PYWEB_FETCH_ALLOW``          (none)       internal hosts/networks ``pyweb.http.fetch`` may reach
 ``PYWEB_COOKIE_SECURE``        off          ``Secure`` cookies and HSTS (set behind HTTPS)
 ``PYWEB_CSP``                  built in     Content-Security-Policy for pages
 ``PYWEB_TRUST_PROXY``          0            reverse proxies in front (for ``X-Forwarded-For``)

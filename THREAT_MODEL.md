@@ -133,6 +133,17 @@ load balancer in front.
 | S/I | A customer's webhook endpoint pointing at the internal network | Outbound deliveries go through `pyweb.http.fetch` | `test_webhooks.py::test_endpoints_cant_point_at_the_internal_network` |
 | I | Old uploads (replaced avatars, deleted attachments) kept forever | Files no row refers to are deleted after a day | `test_filegc.py::test_unreferenced_files_go_after_the_grace_period` |
 
+## 6c. Installable apps and push notifications
+
+| | Threat | Mitigation | Proof |
+|---|---|---|---|
+| T/E | Injected script registering its own service worker (which would sit between the app and every later visit) | The worker URL must come from the `pyweb-sw` Trusted Types policy, which accepts `/sw.js` only; the worker is served by PyWeb from its own code | `test_pwa.py::test_registration_uses_a_trusted_types_policy`, `e2e/test_pwa_browser.py::test_installable_and_offline` |
+| I | A signed-in visitor's page kept offline and shown to the next person on a shared computer | Only pages rendered for visitors who aren't signed in are marked as keepable; server functions, forms, live updates and credentialed requests are never cached | `test_pwa.py::test_pages_are_only_marked_for_offline_when_signed_out`, `test_pwa.py::test_service_worker` |
+| S | A notification that opens another site | Notification links must be paths of the app, checked when sending and again in the worker | `test_push.py::test_message_rules` |
+| I/S | A visitor subscribing with an endpoint that makes the server send requests elsewhere | Endpoints must be https URLs of the browsers' push services (others only when named in `PYWEB_PUSH_HOSTS`); delivery through `pyweb.http.fetch` | `test_push.py::test_only_real_push_services`, `test_push.py::test_subscription_requests_are_checked` |
+| I | Notification content read by the push service | Payloads are encrypted for the receiving browser (RFC 8291) and requests signed with the app's VAPID key (RFC 8292) | `test_push.py::test_rfc8291_example`, `test_push.py::test_vapid_keys_and_jwt` |
+| T | Another site subscribing a visitor's browser | Subscription requests must be same-origin JSON | `test_push.py::test_subscription_requests_are_checked` |
+
 ## 7. The developer's machine and the build
 
 | | Threat | Mitigation | Proof |

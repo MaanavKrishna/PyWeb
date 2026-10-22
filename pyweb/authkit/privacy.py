@@ -5,7 +5,8 @@ user (found through foreign keys), as JSON. Encrypted fields are included,
 decrypted (it is the user's own data); private fields such as password hashes
 and two-factor secrets are not.
 
-Deleting an account removes the user. Rows that point at them follow their
+Push notification subscriptions (:mod:`pyweb.push`) are exported (without
+their keys) and deleted too. Deleting an account removes the user. Rows that point at them follow their
 foreign key's ``on_delete`` rule (``cascade`` deletes them, ``set null`` keeps
 them without the user). Organizations the user owns alone are deleted with
 them; one that has other members needs a new owner first. The audit log keeps
@@ -42,6 +43,14 @@ def _pointing_at(target):
     return out
 
 
+def _push_subscriptions(user):
+    from pyweb import push
+    try:
+        return push.subscriptions(user.id)
+    except Exception:  # noqa: BLE001 - no push table in this database: nothing to export or delete
+        return []
+
+
 class PrivacyMixin:
     def export_user(self, user):
         """Everything stored about ``user``, as JSON-ready data."""
@@ -53,6 +62,10 @@ class PrivacyMixin:
                 rows = [_row(r) for r in model.query().where(field == user.id).order("id")]
                 if rows:
                     data["rows"].setdefault(model._meta.table, []).extend(rows)
+            subs = _push_subscriptions(user)
+            if subs:
+                data["rows"]["pyweb_push_subscriptions"] = [
+                    {k: v for k, v in _row(r).items() if k not in ("p256dh", "auth", "endpoint_hash")} for r in subs]
         return data
 
     def delete_user(self, user):
@@ -71,6 +84,7 @@ class PrivacyMixin:
                                                           "else owner first, or remove the other members."})
                     if members == 1:
                         orgs_alone.append(m.org_id)
+        subs = _push_subscriptions(user)       # browsers with notifications on (no foreign key: PyWeb's own table)
         pseudonym = "user-" + hashlib.sha256(f"{user.id}:{user.email}".encode()).hexdigest()[:12]
         from .models import AuthEvent, User
         db = User._database()
@@ -79,6 +93,9 @@ class PrivacyMixin:
             if orgs_alone:
                 from .orgs import Organization
                 Organization.where(Organization.id.in_(orgs_alone)).delete()
+            if subs:
+                from pyweb.push import PushSubscription
+                PushSubscription.where(user_id=user.id).delete()
             User.where(id=user.id).delete()
             AuthEvent.create(user=None, kind="account_deleted", detail=pseudonym)
         return pseudonym

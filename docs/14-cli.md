@@ -19,6 +19,7 @@ pyweb serve [DIR] [--host 0.0.0.0] [--port $PORT|8000] [--workers N] [--migrate]
                                      production server for a built dist/ (N processes)
 pyweb files clean [--dry-run] [--grace SECONDS] [--app app.pyweb]
                                      delete uploaded files no row refers to (also runs daily)
+pyweb push key | public               make a PYWEB_VAPID_KEY for push notifications; print the public key
 pyweb openapi FILE [--out openapi.json] [--server URL]
                                      an OpenAPI 3.1 document for the app's server functions
 pyweb profile FILE [--seconds 15] [--out PATH] [--port 8000] [--mode cpu|wall|gil]

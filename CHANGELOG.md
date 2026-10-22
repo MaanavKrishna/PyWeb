@@ -29,8 +29,8 @@ project uses [semantic versioning](https://semver.org).
 - New docs page: [Performance](docs/29-performance.md), including why
   PyWeb has no Rust core.
 - **Trusted Types.** Pages tell the browser to refuse plain strings in
-  HTML and script sinks; PyWeb's runtime uses two private policies
-  (Markdown, client navigation). Pages that use npm packages are exempt.
+  HTML and script sinks; PyWeb's runtime uses private policies
+  (Markdown, client navigation, the service worker). Pages that use npm packages are exempt.
 - **Encrypted fields.** `Field(encrypted=True)` stores AES-256-GCM
   ciphertext under `PYWEB_DATA_KEY` (kept apart from the session secret);
   `searchable=True` adds a blind index for exact lookups. Rotate with
@@ -49,6 +49,19 @@ project uses [semantic versioning](https://semver.org).
   `publish()` sign deliveries (Standard Webhooks), retry them over about a
   day through the SSRF-safe fetch, and log each attempt; `WebhookEndpoint`
   rows hold each organization's endpoints.
+- **Installable apps.** `App(pwa=True)` (or `pwa=PWA(name=, icon=,
+  theme_color=, offline_page=, cache_pages=...)`) serves a web app
+  manifest, icons made from one PNG (or drawn for you) and a service
+  worker: static files work offline, pages without a connection show an
+  offline page, and with `cache_pages=True` pages visitors opened while
+  signed out stay readable offline. The worker is registered through a
+  third Trusted Types policy, `pyweb-sw`, which accepts only `/sw.js`.
+- **Push notifications.** A `data-pw-push="subscribe"` button asks for
+  permission; `push.send(user, "Title", "Body", url="/orders/42")` encrypts
+  (RFC 8291), signs (VAPID) and delivers through background jobs, deleting
+  subscriptions the push service says are gone. Only the browsers' push
+  services are accepted as endpoints. `pyweb push key` makes a
+  `PYWEB_VAPID_KEY`; `pyweb-stack[push]` installs what it needs.
 - **Uploaded files are cleaned up.** Files no row refers to are deleted
   after a day (daily, or `pyweb files clean`).
 - **API tokens and OpenAPI.** `/account/tokens` makes tokens for calling

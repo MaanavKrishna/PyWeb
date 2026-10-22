@@ -89,7 +89,7 @@ line that holds a deliberate fake (a test fixture).
   frame-ancestors 'self'; form-action 'self'; img-src 'self' data: https:;
   style-src 'self' https:; style-src-attr 'unsafe-inline'; font-src 'self' data: https:;
   connect-src 'self'; worker-src 'self' blob:; require-trusted-types-for 'script';
-  trusted-types pyweb-md pyweb-nav; report-uri /__pyweb/csp-report
+  trusted-types pyweb-md pyweb-nav pyweb-sw; report-uri /__pyweb/csp-report
   ```
 
   No inline script runs, ever. A page's own inline `<style>` blocks are
@@ -108,10 +108,12 @@ line that holds a deliberate fake (a test fixture).
   scripts from a CDN.
 - **Trusted Types.** The browser refuses plain strings in places that turn
   text into HTML or script (`innerHTML`, `insertAdjacentHTML`, parsing HTML,
-  a `<script>`'s text, an iframe's `srcdoc`). PyWeb's runtime uses two
-  private policies for the two places it needs this: rendering Markdown
-  (whose output escapes everything it doesn't build itself) and parsing
-  pages during client navigation. So even a bug that handed visitor text to
+  a `<script>`'s text, an iframe's `srcdoc`, a service worker's URL).
+  PyWeb's runtime uses three private policies for the places it needs
+  this: rendering Markdown (whose output escapes everything it doesn't
+  build itself), parsing pages during client navigation, and registering
+  the service worker of an [installable app](31-pwa-push.md) (which
+  accepts `/sw.js` and nothing else). So even a bug that handed visitor text to
   one of those places couldn't run script. Pages that use npm packages don't
   get this rule, because many libraries write `innerHTML` themselves; the
   rest of the policy still applies to them.

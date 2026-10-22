@@ -713,6 +713,14 @@ class Server:
         if req.path.startswith("/__pyweb/files/"):
             return self.handle_file(req)
         path = req.path.split("?")[0]
+        if getattr(getattr(self.app, "app", None), "pwa", None) and (
+                path in ("/manifest.webmanifest", "/sw.js", "/__pyweb/offline", "/__pyweb/pwa.js")
+                or path.startswith(("/__pyweb/pwa/", "/__pyweb/push/"))):
+            from pyweb import pwa as _pwa
+            answer = _pwa.handle(self, req)
+            if answer is not None:
+                tel.route = "pwa"
+                return answer
         hooks = getattr(getattr(self.app, "app", None), "webhooks", None)
         if hooks and path in hooks:
             from pyweb import webhooks as _webhooks
@@ -998,9 +1006,11 @@ class Server:
             return self.error_page(500, req)
         if isinstance(result, Redirect):
             return Response(result.status, "", {"Location": result.url, "X-Request-Id": req.id})
-        return Response(200, result, {"Content-Type": "text/html; charset=utf-8",
-                                      "X-Request-Id": req.id,
-                                      "Cache-Control": "no-store"})
+        headers = {"Content-Type": "text/html; charset=utf-8", "X-Request-Id": req.id, "Cache-Control": "no-store"}
+        if getattr(getattr(self.app, "app", None), "pwa", None):
+            from pyweb import pwa as _pwa
+            _pwa.offline_header(self, req, headers)
+        return Response(200, result, headers)
 
     def _render_with_timeout(self, name, params, query, path):
         """Render page ``name``; give up waiting after ``PYWEB_RENDER_TIMEOUT`` seconds.

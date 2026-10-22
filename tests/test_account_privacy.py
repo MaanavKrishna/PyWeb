@@ -58,3 +58,22 @@ def test_the_only_owner_of_a_team_must_hand_it_over_first(site):  # noqa: F811
     assert status == 422 and "only owner of Acme" in html
     with system():
         assert User.where(email="ann@example.com").first() is not None
+
+
+def test_push_subscriptions_are_exported_and_deleted(site):  # noqa: F811
+    import pytest
+    pytest.importorskip("cryptography")
+    from pyweb import push
+    from pyweb.authkit import User
+    push._ready.clear()
+    ann = person(site, "ann@example.com", "Ann")
+    with system():
+        uid = User.where(email="ann@example.com").first().id
+    p256dh = push.b64e(b"\x04" + b"\x01" * 64)
+    push.subscribe("https://fcm.googleapis.com/fcm/send/ann", p256dh, push.b64e(b"a" * 16), user=uid)
+    push.subscribe("https://fcm.googleapis.com/fcm/send/other", p256dh, push.b64e(b"a" * 16), user=uid + 1)
+    data = json.loads(ann.get("/account/export")[2])
+    [row] = data["rows"]["pyweb_push_subscriptions"]
+    assert row["endpoint"].endswith("/ann") and "auth" not in row and "p256dh" not in row
+    ann.post("/account", {"action": "delete_account", "confirm": "ann@example.com"})
+    assert push.subscriptions(uid) == [] and len(push.subscriptions(uid + 1)) == 1

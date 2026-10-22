@@ -56,6 +56,7 @@ DOCS = [
     ("21-live-data.md", "live-data", "Live data", "Server"),
     ("24-jobs.md", "jobs", "Background jobs", "Server"),
     ("33-webhooks-files.md", "webhooks", "Webhooks & files", "Server"),
+    ("31-pwa-push.md", "pwa", "Installable apps & push", "Server"),
     ("20-ai-apps.md", "ai-apps", "Building AI apps", "Server"),
     ("11-testing.md", "testing", "Testing", "Ship"),
     ("12-deployment.md", "deployment", "Deployment", "Ship"),

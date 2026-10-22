@@ -115,6 +115,18 @@ def production_problems(source="", app_dir="."):
         if not fieldcrypt.available():
             out.append('the app has encrypted fields but the cryptography package isn\'t installed '
                        '(pip install "pyweb-stack[crypto]")')
+    if re.search(r"\bpwa\s*=\s*(True|PWA\()", source or "") and not re.search(r"\bpush\s*=\s*False", source or ""):
+        if not os.environ.get("PYWEB_VAPID_KEY"):
+            out.append("the app is installable (pwa=) but PYWEB_VAPID_KEY isn't set: push subscriptions would be "
+                       "tied to PYWEB_AUTH_SECRET and lost when it's rotated (make one: pyweb push key)")
+        if not os.environ.get("PYWEB_PUSH_CONTACT"):
+            out.append("PYWEB_PUSH_CONTACT isn't set: push services (Apple's in particular) want a mailto: or "
+                       "https: contact for your app's notifications")
+        try:
+            from pyweb.push import _crypto
+            _crypto()
+        except Exception:  # noqa: BLE001 - PushError: the package is missing
+            out.append('push notifications need the cryptography package (pip install "pyweb-stack[push]")')
     if "allow_pickle=True" in (source or ""):
         out.append("RedisCache(allow_pickle=True): anyone who can write to Redis could run code; store JSON")
     out += _topology_problems(app_dir)
@@ -370,6 +382,20 @@ def cmd_files(args):
     gone = filegc.collect(models or None, grace=args.grace, dry_run=args.dry_run)
     verb = "would delete" if args.dry_run else "deleted"
     print(f"{verb} {len(gone)} file(s) no row refers to" + ("".join(f"\n  {k}" for k in gone[:50]) if gone else ""))
+
+
+def cmd_push(args):
+    from pyweb import push
+    try:
+        if args.push_action == "key":
+            key = push.new_key()
+            print("A new VAPID key for Web Push. Keep it secret, set it in production, and don't change it:")
+            print("browsers tie each subscription to it.\n")
+            print(f"PYWEB_VAPID_KEY={key}")
+        else:
+            print(push.public_key())
+    except push.PushError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def cmd_openapi(args):
@@ -830,6 +856,9 @@ def main(argv=None):
     p.add_argument("--grace", type=int, default=24 * 3600, help="only files older than this many seconds")
     p.add_argument("--dry-run", action="store_true", help="list what would be deleted")
     p.set_defaults(fn=cmd_files)
+    p = sub.add_parser("push", help="Web Push: key makes a PYWEB_VAPID_KEY, public prints the public key")
+    p.add_argument("push_action", choices=["key", "public"])
+    p.set_defaults(fn=cmd_push)
     p = sub.add_parser("openapi", help="an OpenAPI 3.1 document for the app's server functions")
     p.add_argument("file")
     p.add_argument("--out", default="-", help="file to write (default: standard output)")

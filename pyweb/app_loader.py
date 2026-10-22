@@ -289,8 +289,16 @@ class LoadedApp:
         return page_html(name=page_name, title=title, body=body, state=state,
                          js_url=js_url if page["js"] else None, css_urls=self.stylesheets,
                          lang=self.lang, importmap=importmap, layouts=layouts,
-                         head=self.head_for(page, dynamic, path),
+                         head=self.head_for(page, dynamic, path), head_extra=self.pwa_head(),
                          nav=getattr(self.app, "client_nav", True) is not False)
+
+    def pwa_head(self):
+        """Manifest link, theme colour and service worker registration for installable apps."""
+        if not getattr(self.app, "pwa", None):
+            return ""
+        from . import pwa
+        cfg = pwa.config(self.app)
+        return pwa.head_tags(cfg) if cfg is not None else ""
 
     def head_for(self, page, dynamic, path):
         """Description, image and canonical URL: the page's own, then ``head()`` values, then the app's."""

@@ -133,7 +133,7 @@ DEFAULT_CSP = ("default-src 'self'; script-src 'self'; object-src 'none'; base-u
                "frame-ancestors 'self'; form-action 'self'; img-src 'self' data: https:; "
                "style-src 'self' https:; style-src-attr 'unsafe-inline'; font-src 'self' data: https:; "
                "connect-src 'self'; worker-src 'self' blob:; "
-               "require-trusted-types-for 'script'; trusted-types pyweb-md pyweb-nav; "
+               "require-trusted-types-for 'script'; trusted-types pyweb-md pyweb-nav pyweb-sw; "
                "report-uri /__pyweb/csp-report")
 # Trusted Types: the browser refuses strings in HTML/script sinks (innerHTML, DOMParser, script
 # text, ...) unless one of PyWeb's two policies made them. So even a bug that passed visitor

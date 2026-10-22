@@ -10,6 +10,8 @@ class App:
     canonical URL and absolute social-card links; ``description`` and
     ``image`` are the defaults for pages that don't set their own.
     ``client_nav=False`` makes links do full page loads.
+    ``pwa=True`` (or ``pwa=PWA(...)``) makes the app installable, usable offline and able
+    to send push notifications (see :mod:`pyweb.pwa` and :mod:`pyweb.push`).
     ``database`` (a URL like ``"sqlite:///app.db"`` or a database object) is
     where Models keep their rows. ``DATABASE_URL``, when set, wins over a URL
     given here: develop on SQLite, deploy on Postgres, same code.
@@ -17,7 +19,7 @@ class App:
 
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
                  title="PyWeb", stylesheets=(), lang="en", base_url=None, description=None,
-                 image=None, client_nav=True):
+                 image=None, client_nav=True, pwa=None):
         self.title = title
         self.stylesheets = list(stylesheets)
         self.lang = lang
@@ -25,6 +27,10 @@ class App:
         self.description = description
         self.image = image
         self.client_nav = client_nav
+        self.pwa = pwa                   # True or pyweb.pwa.PWA(...): installable, offline, push
+        if pwa is not None and pwa is not False:
+            from pyweb.pwa import config as _pwa_config
+            _pwa_config(self)            # bad settings fail here, not on the first request
         self.database = database
         self.db = None
         if database is not None:

@@ -43,6 +43,14 @@ project uses [semantic versioning](https://semver.org).
   size limits. `PYWEB_FETCH_ALLOW` lets it reach internal services you name.
 - **`@server(rate="5/minute", per="user"|"ip"|"all")`** limits one server
   function (429 with `Retry-After`; shared through Redis when configured).
+- **Webhooks.** `@app.webhook("/hooks/stripe", secret=..., scheme="stripe")`
+  checks GitHub, Stripe and Standard Webhooks signatures, drops repeats
+  and replays, and runs the handler as a retried job. `webhooks.send()` /
+  `publish()` sign deliveries (Standard Webhooks), retry them over about a
+  day through the SSRF-safe fetch, and log each attempt; `WebhookEndpoint`
+  rows hold each organization's endpoints.
+- **Uploaded files are cleaned up.** Files no row refers to are deleted
+  after a day (daily, or `pyweb files clean`).
 - **API tokens and OpenAPI.** `/account/tokens` makes tokens for calling
   server functions with `Authorization: Bearer` (scoped to functions,
   optionally expiring, stored as hashes); `pyweb openapi app.pyweb` writes

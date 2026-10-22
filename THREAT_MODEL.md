@@ -124,6 +124,15 @@ load balancer in front.
 | I | Secrets in logs | Log fields and URLs with credential-like names are redacted | `test_telemetry.py::test_redaction_of_fields_text_and_urls` |
 | I | Metrics reveal internals | `/metrics` needs `PYWEB_METRICS_TOKEN` in production | `test_telemetry.py::test_metrics_endpoint_needs_a_token_in_production` |
 
+## 6b. Webhooks
+
+| | Threat | Mitigation | Proof |
+|---|---|---|---|
+| S | Forged webhook deliveries | Signatures checked in constant time for each scheme (GitHub, Stripe, Standard Webhooks); 401 otherwise | `test_webhooks.py::test_github_and_stripe_schemes`, `test_webhooks.py::test_standard_webhooks_reference_vector` |
+| T | A captured delivery replayed later, or a provider's retry running twice | Signed timestamps must be within 5 minutes; each event id runs once | `test_webhooks.py::test_receiving_runs_the_handler_once_as_a_job` |
+| S/I | A customer's webhook endpoint pointing at the internal network | Outbound deliveries go through `pyweb.http.fetch` | `test_webhooks.py::test_endpoints_cant_point_at_the_internal_network` |
+| I | Old uploads (replaced avatars, deleted attachments) kept forever | Files no row refers to are deleted after a day | `test_filegc.py::test_unreferenced_files_go_after_the_grace_period` |
+
 ## 7. The developer's machine and the build
 
 | | Threat | Mitigation | Proof |

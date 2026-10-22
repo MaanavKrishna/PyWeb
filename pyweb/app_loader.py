@@ -88,6 +88,11 @@ class LoadedApp:
         self.migrations_dir = os.path.join(os.path.dirname(os.path.abspath(self.path)), "migrations") \
             if self.path else None
         self.migrated = self._prepare_database()
+        try:
+            from . import filegc
+            filegc.schedule(self.models())              # daily clean-up of files no row refers to
+        except Exception:  # noqa: BLE001 - never stop an app from loading
+            pass
         self.title = getattr(app_obj, "title", None) or "PyWeb"
         self.stylesheets = list(getattr(app_obj, "stylesheets", []) or []) + self.extra_stylesheets
         self.lang = getattr(app_obj, "lang", "en") or "en"

@@ -713,6 +713,11 @@ class Server:
         if req.path.startswith("/__pyweb/files/"):
             return self.handle_file(req)
         path = req.path.split("?")[0]
+        hooks = getattr(getattr(self.app, "app", None), "webhooks", None)
+        if hooks and path in hooks:
+            from pyweb import webhooks as _webhooks
+            tel.route = "webhook"
+            return _webhooks.receive(hooks[path], req)
         for pat, name in self.routes:
             m = pat.match(path)
             if not m:

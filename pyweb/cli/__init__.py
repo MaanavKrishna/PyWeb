@@ -364,6 +364,14 @@ def _watch_and_reload(state, Site):
     threading.Thread(target=poll, daemon=True, name="pyweb-reload").start()
 
 
+def cmd_files(args):
+    from pyweb import filegc
+    _, _, models = _db_context(args)
+    gone = filegc.collect(models or None, grace=args.grace, dry_run=args.dry_run)
+    verb = "would delete" if args.dry_run else "deleted"
+    print(f"{verb} {len(gone)} file(s) no row refers to" + ("".join(f"\n  {k}" for k in gone[:50]) if gone else ""))
+
+
 def cmd_openapi(args):
     from pyweb import openapi
     doc = openapi.generate(args.file, server_url=args.server)
@@ -814,6 +822,14 @@ def main(argv=None):
     p.add_argument("--mode", choices=["cpu", "wall", "gil"], default="cpu",
                    help="cpu: running code; wall: also waiting (I/O, locks); gil: waiting for the GIL")
     p.set_defaults(fn=cmd_profile)
+    p = sub.add_parser("files", help="uploaded files: clean deletes files no row refers to")
+    p.add_argument("files_action", choices=["clean"])
+    p.add_argument("--app", default=None, help="the app (default: ./app.pyweb)")
+    p.add_argument("--database", default=None)
+    p.add_argument("--migrations", default=None)
+    p.add_argument("--grace", type=int, default=24 * 3600, help="only files older than this many seconds")
+    p.add_argument("--dry-run", action="store_true", help="list what would be deleted")
+    p.set_defaults(fn=cmd_files)
     p = sub.add_parser("openapi", help="an OpenAPI 3.1 document for the app's server functions")
     p.add_argument("file")
     p.add_argument("--out", default="-", help="file to write (default: standard output)")

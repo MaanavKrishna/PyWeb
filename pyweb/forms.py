@@ -464,8 +464,10 @@ class UploadedFile:
         return len(self.data)
 
     def save(self):
-        from pyweb import storage
-        return storage.storage().save(self.data, self.filename, self.content_type)
+        from pyweb import filegc, storage
+        key = storage.storage().save(self.data, self.filename, self.content_type)
+        filegc.track(key, self.size, self.content_type)     # deleted later if no row keeps it
+        return key
 
     def __repr__(self):
         return f"<UploadedFile {self.filename!r} {self.content_type} {self.size} bytes>"

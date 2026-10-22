@@ -39,6 +39,7 @@ class App:
         self.cache = cache
         self.auth = auth
         self.models: list = []           # Models added by plugins (use_auth) for migrations
+        self.webhooks: dict = {}         # path -> pyweb.webhooks.Receiver
         if self.db is not None:
             # The job queue lives in the app's database: PyWeb's own tables (like the migrations
             # journal), created here and left out of the app's migrations.
@@ -121,6 +122,16 @@ class App:
         """Run the decorated function at a fixed interval: ``@app.every(minutes=5)``."""
         from .jobs import every
         return every(**options)
+
+    def webhook(self, path, *, secret, scheme="standard", retries=5):
+        """Receive webhooks at ``path`` (see :mod:`pyweb.webhooks`): the signature is checked, repeats are
+        dropped and ``fn(event)`` runs as a background job. ``scheme``: ``"github"``, ``"stripe"`` or
+        ``"standard"``; ``secret``: the signing secret (or ``webhooks.env_secret("NAME")``)."""
+        def deco(fn):
+            from pyweb.webhooks import receiver
+            self.webhooks[path] = receiver(path, fn, secret=secret, scheme=scheme, retries=retries)
+            return fn
+        return deco
 
     def use_auth(self, db=None, **options):
         """Accounts and sign-in: see :mod:`pyweb.authkit`. Returns the kit (``auth.user()`` ...)."""

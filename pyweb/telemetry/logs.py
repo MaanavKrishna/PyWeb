@@ -17,6 +17,7 @@ with those names inside messages and URLs.
 from __future__ import annotations
 
 import datetime as dt
+import functools
 import json
 import logging
 import os
@@ -30,8 +31,12 @@ _STD = set(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {"message", "a
 
 
 def sensitive_names():
-    extra = [n.strip().lower() for n in os.environ.get("PYWEB_LOG_REDACT", "").split(",") if n.strip()]
-    return SENSITIVE + tuple(extra)
+    return _names(os.environ.get("PYWEB_LOG_REDACT", ""))
+
+
+@functools.lru_cache(maxsize=8)
+def _names(raw):
+    return SENSITIVE + tuple(n.strip().lower() for n in raw.split(",") if n.strip())
 
 
 def is_sensitive(name):
@@ -40,7 +45,12 @@ def is_sensitive(name):
 
 
 def _pairs_re():
-    names = "|".join(re.escape(s) for s in sensitive_names())
+    return _pairs_re_for(sensitive_names())
+
+
+@functools.lru_cache(maxsize=8)
+def _pairs_re_for(sensitive):
+    names = "|".join(re.escape(s) for s in sensitive)
     # name=value or "name": "value" inside free text and query strings
     return re.compile(rf"""((?:[\w.-]*(?:{names})[\w.-]*)\s*["']?\s*[=:]\s*["']?)([^\s&"',;}}]+)""", re.I)
 

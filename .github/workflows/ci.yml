@@ -51,6 +51,9 @@ jobs:
         run: pip install -e ".[test,crypto]"
       - name: Unit tests (node runs the JS runtime/translator differential tests)
         run: python -m pytest tests -q -p no:cacheprovider --ignore=tests/e2e --ignore=tests/integration
+        env:
+          # On one version, every page render is also interpreted and must match the compiled HTML.
+          PYWEB_SSR_VERIFY: ${{ matrix.python == '3.12' && '1' || '' }}
 
   vscode:
     name: VS Code extension
@@ -112,6 +115,8 @@ jobs:
           curl -sSfL -o "package/$wheel" "https://cdn.jsdelivr.net/pyodide/v$v/full/$wheel"
           echo "PYWEB_PYODIDE_DIR=$RUNNER_TEMP/pyodide/package" >> "$GITHUB_ENV"
       - run: python -m pytest tests/e2e -q -p no:cacheprovider
+        env:
+          PYWEB_SSR_VERIFY: "1"   # browser tests also check compiled rendering against the interpreter
 
   integration:
     name: integration (Postgres, MySQL, Redis)

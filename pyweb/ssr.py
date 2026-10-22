@@ -20,6 +20,7 @@ import functools
 import hashlib
 import html as _html
 import json
+import os
 import posixpath
 import re
 
@@ -75,8 +76,19 @@ def style_of(v):
     return str(v)
 
 
+_SCALARS = frozenset({str, int, float, bool, type(None)})
+
+
 def to_jsonable(v):
     """Convert server values to JSON for the page state payload."""
+    t = type(v)
+    # Fast path: page state is mostly plain scalars, lists and dicts of them (rows).
+    if t in _SCALARS:
+        return v
+    if t is dict:
+        return {k if type(k) is str else str(k): x if type(x) in _SCALARS else to_jsonable(x) for k, x in v.items()}
+    if t is list or t is tuple:
+        return [x if type(x) in _SCALARS else to_jsonable(x) for x in v]
     import dataclasses
     import datetime
     import decimal
@@ -155,12 +167,16 @@ class Renderer:
     component (see :data:`NS_KEY`).
     """
 
-    def __init__(self, globals_=None, component_state=None, strict=True, path=None):
+    def __init__(self, globals_=None, component_state=None, strict=True, path=None, compiled=None):
         self.path = path   # the request path, for marking links to the current page
         self.globals = dict(globals_ or {})
         self.globals.setdefault("__builtins__", builtins)
         self.component_state = component_state
         self.strict = strict
+        # Strict renders (the server) run each UI tree as one compiled function (ssr_codegen);
+        # non-strict ones (the compiler's static prerender) interpret, swallowing errors.
+        self.compiled = strict if compiled is None else compiled
+        self._helpers = None
 
     def eval(self, code, env, lineno=None):
         scope = dict(self.globals)
@@ -173,7 +189,48 @@ class Renderer:
             return None
 
     def render(self, nodes, env):
+        if self.compiled and nodes:
+            from . import ssr_codegen
+            scope = dict(self.globals)
+            scope.update(env)
+            html = ssr_codegen.run(_compiled_ui(nodes), self, scope, self._helpers or self._make_helpers())
+            if _VERIFY:
+                self._verify(nodes, env, html)
+            return html
         return "".join(self.node(n, env) for n in nodes)
+
+    def _verify(self, nodes, env, html):
+        """``PYWEB_SSR_VERIFY=1``: the interpreter must produce exactly the same HTML."""
+        self.compiled = False
+        try:
+            expected = "".join(self.node(n, env) for n in nodes)
+        finally:
+            self.compiled = True
+        if expected != html:
+            at = next((i for i, (a, b) in enumerate(zip(expected, html)) if a != b), min(len(expected), len(html)))
+            raise AssertionError(f"compiled SSR differs at {at}:\n interpreted: {expected[max(0, at - 60):at + 60]!r}"
+                                 f"\n compiled:    {html[max(0, at - 60):at + 60]!r}")
+
+    def _make_helpers(self):
+        path = self.path
+
+        def href(name, v):
+            v = safe_url(v) if v is not None and v is not False and v is not True else v
+            out = _attr(name, v)
+            if out and v is not True:
+                current = link_current(v, path)
+                if current:
+                    out = f' aria-current="{current}"' + out
+            return out
+        self._helpers = (text_of, _attr, href, _bind_attr, _plain, _select_bound, Markup)
+        return self._helpers
+
+    def component_html(self, tag, props, ns):
+        """A component's HTML, for compiled templates (props already evaluated)."""
+        if self.component_state is None:
+            raise RenderError(f"unknown component <{tag}>")
+        ui, cenv = self.component_state(tag, props, ns)
+        return self.render(ui, cenv)
 
     def node(self, n, env):
         if isinstance(n, TextNode):
@@ -294,6 +351,59 @@ class Renderer:
             props["children"] = Markup(self.render(n.children, env))
         ui, cenv = self.component_state(n.tag, props, env.get(NS_KEY))
         return self.render(ui, cenv)
+
+
+_UI_CACHE: dict = {}
+_VERIFY = os.environ.get("PYWEB_SSR_VERIFY", "") not in ("", "0")
+
+
+def _compiled_ui(nodes):
+    """The compiled renderer for a UI node list (cached by identity; the list is kept alive)."""
+    hit = _UI_CACHE.get(id(nodes))
+    if hit is not None and hit[0] is nodes:
+        return hit[1]
+    from . import ssr_codegen
+    compiled = ssr_codegen.compile_ui(nodes)
+    if len(_UI_CACHE) > 4096:            # dev reloads make new trees; forget old ones
+        _UI_CACHE.clear()
+    _UI_CACHE[id(nodes)] = (nodes, compiled)
+    return compiled
+
+
+def _attr(name, v):
+    """One dynamic attribute, with the same rules as :meth:`Renderer.attrs_html`."""
+    if name == "class":
+        v = clsx(v)
+        if not v:
+            return ""
+    elif name == "style" and isinstance(v, dict):
+        v = style_of(v)
+    if v is None or v is False:
+        return ""
+    if v is True:
+        return f" {name}"
+    if name in URL_ATTRS:
+        v = safe_url(v)
+    return f' {name}="{_html.escape(str(v))}"'
+
+
+def _bind_attr(tag, typ, own, v):
+    if typ == "checkbox":
+        return " checked" if v else ""
+    if typ == "radio":
+        return " checked" if own is not None and str(v) == own else ""
+    if tag in ("select", "textarea"):
+        return ""
+    return f' value="{_html.escape("" if v is None else str(v))}"'
+
+
+def _plain(v):
+    return _html.escape("" if v is None else str(v), quote=False)
+
+
+def _select_bound(inner, v):
+    return re.sub(r'<option value="([^"]*)"',
+                  lambda m: m.group(0) + (" selected" if _html.unescape(m.group(1)) == str(v) else ""), inner)
 
 
 def _bind(target, value, scope):

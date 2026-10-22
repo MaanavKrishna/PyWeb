@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pyweb import _speedups
 import os
 import secrets
 import time
@@ -171,7 +172,7 @@ class LiveSession:
             pass
 
     async def _out(self, msg):
-        text = json.dumps(msg, separators=(",", ":"), default=str)
+        text = _speedups.json_dumps(msg, default=str)
         try:
             await asyncio.wait_for(self._send(text), SEND_TIMEOUT)
         except asyncio.TimeoutError:

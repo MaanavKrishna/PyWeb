@@ -459,13 +459,13 @@ class Translator:
         raise self.error(node, "starred expressions are only supported inside list/tuple literals and calls")
 
     # comprehensions --------------------------------------------------
-    def comp(self, node, scope, elt_fn, wrap):
+    def comp(self, node, scope, elt_fn, wrap, flat=False):
         for g in node.generators:
             if g.is_async:
                 raise self.error(node, "async comprehensions are not supported")
-        return wrap(self._gen(node.generators, 0, scope, elt_fn))
+        return wrap(self._gen(node.generators, 0, scope, elt_fn, flat))
 
-    def _gen(self, gens, i, scope, elt_fn):
+    def _gen(self, gens, i, scope, elt_fn, flat=False):
         g = gens[i]
         it = self.expr(g.iter, scope)
         inner = scope.child({n: VALUE for n in _target_names(g.target)})
@@ -475,20 +475,33 @@ class Translator:
             seq = f"{seq}.filter(({target}) => {self.test(cond, inner)})"
         if i == len(gens) - 1:
             elt = elt_fn(inner)
+            if flat:        # Python 3.15: [*row for row in rows] / {**d for d in ds}
+                return f"{seq}.flatMap(({target}) => [...{elt}])"
             if elt == target and seq != f"$py.iter({it})":
                 return seq
             return f"{seq}.map(({target}) => ({elt}))"
-        return f"{seq}.flatMap(({target}) => {self._gen(gens, i + 1, inner, elt_fn)})"
+        return f"{seq}.flatMap(({target}) => {self._gen(gens, i + 1, inner, elt_fn, flat)})"
+
+    def _starred_elt(self, node):
+        return isinstance(node.elt, ast.Starred)
 
     def x_ListComp(self, node, scope):
+        if self._starred_elt(node):
+            return self.comp(node, scope, lambda s: f"$py.iter({self.expr(node.elt.value, s)})", lambda s: s, flat=True)
         return self.comp(node, scope, lambda s: self.expr(node.elt, s), lambda s: s)
 
     x_GeneratorExp = x_ListComp
 
     def x_SetComp(self, node, scope):
+        if self._starred_elt(node):
+            return self.comp(node, scope, lambda s: f"$py.iter({self.expr(node.elt.value, s)})",
+                             lambda s: f"$py.set({s})", flat=True)
         return self.comp(node, scope, lambda s: self.expr(node.elt, s), lambda s: f"$py.set({s})")
 
     def x_DictComp(self, node, scope):
+        if node.value is None:      # {**d for d in ds}: later keys win, as in Python
+            return self.comp(node, scope, lambda s: f"Object.entries({self.expr(node.key, s)})",
+                             lambda s: f"Object.fromEntries({s})", flat=True)
         return self.comp(node, scope,
                          lambda s: f"[{self.expr(node.key, s)}, {self.expr(node.value, s)}]",
                          lambda s: f"Object.fromEntries({s})")

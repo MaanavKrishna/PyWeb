@@ -50,7 +50,8 @@ def cmd_check(args):
         n_sig = sum(len(p["signals"]) for p in out["pages"].values())
         print(f"ok: {len(out['pages'])} page(s), {n_sig} signal(s), {len(out['rpc'])} rpc(s)")
     except Exception as exc:  # noqa: BLE001
-        findings.append({"kind": "compile-error", "line": 0, "message": str(exc)})
+        findings.append({"kind": "compile-error", "line": getattr(exc, "lineno", None) or getattr(exc, "line", None) or 0,
+                         "message": getattr(exc, "pyweb_msg", None) or str(exc)})
     for f in findings:
         print(f"{f['kind']} {args.file}:{f['line']}: {f['message']}")
     problems = production_problems(src, os.path.dirname(os.path.abspath(args.file))) \
@@ -340,6 +341,14 @@ def _watch_and_reload(state, Site):
                     print(f"reloaded {state.path}", flush=True)
 
     threading.Thread(target=poll, daemon=True, name="pyweb-reload").start()
+
+
+def cmd_profile(args):
+    from pyweb import profile as _profile
+    try:
+        _profile.run(args.file, seconds=args.seconds, out=args.out, port=args.port, mode=args.mode)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def cmd_serve(args):
@@ -757,6 +766,14 @@ def main(argv=None):
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
     p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
+    p = sub.add_parser("profile", help="serve the app and show where its time goes (a flame graph on Python 3.15+)")
+    p.add_argument("file", nargs="?", default="app.pyweb")
+    p.add_argument("--seconds", type=float, default=15.0, help="how long to sample (default 15)")
+    p.add_argument("--out", default=None, help="report file (default profile.html, or profile.txt before 3.15)")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--mode", choices=["cpu", "wall", "gil"], default="cpu",
+                   help="cpu: running code; wall: also waiting (I/O, locks); gil: waiting for the GIL")
+    p.set_defaults(fn=cmd_profile)
     p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 8000), help="default: $PORT, else 8000"); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db", help="migrations and seed data")
     p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "check", "new", "adopt", "squash", "seed", "migrate",

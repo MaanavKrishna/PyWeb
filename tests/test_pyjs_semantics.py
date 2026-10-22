@@ -55,11 +55,29 @@ def translate(expr):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 def test_translated_expressions_match_python(tmp_path):
+    _check(CASES, tmp_path)
+
+
+#: Python 3.15 (PEP 798): unpacking in comprehensions.
+CASES_315 = [
+    "[*r for r in [[1, 2], [3], []]]", "[*w for w in words if len(w) > 3]", "list((*r for r in [[1], [2, 3]]))",
+    "sorted({*r for r in [[1, 2], [2, 3]]})", "{**r for r in [{'a': 1}, {'b': 2}, {'a': 3}]}",
+    "[*range(n) for n in [1, 2, 3]]", "[*d for d in [d, {'z': 0}]]",
+]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+@pytest.mark.skipif(__import__("sys").version_info < (3, 15), reason="Python 3.15 syntax")
+def test_python_315_comprehension_unpacking(tmp_path):
+    _check(CASES_315, tmp_path)
+
+
+def _check(cases, tmp_path):
     js_lines = [f"import {{ py as $py }} from {json.dumps(RUNTIME.as_uri())};"]
     for k, v in ENV.items():
         js_lines.append(f"const {k} = {json.dumps(v)};")
     js_lines.append("const out = [];")
-    for expr in CASES:
+    for expr in cases:
         js = translate(expr)
         js_lines.append(f"try {{ out.push({{ok: true, v: {js}}}); }} catch (e) {{ out.push({{ok: false, e: String(e)}}); }}")
     js_lines.append("console.log(JSON.stringify(out));")
@@ -69,7 +87,7 @@ def test_translated_expressions_match_python(tmp_path):
     assert res.returncode == 0, res.stderr
     results = json.loads(res.stdout)
     mismatches = []
-    for expr, got in zip(CASES, results):
+    for expr, got in zip(cases, results):
         want = eval(expr, {}, dict(ENV))  # noqa: S307 - fixed test corpus
         want = json.loads(json.dumps(want if not isinstance(want, set) else sorted(want)))
         if not got["ok"] or got["v"] != want:

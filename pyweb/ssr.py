@@ -19,7 +19,7 @@ import builtins
 import functools
 import hashlib
 import html as _html
-import json
+from pyweb import _speedups
 import os
 import posixpath
 import re
@@ -115,7 +115,7 @@ def to_jsonable(v):
 
 def state_json(state):
     """JSON for ``<script id="pw-state">`` — safe inside HTML."""
-    raw = json.dumps(to_jsonable(state), separators=(",", ":"))
+    raw = _speedups.json_dumps(to_jsonable(state))
     return raw.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 

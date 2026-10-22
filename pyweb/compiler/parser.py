@@ -534,7 +534,10 @@ def parse_source(source, filename="<pyweb>"):
     except PyWebSyntaxError as exc:
         exc.filename = filename
         raise
-    tree = ast.parse(py_source, filename=filename)
+    try:
+        tree = ast.parse(py_source, filename=filename)
+    except SyntaxError as exc:
+        raise _python_syntax_error(exc, source, filename) from None
     pages = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -542,3 +545,16 @@ def parse_source(source, filename="<pyweb>"):
             body_ui = [x for x in ui if span[0] <= getattr(x, "line", 0) <= span[1]]
             pages.append((node, body_ui))
     return tree, ui, pages
+
+
+def _python_syntax_error(exc, source, filename):
+    """A Python syntax error in a .pyweb file, with its line and a hint where one helps."""
+    import sys
+    line = exc.lineno or 0
+    text = source.splitlines()[line - 1].strip() if 0 < line <= len(source.splitlines()) else ""
+    if text.startswith(("lazy import ", "lazy from ")) and sys.version_info < (3, 15):
+        msg = (f"`lazy import` needs Python 3.15 or later (this is Python {sys.version_info[0]}."
+               f"{sys.version_info[1]}): use a plain import, or run PyWeb on 3.15+")
+    else:
+        msg = exc.msg or "invalid syntax"
+    return PyWebSyntaxError(msg, lineno=line, filename=filename)

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pyweb import _speedups
 import re
 import threading
 import time
@@ -117,7 +118,7 @@ def table_changed(db, *tables):
 # ---------------------------------------------------------------- queries
 
 def _version(rows):
-    return hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    return hashlib.sha256(_speedups.json_bytes(rows, sort_keys=True, default=str)).hexdigest()[:16]
 
 
 class LiveRows(list):
@@ -317,8 +318,8 @@ def change_message(old_rows, rows, row_key, prev, version):
     if ops is None:
         return full
     patch = {"version": version, "prev": prev, "key": row_key, "ops": ops}
-    size = len(json.dumps(patch, default=str))
-    return patch if size < len(json.dumps(full, default=str)) else full
+    size = len(_speedups.json_bytes(patch, default=str))
+    return patch if size < len(_speedups.json_bytes(full, default=str)) else full
 
 
 def snapshot(spec, secret):

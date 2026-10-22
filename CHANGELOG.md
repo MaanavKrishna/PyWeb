@@ -4,6 +4,44 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [semantic versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- **Python 3.14, 3.15 and free-threaded 3.15t** are supported and tested in
+  CI. On a free-threaded build one `pyweb serve` process uses every core
+  (about 3× the requests per second of the same build with the GIL).
+- **Python 3.15 features.** Browser code can use unpacking in
+  comprehensions (`[*row for row in rows]`, `{**d for d in ds}`). `lazy
+  import` is server-only Python, and older Pythons get a clear error that
+  names the version it needs.
+- **`pyweb profile app.pyweb`** serves the app and records where the time
+  goes while you use it: a Tachyon flame graph on Python 3.15, a text
+  report before.
+- **`pyweb-stack[speed]`** adds orjson for live queries, WebSocket messages,
+  page state and server function results (a 10,000-row live query encodes
+  10× faster).
+- **`python -m pyweb.bench --system`** measures requests per second over
+  sockets, a signed-in page, start-up and live queries; `--compare DIR`
+  fails on a 15% regression against another checkout. CI runs it on
+  every push.
+- **`PYWEB_SSR_VERIFY=1`** renders every page with both renderers and
+  fails if they differ.
+- New docs page: [Performance](docs/29-performance.md), including why
+  PyWeb has no Rust core.
+
+### Changed
+- **About 2.5× more requests per second** over `pyweb serve`: pages render
+  on the thread that read the request (the time limit moved into the
+  connection handler), each page's markup compiles to one Python function,
+  and request ids no longer cost a system call each.
+- **`import pyweb` takes 2 ms** instead of 87 ms, and `pyweb --version`
+  about a third of the time it did: modules load when first used.
+- Tracebacks from `.pyweb` files show the source lines.
+- `pyweb check` reports the line of a Python syntax error.
+
+### Fixed
+- Models on Python 3.14+ (annotations are evaluated lazily there, PEP 649).
+
 ## [0.5.0]
 
 Production apps in one Python file: Models with migrations, forms, an

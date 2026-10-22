@@ -15,6 +15,9 @@ access, like a private link.
 
 from __future__ import annotations
 
+# Python 3.15+ loads these only when first used (PEP 810); earlier versions ignore this.
+__lazy_modules__ = ['urllib.request']
+
 import datetime as _dt
 import hashlib
 import hmac

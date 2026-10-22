@@ -17,6 +17,10 @@ pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
                                      self-contained dist/; --production hashes and minifies
 pyweb serve [DIR] [--host 0.0.0.0] [--port $PORT|8000] [--workers N] [--migrate]
                                      production server for a built dist/ (N processes)
+pyweb profile FILE [--seconds 15] [--out PATH] [--port 8000] [--mode cpu|wall|gil]
+                                     serve the app while you use it and record where the time goes:
+                                     a flame graph on Python 3.15 (Tachyon), a text report before
+                                     (see Performance)
 
 pyweb db upgrade [--contract] [--target M]    apply migrations (under a lock)
 pyweb db downgrade [--steps N] [--to M]       revert the last migrations

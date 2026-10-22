@@ -59,6 +59,7 @@ DOCS = [
     ("12-deployment.md", "deployment", "Deployment", "Ship"),
     ("25-scaling.md", "scaling", "Scaling & deploying", "Ship"),
     ("26-observability.md", "observability", "Logs, metrics & tracing", "Ship"),
+    ("29-performance.md", "performance", "Performance", "Ship"),
     ("13-security.md", "security", "Security model", "Ship"),
     ("14-cli.md", "cli", "Command line", "Ship"),
     ("27-upgrading.md", "upgrading", "Upgrading to 0.5", "Ship"),

@@ -580,7 +580,7 @@ class Server:
                 return self._stream_response(result["chunks"], headers)
             from pyweb.ssr import to_jsonable
             try:
-                payload = json.dumps({"result": to_jsonable(result)})
+                payload = _speedups.json_dumps({"result": to_jsonable(result)})
             except TypeError as exc:
                 if self.logger is not None:
                     self.logger.error(f"rpc {name} returned unserializable value: {exc}",

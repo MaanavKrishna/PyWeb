@@ -84,3 +84,24 @@ def test_bench_budgets_fail_the_run():
     assert _bench.over_budget(results, max_ssr_ms=2, max_compile_ms=0.5) == [
         "x: server render 5.0 ms > 2 ms", "x: compile 1.0 ms > 0.5 ms"]
     assert _bench.main(["--json", "--max-ssr-ms", "1000"]) == 0
+
+
+def test_system_benchmark_measures_the_whole_stack():
+    numbers = _bench.system()
+    assert set(numbers) == set(_bench.SYSTEM)
+    assert numbers["network_rps"] > 50 and numbers["saas_page_us"] > 0 and numbers["live_10k_ms"] > 0
+
+
+def test_regressions_need_both_a_ratio_and_a_real_difference():
+    base = {"network_rps": 3000, "saas_page_us": 900, "import_ms": 2.0, "cli_version_ms": 16, "live_10k_ms": 15}
+    assert _bench.regressions(base, dict(base)) == []
+    assert _bench.regressions(base, dict(base, import_ms=4.0)) == []            # +100%, but only 2 ms
+    assert _bench.regressions(base, dict(base, saas_page_us=1000)) == []        # +11%
+    slower = _bench.regressions(base, dict(base, network_rps=2000, saas_page_us=1200))
+    assert [s.split(":")[0] for s in slower] == ["network_rps", "saas_page_us"]
+
+
+def test_compare_without_a_base_benchmark_passes(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(_bench, "compare", lambda root, rounds: ({}, {"network_rps": 1}))
+    assert _bench.main(["--compare", str(tmp_path)]) == 0
+    assert "nothing to compare" in capsys.readouterr().err

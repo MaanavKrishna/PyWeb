@@ -88,12 +88,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -e .
       # Loose limits: catches order-of-magnitude regressions, not noise.
       - run: python -m pyweb.bench --max-ssr-ms 2 --max-compile-ms 50
+      # Whole system (requests/s over sockets, a signed-in page, start-up, live queries), against the
+      # commit before on this same runner, alternating 5 runs each: fails if 15% slower.
+      - name: compare with the base commit
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=$(git rev-parse HEAD^); fi
+          git worktree add ../base "$BASE"
+          python -m pyweb.bench --compare ../base --rounds 5
 
   browser:
     name: browser (Playwright + Chromium)

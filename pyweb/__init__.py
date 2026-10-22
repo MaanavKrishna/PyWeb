@@ -1,24 +1,53 @@
 """PyWeb — Python from browser to database."""
 
-from .app import App
-from .models import Email, Field, Model
-from .rules import ValidationError
-from .db import atomic
-from .auth import current_user
-from . import auth, cache, jobs, realtime, security, observability, forms, testing
-from . import sync, deploy, uploads, lsp, livetable
-from . import browser as browser_api
-from . import build, css, plugins, platform
-from .jobs import task
-from .context import NotFound, head, redirect, request, session
-from .rpc import RPCError
-from .decorators import component, edge, server, worker
-from .rooms import join, presence
-from .realtime import channel, publish, subscribe
-from .packages import npm
-from .markdown import Markdown
-from .forms import Checkbox, FileInput, Form, FormError, Input, Select, Submit, Textarea, UploadedFile
-from .livedata import live
+# Every public name loads on first use (PEP 562), so `import pyweb` and the command line start
+# fast: `from pyweb import App, server` loads what it names, and `pyweb --version` loads nothing
+# else. (Python 3.15's `lazy import` would do this too; this works on every supported version.)
+_LAZY = {
+    "App": (".app", "App"),
+    "Email": (".models", "Email"), "Field": (".models", "Field"), "Model": (".models", "Model"),
+    "ValidationError": (".rules", "ValidationError"),
+    "atomic": (".db", "atomic"),
+    "current_user": (".auth", "current_user"),
+    "task": (".jobs", "task"),
+    "NotFound": (".context", "NotFound"), "head": (".context", "head"), "redirect": (".context", "redirect"),
+    "request": (".context", "request"), "session": (".context", "session"),
+    "RPCError": (".rpc", "RPCError"),
+    "component": (".decorators", "component"), "edge": (".decorators", "edge"),
+    "server": (".decorators", "server"), "worker": (".decorators", "worker"),
+    "join": (".rooms", "join"), "presence": (".rooms", "presence"),
+    "channel": (".realtime", "channel"), "publish": (".realtime", "publish"), "subscribe": (".realtime", "subscribe"),
+    "npm": (".packages", "npm"),
+    "Markdown": (".markdown", "Markdown"),
+    "Checkbox": (".forms", "Checkbox"), "FileInput": (".forms", "FileInput"), "Form": (".forms", "Form"),
+    "FormError": (".forms", "FormError"), "Input": (".forms", "Input"), "Select": (".forms", "Select"),
+    "Submit": (".forms", "Submit"), "Textarea": (".forms", "Textarea"), "UploadedFile": (".forms", "UploadedFile"),
+    "live": (".livedata", "live"),
+    "browser_api": (".browser", None),
+}
+_SUBMODULES = {"auth", "cache", "jobs", "realtime", "security", "observability", "forms", "testing", "sync",
+               "deploy", "uploads", "lsp", "livetable", "build", "css", "plugins", "platform"}
+
+
+def __getattr__(name):
+    import importlib
+    if name in _LAZY:
+        module, attr = _LAZY[name]
+        mod = importlib.import_module(module, __name__)
+        value = mod if attr is None else getattr(mod, attr)
+    elif name in _SUBMODULES:
+        value = importlib.import_module("." + name, __name__)
+    elif name == "__version__":
+        value = _version()
+    else:
+        raise AttributeError(f"module 'pyweb' has no attribute {name!r}")
+    globals()[name] = value            # once loaded, a plain attribute
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__) | {"__version__"})
+
 
 __all__ = [
     "App",
@@ -78,6 +107,26 @@ __all__ = [
 
 def _version():
     """Single source of truth: installed dist metadata, else pyproject."""
+    import os
+    import sys
+    # Read the installed METADATA directly: importlib.metadata (and the email package it
+    # imports) costs ~20 ms, a third of `pyweb --version`.
+    for entry in sys.path:
+        try:
+            names = os.listdir(entry or ".")
+        except OSError:
+            continue
+        for name in names:
+            if name.startswith("pyweb_stack-") and name.endswith(".dist-info"):
+                try:
+                    with open(os.path.join(entry or ".", name, "METADATA"), encoding="utf-8") as fh:
+                        for line in fh:
+                            if line.startswith("Version:"):
+                                return line.split(":", 1)[1].strip()
+                            if not line.strip():
+                                break
+                except OSError:
+                    pass
     try:
         from importlib.metadata import version, PackageNotFoundError
         try:
@@ -98,5 +147,3 @@ def _version():
         pass
     return "0.0.0+unknown"
 
-
-__version__ = _version()

@@ -563,3 +563,14 @@ def test_settings_are_cached_until_the_environment_changes(monkeypatch):
     assert settings().render_timeout == 9             # a change is seen at once
     monkeypatch.delenv("PYWEB_RENDER_TIMEOUT")
     assert settings().render_timeout == 30
+
+
+def test_redaction_stays_linear_on_long_values():
+    """A long word with no name=value pair used to be retried from every character (0.3 ms for 64)."""
+    import time
+    from pyweb.telemetry.logs import redact_text
+    for text in ("a" * 20000, "a" * 20000 + "=x", ("tok" * 3000) + " token=s3cret"):
+        t0 = time.perf_counter()
+        out = redact_text(text)
+        assert time.perf_counter() - t0 < 0.25, len(text)
+    assert out.endswith("token=[redacted]")

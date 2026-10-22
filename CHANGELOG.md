@@ -68,6 +68,9 @@ project uses [semantic versioning](https://semver.org).
 - `pyweb check` reports the line of a Python syntax error.
 
 ### Fixed
+- Log redaction took time quadratic in the length of a word without `=`
+  (0.3 ms for a 64-character id, on every logged query parameter while
+  developing); it is now linear. Found by the new benchmark gate.
 - Form submits with more than 1,000 fields or 100 files are refused (400)
   instead of being parsed.
 - A Model that fails to set up no longer breaks every Model defined after it.

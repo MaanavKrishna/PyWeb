@@ -52,12 +52,15 @@ def _pairs_re():
 def _pairs_re_for(sensitive):
     names = "|".join(re.escape(s) for s in sensitive)
     # name=value or "name": "value" inside free text and query strings
-    return re.compile(rf"""((?:[\w.-]*(?:{names})[\w.-]*)\s*["']?\s*[=:]\s*["']?)([^\s&"',;}}]+)""", re.I)
+    # The match may only start where a word starts: otherwise a long word with no "=" in it is retried
+    # from every one of its characters (a 64-character id took 0.3 ms).
+    return re.compile(rf"""((?<![\w.-])(?:[\w.-]*?(?:{names})[\w.-]*)\s*["']?\s*[=:]\s*["']?)([^\s&"',;}}]+)""",
+                      re.I)
 
 
 def redact_text(text):
-    if not isinstance(text, str) or not text:
-        return text
+    if not isinstance(text, str) or not text or ("=" not in text and ":" not in text):
+        return text                         # no name=value or name: value pair to hide
     return _pairs_re().sub(lambda m: m.group(1) + REDACTED, text)
 
 

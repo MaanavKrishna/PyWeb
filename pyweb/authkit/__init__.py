@@ -84,6 +84,9 @@ def system_writes():
     return system()
 
 
+_CHECK_SQL: dict = {}
+
+
 class _DBSessionVersions:
     """Session versions in the users table: durable and shared by every server."""
 
@@ -116,13 +119,17 @@ class _DBSessionVersions:
             return int(payload.get("ver", 0) or 0) >= self.get(payload.get("sub"))
         from pyweb.db.dialect import dialect_of
         db = User._database()
-        q = dialect_of(db).quote
-        digest = AuthSession.digest(sid)
-        try:
-            row = db.execute(
+        dialect = dialect_of(db)
+        q = dialect.quote
+        sql = _CHECK_SQL.get(dialect.name)
+        if sql is None:
+            sql = _CHECK_SQL[dialect.name] = (
                 f"SELECT u.{q('session_version')}, s.{q('id')}, s.{q('revoked_at')}, s.{q('last_seen_at')} "
                 f"FROM {q('users')} u LEFT JOIN {q('auth_sessions')} s ON s.{q('user_id')} = u.{q('id')} "
-                f"AND s.{q('sid_hash')} = ? WHERE u.{q('id')} = ?", (digest, user_id)).fetchone()
+                f"AND s.{q('sid_hash')} = ? WHERE u.{q('id')} = ?")
+        digest = AuthSession.digest(sid)
+        try:
+            row = db.execute(sql, (digest, user_id)).fetchone()
         except Exception:  # noqa: BLE001 - e.g. an app upgraded without migrating auth_sessions yet
             if not getattr(self, "_warned", False):
                 self._warned = True

@@ -2,6 +2,11 @@
 
 ## Threat model
 
+The full model, every threat with its mitigation and the test that proves
+it, is in [THREAT_MODEL.md](https://github.com/MaanavKrishna/PyWeb/blob/main/THREAT_MODEL.md).
+CI also fuzzes the request parsers and runs an OWASP ZAP scan on every
+push. In short:
+
 **PyWeb defends against** (on by default, no code needed):
 
 - other sites making a visitor's browser call your server functions

@@ -169,6 +169,34 @@ jobs:
       # Redis-backed sessions/rate limits/throttles and the integration suites all run here.
       - run: python -m pytest tests -q -p no:cacheprovider -rs --ignore=tests/e2e
 
+  zap:
+    name: OWASP ZAP baseline scan (saas example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Build and serve the saas example as in production
+        working-directory: examples/saas
+        run: |
+          python -m pyweb.cli build app.pyweb --out dist
+          PYWEB_WORKER=0 PYWEB_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))") \
+            nohup python -m pyweb.cli serve dist --port 8799 > serve.log 2>&1 &
+          for i in $(seq 50); do curl -fs http://127.0.0.1:8799/healthz && break; sleep 0.2; done
+      # Passive scan: headers, cookies, CSP, information leaks. .github/zap/rules.tsv lists the
+      # checks that fail the job; any high-risk alert fails it too.
+      - name: Scan
+        run: |
+          mkdir -p zap && chmod 777 zap && cp .github/zap/rules.tsv zap/
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" \
+            zaproxy/zap-stable@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
+            zap-baseline.py -t http://127.0.0.1:8799 -m 2 -c rules.tsv -J report.json -I
+          python .github/zap/check.py zap/report.json
+      - if: failure()
+        run: cat examples/saas/serve.log
+
   deploy:
     name: deploy (compose, 2 replicas + worker + Postgres + Redis + Caddy)
     runs-on: ubuntu-latest

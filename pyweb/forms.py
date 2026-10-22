@@ -471,8 +471,15 @@ class UploadedFile:
         return f"<UploadedFile {self.filename!r} {self.content_type} {self.size} bytes>"
 
 
+MAX_FIELDS = 1000          # values in one form submit (no real form comes close)
+MAX_FILES = 100            # files in one form submit
+
+
 def parse_body(req):
-    """``(fields, files)`` from an urlencoded or multipart body: ``{name: [values]}``."""
+    """``(fields, files)`` from an urlencoded or multipart body: ``{name: [values]}``.
+
+    ValueError for a malformed body, or one with more than :data:`MAX_FIELDS` values or
+    :data:`MAX_FILES` files (a small body with very many fields costs a lot to handle)."""
     import urllib.parse
     headers = {k.lower(): v for k, v in (req.headers or {}).items()}
     ctype = headers.get("content-type", "")
@@ -484,7 +491,10 @@ def parse_body(req):
         if not m:
             raise ValueError("multipart body without a boundary")
         boundary = ("--" + m.group(1)).encode()
-        for part in body.split(boundary)[1:]:
+        parts = body.split(boundary, MAX_FIELDS + MAX_FILES + 2)
+        if len(parts) > MAX_FIELDS + MAX_FILES + 2:
+            raise ValueError(f"the form has more than {MAX_FIELDS} fields")
+        for part in parts[1:]:
             if part.startswith(b"--"):
                 break
             part = part[2:] if part.startswith(b"\r\n") else part
@@ -505,12 +515,21 @@ def parse_body(req):
             if file_m is not None:
                 if file_m.group(1) or data:
                     from pyweb import storage
+                    if sum(map(len, files.values())) >= MAX_FILES:
+                        raise ValueError(f"the form has more than {MAX_FILES} files")
                     files.setdefault(name, []).append(UploadedFile(file_m.group(1) or "upload", data, storage.sniff(data)))
             else:
                 fields.setdefault(name, []).append(data.decode("utf-8", "replace"))
     else:
-        for key, value in urllib.parse.parse_qsl(body.decode("utf-8", "replace"), keep_blank_values=True):
+        try:
+            pairs = urllib.parse.parse_qsl(body.decode("utf-8", "replace"), keep_blank_values=True,
+                                           max_num_fields=MAX_FIELDS)
+        except ValueError:
+            raise ValueError(f"the form has more than {MAX_FIELDS} fields") from None
+        for key, value in pairs:
             fields.setdefault(key, []).append(value)
+    if sum(map(len, fields.values())) > MAX_FIELDS:
+        raise ValueError(f"the form has more than {MAX_FIELDS} fields")
     return fields, files
 
 

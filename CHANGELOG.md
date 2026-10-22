@@ -51,6 +51,9 @@ project uses [semantic versioning](https://semver.org).
 - **Supply chain.** `pyweb build` writes a CycloneDX `sbom.json`; releases
   get PEP 740 attestations on PyPI and a CycloneDX file; CI pins every
   GitHub Action to a commit.
+- **`THREAT_MODEL.md`**: every threat, its mitigation and the test that
+  proves it (a test keeps the references current). CI fuzzes the RPC and
+  form parsers with Hypothesis and runs an OWASP ZAP baseline scan.
 - **CSP violation reports** go to `/__pyweb/csp-report`: a `pyweb.csp` log
   line and the `pyweb_csp_violations_total` metric.
 
@@ -65,6 +68,8 @@ project uses [semantic versioning](https://semver.org).
 - `pyweb check` reports the line of a Python syntax error.
 
 ### Fixed
+- Form submits with more than 1,000 fields or 100 files are refused (400)
+  instead of being parsed.
 - A Model that fails to set up no longer breaks every Model defined after it.
 - Models on Python 3.14+ (annotations are evaluated lazily there, PEP 649).
 

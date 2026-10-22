@@ -499,6 +499,7 @@ class Server:
             raise ValueError(str(exc)) from None
 
     def handle_rpc(self, req: Request):
+        from pyweb.context import NotFound as _NotFound
         from pyweb import rpc as _rpc
         m = re.match(r"^/__pyweb/rpc/(\w+)$", req.path)
         if not m:
@@ -588,6 +589,9 @@ class Server:
                                  trace_id=trace_id, traceparent=traceparent)
             except ValidationError as exc:
                 return self._err(_rpc.Code.VALIDATION, str(exc), details={"errors": exc.errors},
+                                 trace_id=trace_id, traceparent=traceparent)
+            except _NotFound as exc:         # get_or_404() in a server function: the browser gets a 404
+                return self._err(_rpc.Code.NOT_FOUND, str(exc) or "not found",
                                  trace_id=trace_id, traceparent=traceparent)
             except (TypeError, ValueError) as exc:
                 return self._err(_rpc.Code.VALIDATION, str(exc),

@@ -557,6 +557,8 @@ def _account_body(c, user, msg, err, extra):
     out += H.form("/account", '<input type="hidden" name="action" value="revoke">' +
                   H.button("Sign out of every other device", kind="secondary pw-inline"), csrf=c.csrf)
     out += H.form("/logout", H.button("Sign out", kind="secondary pw-inline"), csrf=c.csrf)
+    if kit.orgs_enabled:
+        out += '<p class="pw-links"><a href="/orgs">Organizations</a></p>'
     if kit.admin_enabled and user.has_role("admin"):
         out += '<p class="pw-links"><a href="/admin">Admin</a></p>'
     return out
@@ -778,7 +780,11 @@ def dispatch(kit, server, req):
             return None
         from . import admin
         return admin.dispatch(kit, server, req)
-    for pattern, handler, methods in ROUTES:
+    routes = ROUTES
+    if kit.orgs_enabled:
+        from . import orgpages
+        routes = ROUTES + orgpages.ROUTES
+    for pattern, handler, methods in routes:
         m = pattern.match(path)
         if not m:
             continue

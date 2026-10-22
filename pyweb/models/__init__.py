@@ -306,6 +306,7 @@ class ModelInfo:
         self.validators: dict = {}
         self.policy = None
         self.legacy = False
+        self.tenant = bool(options.get("tenant"))
 
     @property
     def table(self):
@@ -358,9 +359,22 @@ class ModelInfo:
         return out
 
     def read_scope(self):
-        if self.policy is None:
+        conds = []
+        if self.tenant:
+            from pyweb import tenancy
+            cond = tenancy.read_condition(self.model)
+            if cond is not None:
+                conds.append(cond)
+        if self.policy is not None:
+            cond = self.policy.read_condition(self.model)
+            if cond is not None:
+                conds.append(cond)
+        if not conds:
             return None
-        return self.policy.read_condition(self.model)
+        if len(conds) == 1:
+            return conds[0]
+        from .query import And
+        return And(conds)
 
 
 def _finalize_pending():
@@ -436,6 +450,8 @@ class ModelMeta(type):
         inner_meta = ns.pop("Meta", None)
         if inner_meta is not None:
             meta_opts = {k: v for k, v in vars(inner_meta).items() if not k.startswith("__")}
+        if "tenant" in kw:
+            meta_opts["tenant"] = bool(kw.pop("tenant"))
         if ns.get("__abstract__"):
             meta_opts["abstract"] = True
         legacy_table = ns.get("__table__")
@@ -452,6 +468,13 @@ class ModelMeta(type):
         for key, value in list(ns.items()):
             if isinstance(value, (Field, Relation)) and key not in declared:
                 declared[key] = (value, MISSING)
+        if "tenant" not in meta_opts:
+            meta_opts["tenant"] = any(getattr(b.__dict__.get("_pyweb_meta"), "tenant", False) for b in bases)
+        if meta_opts["tenant"] and "org" not in declared:
+            # Tenant rows belong to an organization (pyweb.authkit.orgs), set by PyWeb, never by a browser.
+            from . import relations as _rel
+            declared["org"] = (_rel.ForeignKey("Organization", on_delete="cascade", readonly=True), MISSING)
+            import pyweb.authkit.orgs  # noqa: F401 - registers Organization
         cls = super().__new__(mcls, name, bases, ns, **kw)
         if name == "Model" and not bases[:1] == (object,) and ns.get("__module__") == __name__:
             return cls
@@ -488,6 +511,21 @@ class ModelMeta(type):
             _by_name[name] = cls
             _pending.append(cls)
         return cls
+
+    def __getattr__(cls, name):
+        # Columns added when the Model is finalized (the automatic ``id``, foreign key ids) exist on the
+        # class only afterwards: finalize on the first lookup that misses, then look again.
+        info = type.__getattribute__(cls, "__dict__").get("_pyweb_meta")
+        if info is None or info.ready or info.abstract or name.startswith("__"):
+            raise AttributeError(f"type object {cls.__name__!r} has no attribute {name!r}")
+        try:
+            cls._meta  # noqa: B018 - finalizes
+        except LookupError:                 # a related Model isn't defined yet: hasattr() must stay False
+            raise AttributeError(f"type object {cls.__name__!r} has no attribute {name!r}") from None
+        try:
+            return type.__getattribute__(cls, name)
+        except AttributeError:
+            raise AttributeError(f"type object {cls.__name__!r} has no attribute {name!r}") from None
 
     # -- class-level properties (finalize on first use) ----------------------
     @property
@@ -993,6 +1031,9 @@ class Model(metaclass=ModelMeta):
         for f in meta.fields.values():
             if f.auto_now and state.get("_persisted"):
                 state[f.name] = f.initial()
+        if meta.tenant:
+            from pyweb import tenancy
+            tenancy.before_write(self, "change" if state.get("_persisted") else "create")
         if validate:
             self.validate()
         if meta.policy is not None:
@@ -1047,6 +1088,9 @@ class Model(metaclass=ModelMeta):
         meta = type(self)._meta
         if self.pk is None:
             raise ValueError("cannot delete a model without a primary key value")
+        if meta.tenant:
+            from pyweb import tenancy
+            tenancy.before_write(self, "delete")
         if meta.policy is not None:
             meta.policy.check_write(self, "delete")
         db = self._db_used()

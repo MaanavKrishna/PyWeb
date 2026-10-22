@@ -102,6 +102,16 @@ load balancer in front.
 | I | Key loss on rotation | Old keys stay readable from `PYWEB_DATA_KEY_PREVIOUS`; `pyweb db reencrypt` rewrites rows | `test_encrypted_fields.py::test_rotation_reads_old_rows_and_reencrypt_rewrites_them` |
 | E | Background jobs or admin bypass row policies | Jobs and `system()` blocks run without a user on purpose (they're server code); the admin requires the `admin` role and a recent sign-in, and never shows private fields | `test_authkit.py::test_admin_lists_edits_and_respects_private_fields` |
 
+## 5b. Organizations (tenants)
+
+| | Threat | Mitigation | Proof |
+|---|---|---|---|
+| I/E | A member of one organization reads or changes another's rows | Tenant Models are limited to the current organization on every query, save, bulk update and delete; a row of another organization answers 404 even if loaded some other way | `test_tenancy.py::test_rows_stay_inside_their_organization`, `test_tenancy.py::test_no_sequence_of_operations_crosses_organizations` (Hypothesis) |
+| E | A background job reads every organization's data because no one is signed in | Jobs run for the organization that queued them | `test_tenancy.py::test_jobs_run_for_the_organization_that_queued_them` |
+| E | A viewer writes, an admin removes an owner, a member invites | Role checks on writes and on every management action; an organization keeps at least one owner | `test_org_pages.py::test_admins_cant_touch_owners_and_members_cant_manage`, `test_tenancy.py::test_switching_and_invitations` |
+| S | Someone else accepts a forwarded invitation, or reuses one | Invitations are for the invited email only, work once, expire after 7 days, and are stored as hashes | `test_org_pages.py::test_an_invitation_is_for_its_email_only`, `test_org_pages.py::test_the_whole_team_flow` |
+| I | Probing which organizations exist | Non-members get the same 404 as for an organization that doesn't exist | `test_org_pages.py::test_the_whole_team_flow` |
+
 ## 6. Server to other services
 
 | | Threat | Mitigation | Proof |

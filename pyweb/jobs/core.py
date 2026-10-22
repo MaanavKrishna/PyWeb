@@ -72,6 +72,8 @@ class JobDef:
     def enqueue(self, *args, delay=None, at=None, key=None, **kwargs):
         """Queue a run with these arguments. Returns a :class:`JobHandle`."""
         payload = {"args": list(args), "kwargs": kwargs}
+        from pyweb import tenancy
+        payload.update(tenancy.job_payload())     # runs for the same organization (part of the dedupe key)
         try:
             text = json.dumps(payload, sort_keys=True)
         except (TypeError, ValueError) as exc:

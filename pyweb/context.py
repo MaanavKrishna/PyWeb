@@ -227,6 +227,14 @@ class _SessionProxy:
             payload["ver"] = versions.get(user_id)
         return self._issue(ctx, payload)
 
+    def update(self, **claims):
+        """Change claims of the current session (same session id); returns the new payload, or None."""
+        ctx = current()
+        payload = self.user()
+        if payload is None:
+            return None
+        return self._issue(ctx, {**{k: v for k, v in payload.items() if k not in ("iat", "exp")}, **claims})
+
     def logout(self):
         from pyweb import auth
         ctx = current()

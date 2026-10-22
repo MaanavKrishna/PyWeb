@@ -201,8 +201,12 @@ class Worker:
                                                      route=f"job:{claim['name']}")
             outcome, failure = "done", None
             try:
+                import contextlib
+
                 from pyweb.db import request_scope
-                with request_scope():
+                from pyweb.tenancy import org_scope
+                scope = org_scope(payload["org"]) if payload.get("org") is not None else contextlib.nullcontext()
+                with request_scope(), scope:
                     result = definition.fn(*payload.get("args", ()), **payload.get("kwargs", {}))
                     if same_db:
                         # The job's writes and its "done" commit together: a crash can't leave work

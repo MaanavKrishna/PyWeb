@@ -51,6 +51,12 @@ project uses [semantic versioning](https://semver.org).
 - **Supply chain.** `pyweb build` writes a CycloneDX `sbom.json`; releases
   get PEP 740 attestations on PyPI and a CycloneDX file; CI pins every
   GitHub Action to a commit.
+- **Teams.** `app.use_auth(orgs=True)` adds organizations, members with
+  roles (owner, admin, member, viewer), emailed invitations and the pages
+  to manage them (`/orgs`). `class Project(Model, tenant=True)` keeps each
+  organization's rows to itself: queries, saves, bulk updates, live lists
+  and background jobs are all limited to the current organization.
+  See [Teams](docs/30-teams.md).
 - **`THREAT_MODEL.md`**: every threat, its mitigation and the test that
   proves it (a test keeps the references current). CI fuzzes the RPC and
   form parsers with Hypothesis and runs an OWASP ZAP baseline scan.
@@ -68,6 +74,9 @@ project uses [semantic versioning](https://semver.org).
 - `pyweb check` reports the line of a Python syntax error.
 
 ### Fixed
+- `get_or_404()` inside a server function answered 500; it now answers 404.
+- `Post.id` (and other columns added automatically) failed before the Model
+  had been used once.
 - Log redaction took time quadratic in the length of a word without `=`
   (0.3 ms for a 64-character id, on every logged query parameter while
   developing); it is now linear. Found by the new benchmark gate.

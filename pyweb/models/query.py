@@ -660,6 +660,9 @@ class QuerySet:
         if not self._where and not all_rows:
             raise ValueError("update() without where() would change every row; pass all_rows=True if you mean it")
         meta = self.model._meta
+        if meta.tenant and not self._scoped:
+            from pyweb import tenancy
+            tenancy.before_bulk(self.model, "change", values)
         db = self.db
         d = dialect_of(db)
         for f in meta.columns():
@@ -681,6 +684,9 @@ class QuerySet:
         if not self._where and not all_rows:
             raise ValueError("delete() without where() would delete every row; pass all_rows=True if you mean it")
         meta = self.model._meta
+        if meta.tenant and not self._scoped:
+            from pyweb import tenancy
+            tenancy.before_bulk(self.model, "delete")
         db = self.db
         d = dialect_of(db)
         c = _Compiler(d)

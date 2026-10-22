@@ -204,6 +204,8 @@ def split_payload(raw):
         return None, None
     data = json.loads(raw)
     trace = data.pop("trace", None) if isinstance(data, dict) else None
+    if isinstance(data, dict):
+        data.pop("org", None)
     return data, trace
 
 

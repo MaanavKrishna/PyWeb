@@ -364,6 +364,18 @@ def _watch_and_reload(state, Site):
     threading.Thread(target=poll, daemon=True, name="pyweb-reload").start()
 
 
+def cmd_openapi(args):
+    from pyweb import openapi
+    doc = openapi.generate(args.file, server_url=args.server)
+    text = json.dumps(doc, indent=2, default=str)
+    if args.out in (None, "-"):
+        print(text)
+    else:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+        print(f"wrote {args.out}: {len(doc['paths'])} server function(s)")
+
+
 def cmd_profile(args):
     from pyweb import profile as _profile
     try:
@@ -802,6 +814,11 @@ def main(argv=None):
     p.add_argument("--mode", choices=["cpu", "wall", "gil"], default="cpu",
                    help="cpu: running code; wall: also waiting (I/O, locks); gil: waiting for the GIL")
     p.set_defaults(fn=cmd_profile)
+    p = sub.add_parser("openapi", help="an OpenAPI 3.1 document for the app's server functions")
+    p.add_argument("file")
+    p.add_argument("--out", default="-", help="file to write (default: standard output)")
+    p.add_argument("--server", default=None, help="the API's base URL, e.g. https://example.com")
+    p.set_defaults(fn=cmd_openapi)
     p = sub.add_parser("serve"); p.add_argument("dir", default="dist", nargs="?"); p.add_argument("--host", default="0.0.0.0"); p.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 8000), help="default: $PORT, else 8000"); p.add_argument("--app", default=None, help="live RPC factory module:attr"); p.add_argument("--migrate", action="store_true", help="apply pending migrations before serving (safe with many servers)"); p.add_argument("--workers", type=int, default=0, help="processes sharing the port (default: WEB_CONCURRENCY or 1)"); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("db", help="migrations and seed data")
     p.add_argument("db_action", choices=["upgrade", "downgrade", "status", "diff", "check", "new", "adopt", "squash", "seed", "migrate",

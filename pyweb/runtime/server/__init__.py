@@ -432,6 +432,15 @@ class Server:
             fn, "__pyweb_guard__", None) else None, page=False)
         if blocked is not None:
             return blocked
+        from pyweb.context import authorization as _authorization
+        if _authorization(req).startswith("Bearer pwk_"):
+            from pyweb.context import session as _api_session
+            payload = _api_session.user()
+            if payload is None or not payload.get("api"):
+                return self._err(_rpc.Code.AUTH, "this API token isn't valid (revoked, expired or unknown)")
+            scopes = payload.get("scopes") or []
+            if "*" not in scopes and fn.__name__ not in scopes:
+                return self._err(_rpc.Code.FORBIDDEN, f"this API token can't call {fn.__name__}")
         need_auth = getattr(fn, "__pyweb_auth__", False)
         need = getattr(fn, "__pyweb_permissions__", [])
         csrf_exempt = getattr(fn, "__pyweb_csrf_exempt__", False)

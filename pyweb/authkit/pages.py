@@ -411,6 +411,61 @@ def account(c):
                 passkeys="passkey" in kit.methods, status=422 if err else 200)
 
 
+def account_tokens(c):
+    kit = c.kit
+    user = kit.user()
+    if user is None:
+        return redirect("/login?" + urllib.parse.urlencode({"next": "/account/tokens"}))
+    msg, err, made = "", "", ""
+    if c.method == "POST":
+        if not c.csrf_ok():
+            return forbidden(c)
+        if not kit.fresh(FRESH):
+            return redirect("/login?" + urllib.parse.urlencode({"next": "/account/tokens", "fresh": "1"}))
+        if c.get("action") == "create":
+            try:
+                scopes = [s for s in re.split(r"[\s,]+", c.get("scopes")) if s] or ["*"]
+                days = int(c.get("days")) if c.get("days").strip() else None
+                org = kit.org() if kit.orgs_enabled else None
+                _, token = kit.create_token(user, c.get("name"), scopes, org=org, days=days)
+                made = token
+            except ValidationError as exc:
+                err = "; ".join(exc.errors.values())
+            except ValueError:
+                err = "Days must be a whole number."
+        elif c.get("action") == "revoke":
+            try:
+                msg = "Revoked." if kit.revoke_token(user, int(c.get("id"))) else "Already revoked."
+            except ValueError:
+                err = "Unknown token."
+    body = H.notice(msg, "success") + H.notice(err, "error")
+    if made:
+        body += ('<div class="pw-notice pw-success" role="status"><p>Your new token. Copy it now: it won\'t be '
+                 f'shown again.</p><input class="pw-code" readonly value="{H.esc(made)}" aria-label="Token"></div>')
+    rows = ""
+    for t in kit.tokens(user):
+        scopes = ", ".join(t.scopes or ["*"])
+        seen = f"{t.last_used_at:%Y-%m-%d}" if t.last_used_at else "never"
+        expires = f"{t.expires_at:%Y-%m-%d}" if t.expires_at else "never"
+        rows += (f"<tr><td>{H.esc(t.name)}<br><small class=\"pw-code\">{H.esc(t.prefix)}…</small></td>"
+                 f"<td>{H.esc(scopes)}</td><td>used {seen}</td><td>expires {expires}</td><td>" +
+                 H.form("/account/tokens", '<input type="hidden" name="action" value="revoke">'
+                        f'<input type="hidden" name="id" value="{t.id}">' + H.button("Revoke", kind="danger pw-inline"),
+                        csrf=c.csrf) + "</td></tr>")
+    if rows:
+        body += f'<table class="pw-table">{rows}</table>'
+    body += ("<h2>New token</h2><p>For scripts and other services: send it as <code>Authorization: Bearer "
+             "&lt;token&gt;</code> when calling a server function.</p>" +
+             H.form("/account/tokens", '<input type="hidden" name="action" value="create">' +
+                    H.field("name", "Name", form="tok", maxlength=80) +
+                    H.field("scopes", "Server functions it may call", form="tok", required=False,
+                            hint="Names separated by commas; leave empty for all of them") +
+                    H.field("days", "Expires after (days)", type="number", form="tok", required=False,
+                            hint="Leave empty for no expiry") + H.button("Create token"), csrf=c.csrf))
+    body += '<p class="pw-links"><a href="/account">Back to your account</a></p>'
+    return page(c, "API tokens", body, wide=True, status=422 if err else 200)
+
+
 def account_export(c):
     import json as _json
     kit = c.kit
@@ -586,6 +641,7 @@ def _account_body(c, user, msg, err, extra):
     out += H.form("/account", '<input type="hidden" name="action" value="revoke">' +
                   H.button("Sign out of every other device", kind="secondary pw-inline"), csrf=c.csrf)
     out += H.form("/logout", H.button("Sign out", kind="secondary pw-inline"), csrf=c.csrf)
+    out += '<p class="pw-links"><a href="/account/tokens">API tokens</a></p>'
     out += ('<h2>Your data</h2><p><a href="/account/export" download>Download everything stored about you</a> '
             "(JSON).</p>")
     out += ("<h3>Delete your account</h3><p>This deletes your account and everything that belongs only to you. "
@@ -785,6 +841,7 @@ ROUTES = [
     (re.compile(r"^/reset/(?P<token>[\w-]{20,100})$"), reset_token, ("GET", "POST")),
     (re.compile(r"^/account$"), account, ("GET", "POST")),
     (re.compile(r"^/account/export$"), account_export, ("GET",)),
+    (re.compile(r"^/account/tokens$"), account_tokens, ("GET", "POST")),
     (re.compile(r"^/auth/(?P<provider>\w+)/start$"), oauth_start, ("GET",)),
     (re.compile(r"^/auth/(?P<provider>\w+)/callback$"), oauth_callback, ("GET",)),
 ]

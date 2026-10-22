@@ -151,6 +151,34 @@ class AuthSession(Model):
         return hashlib.sha256(str(sid).encode()).hexdigest()
 
 
+class ApiToken(Model):
+    """A token for calling server functions from scripts and other services (``Authorization: Bearer``)."""
+
+    user: User = ForeignKey(related_name="api_tokens")
+    org_id: int | None = None
+    name: str = Field(max=80)
+    prefix: str = Field(max=12)
+    token_hash: str = Field(unique=True, max=64, private=True)
+    scopes: list = Field(default_factory=list)
+    created_at: dt.datetime = Field(auto_now_add=True)
+    expires_at: dt.datetime | None = None
+    last_used_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+
+    class Meta:
+        table = "auth_api_tokens"
+
+    PREFIX = "pwk_"
+
+    @staticmethod
+    def digest(token):
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    def allows(self, function_name):
+        scopes = self.scopes or []
+        return "*" in scopes or function_name in scopes
+
+
 def device_label(user_agent):
     """"Firefox on macOS" from a User-Agent header (good enough to recognise your own devices)."""
     ua = user_agent or ""
@@ -174,4 +202,4 @@ def ip_prefix(ip):
     return str(ipaddress.ip_network(f"{addr}/{24 if addr.version == 4 else 48}", strict=False))
 
 
-MODELS = [User, Identity, Credential, AuthToken, AuthEvent, AuthSession]
+MODELS = [User, Identity, Credential, AuthToken, AuthEvent, AuthSession, ApiToken]

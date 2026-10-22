@@ -311,3 +311,32 @@ def generate_report():
 visitors who aren't signed in by address. Beyond the limit the call gets
 `429 rate_limited` with `Retry-After`. With `PYWEB_REDIS_URL` set, the
 counts are shared by every server process.
+
+## Calling server functions from scripts and other services
+
+Server functions are an HTTP API too: `POST /__pyweb/rpc/<name>` with
+`{"args": {...}}`. For scripts, CI jobs and other services, create an
+**API token** on `/account/tokens` (with the auth kit) and send it as a
+bearer token:
+
+```bash
+curl https://example.com/__pyweb/rpc/add_project \
+  -H "Authorization: Bearer pwk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"args": {"name": "Rocket"}}'
+```
+
+A token acts as the user who made it (and their organization, with
+teams), only for the server functions in its scopes (all of them unless
+you list some), only for server function calls (never pages, forms or the
+account), and never counts as a recent sign-in, so `fresh=` functions
+refuse it. It can expire, and it keeps working when its user signs out
+of their browsers. Revoke it on the same page. Only a hash is stored; the
+token is shown once. From code: `auth.create_token(user, name, scopes,
+org=, days=)`, `auth.tokens(user)`, `auth.revoke_token(user, id)`.
+
+`pyweb openapi app.pyweb --out openapi.json` writes an OpenAPI 3.1
+document for every server function: argument schemas from the type hints
+and `Field` rules, summaries from docstrings, and which ones need a
+sign-in, roles or a plan feature. Load it in Swagger UI or Postman, or
+generate a client from it.

@@ -162,6 +162,24 @@ class _RequestProxy:
             return "<pyweb.request (no active request)>"
 
 
+def authorization(req):
+    """The request's ``Authorization`` header (any letter case), or ""."""
+    headers = getattr(req, "headers", None) or {}
+    return next((v for k, v in headers.items() if k.lower() == "authorization"), "") or ""
+
+
+def _api_token_payload(req):
+    """An auth kit API token in ``Authorization: Bearer`` (server function calls only), as a session payload."""
+    header = authorization(req)
+    if not header.startswith("Bearer pwk_"):
+        return None
+    from pyweb.auth import KIT
+    kit = KIT.get("kit")
+    if kit is None:
+        return None
+    return kit.token_payload(header[len("Bearer "):].strip(), (getattr(req, "path", "") or "").split("?")[0])
+
+
 def _secret(ctx):
     secret = ctx.auth_secret or os.environ.get("PYWEB_AUTH_SECRET")
     if secret:
@@ -201,6 +219,8 @@ class _SessionProxy:
             payload = auth.session_from_request(ctx.request, verify_keys("session", ctx), self.max_age)
             if payload is not None and not auth.session_valid(payload, absolute_age=self.absolute_age):
                 payload = None
+            if payload is None:
+                payload = _api_token_payload(ctx.request)
             ctx._session = payload
             ctx._session_loaded = True
             if payload is not None and auth.time.time() - payload.get("iat", 0) > self.renew_after:

@@ -20,7 +20,17 @@ URLS = {
     "postgres": os.environ.get("PYWEB_TEST_POSTGRES"),
     "mysql": os.environ.get("PYWEB_TEST_MYSQL"),
 }
-TABLES = ["auth_sessions", "auth_events", "auth_tokens", "auth_credentials", "auth_identities", "users"]
+def _tables():
+    """Every auth kit and organization table, dependents first (so they can be dropped in order)."""
+    from pyweb.authkit.models import MODELS
+    from pyweb.authkit.orgs import MODELS as ORG_MODELS
+    users = [m._meta.table for m in MODELS if m._meta.table == "users"]
+    others = [m._meta.table for m in [*ORG_MODELS[::-1], *MODELS[::-1]] if m._meta.table != "users"]
+    return [t for t in ["org_invitations", "org_memberships", *others] if t != "organizations"] + \
+        ["organizations", *users]
+
+
+TABLES = _tables()
 
 
 def _drop(database):

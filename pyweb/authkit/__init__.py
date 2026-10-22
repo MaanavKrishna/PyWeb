@@ -47,9 +47,11 @@ import urllib.parse
 from pyweb.rules import EMAIL_RE, ValidationError
 
 from . import passwords
-from .models import MODELS, AuthEvent, AuthSession, AuthToken, Credential, Identity, User, device_label, ip_prefix
+from .models import (MODELS, ApiToken, AuthEvent, AuthSession, AuthToken, Credential, Identity, User,  # noqa: F401
+                     device_label, ip_prefix)
 from .privacy import PrivacyMixin
 from .teams import TeamsMixin
+from .tokens import TokensMixin
 from .throttle import Throttle
 
 __all__ = ["AuthKit", "User", "Identity", "Credential", "AuthToken", "AuthEvent", "current_user", "MODELS"]
@@ -176,7 +178,7 @@ class _DBSessionVersions:
         return self.get(user_id)
 
 
-class AuthKit(TeamsMixin, PrivacyMixin):
+class AuthKit(TeamsMixin, PrivacyMixin, TokensMixin):
     def __init__(self, app, db=None, *, methods=("password", "magic_link", "passkey"), providers=(),
                  signup="verify", two_factor=True, admin=True, after_login="/", after_logout="/",
                  site_name=None, rp_id=None, origin=None, orgs=False):

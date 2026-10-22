@@ -43,6 +43,10 @@ project uses [semantic versioning](https://semver.org).
   size limits. `PYWEB_FETCH_ALLOW` lets it reach internal services you name.
 - **`@server(rate="5/minute", per="user"|"ip"|"all")`** limits one server
   function (429 with `Retry-After`; shared through Redis when configured).
+- **API tokens and OpenAPI.** `/account/tokens` makes tokens for calling
+  server functions with `Authorization: Bearer` (scoped to functions,
+  optionally expiring, stored as hashes); `pyweb openapi app.pyweb` writes
+  an OpenAPI 3.1 document from the functions' types, rules and guards.
 - **Your data.** `/account` offers a JSON download of everything stored
   about the user (`auth.export_user()`) and deleting the account
   (`auth.delete_user()`, after a recent sign-in and typing the email).

@@ -12,9 +12,13 @@ from pyweb.hosting import Site
 from tests.test_authkit import PASSWORD, Browser
 
 APP = '''
-from pyweb import App
+from pyweb import App, Model
 app = App(database="sqlite:///{db}", title="Teams")
 auth = app.use_auth(signup="instant", orgs=True)
+
+
+class Doc(Model, tenant=True):
+    title: str
 
 
 @app.page("/")
@@ -121,3 +125,26 @@ def test_an_invitation_is_for_its_email_only(site):
     status, _, html = eve.post(link, {})
     assert status == 422 and "for bo@example.com" in html
     assert eve.get("/orgs/acme")[0] == 404
+
+
+def test_platform_admins_see_every_organization_and_can_filter(site):
+    from pyweb.authkit import User
+    from pyweb.authkit.orgs import Organization
+    from pyweb.models import system
+    ann = person(site, "ann@example.com", "Ann")
+    ann.post("/orgs", {"action": "create", "name": "Acme"})
+    ann.post("/orgs", {"action": "create", "name": "Globex"})
+    Doc = site.app.module.Doc
+    with system():
+        u = User.where(email="ann@example.com").first()
+        u.roles = ["admin"]
+        u.save(validate=False)
+        acme, globex = (Organization.where(slug=s).first().id for s in ("acme", "globex"))
+    with tenancy.org_scope(acme):
+        Doc.create(title="acme-doc")
+    with tenancy.org_scope(globex):
+        Doc.create(title="globex-doc")
+    _, _, html = ann.get("/admin/docs")
+    assert "All organizations" in html and "acme-doc" in html and "globex-doc" in html
+    _, _, html = ann.get(f"/admin/docs?org={acme}")
+    assert "acme-doc" in html and "globex-doc" not in html

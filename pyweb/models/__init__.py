@@ -135,7 +135,10 @@ def ensure_tables(db=None, models=None):
     if db is None:
         raise RuntimeError("no database to create tables in")
     closure = _closure(models)
-    return S.create_missing(db, S.from_models(closure))
+    made = S.create_missing(db, S.from_models(closure))
+    from pyweb.db import rls
+    rls.ensure(db, closure)                      # Postgres: row-level security for tenant tables
+    return made
 
 
 def _closure(models):
@@ -817,6 +820,10 @@ class Model(metaclass=ModelMeta):
                             mark(lambda: made.update(tables))
                         else:
                             made.update(tables)
+        meta = cls._meta
+        if meta.tenant and meta.table not in getattr(db, "_pw_tenant_tables", ()):
+            from pyweb.db import rls
+            rls.watch(db, [cls])                 # Postgres: statements on it carry pyweb.org_id
         return db
 
     def _db_used(self):

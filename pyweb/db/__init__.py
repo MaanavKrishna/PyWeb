@@ -230,6 +230,13 @@ class Schema:
         return list(self.applied)
 
 
+def _rls_setting(db, sql):
+    if db.dialect.name != "postgres":
+        return None
+    from .rls import statement_setting
+    return statement_setting(db, sql)
+
+
 class Transaction:
     def __init__(self, conn):
         self.conn = conn
@@ -292,6 +299,35 @@ class _PooledDB:
         return False
 
     # -- transactions on a raw connection ----------------------------------
+    _org_seen: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+    def _set_org(self, conn, value, *, cache):
+        """Set ``pyweb.org_id`` for row-level security (see :mod:`pyweb.db.rls`) on ``conn``.
+
+        Outside a transaction the value stays on the connection, so it's set only when it changes;
+        inside one it's always set (a rollback would undo it)."""
+        try:
+            if cache and self._org_seen.get(conn) == value:
+                return
+        except TypeError:
+            cache = False
+        if hasattr(conn, "execute"):
+            cur = conn.execute("SELECT set_config('pyweb.org_id', %s, false)", (value,))
+        else:
+            cur = conn.cursor()
+            cur.execute("SELECT set_config('pyweb.org_id', %s, false)", (value,))
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            if cache:
+                self._org_seen[conn] = value
+            else:
+                self._org_seen.pop(conn, None)
+        except TypeError:
+            pass
+
     @staticmethod
     def _raw(conn, sql):
         if hasattr(conn, "execute"):
@@ -515,11 +551,14 @@ class _PooledDB:
         owned = conn is None
         if owned:
             conn = self._acquire()
+        setting = _rls_setting(self, sql)
         sql = self._adapt(sql, params)
         try:
             last: Exception | None = None
             for _ in range(max(1, attempts)):
                 try:
+                    if setting is not None:
+                        self._set_org(conn, setting, cache=owned)
                     if prepare:
                         sql = self.prepare(sql)
                     if hasattr(conn, "execute"):

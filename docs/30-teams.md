@@ -85,6 +85,31 @@ for an organization:
 These rules combine with your own [row policies](10-auth.md#row-policies):
 both apply.
 
+## On Postgres, the database enforces it too
+
+On Postgres, `pyweb db diff` adds row-level security to the migration of
+every tenant table: `ENABLE` and `FORCE ROW LEVEL SECURITY` and a policy
+comparing `org_id` with a setting PyWeb puts on the connection before each
+statement that touches the table. So even raw SQL that forgets the
+`org_id` condition, or SQL injected into a query, only sees and writes the
+current organization's rows:
+
+```python
+with org_scope(acme):
+    db.execute("SELECT * FROM projects").fetchall()   # Acme's projects only, filtered by Postgres
+```
+
+Two things to know:
+
+- Superusers and roles with `BYPASSRLS` skip every policy. Run the app as
+  an ordinary role (the one that owns the tables is fine: `FORCE` applies
+  the policy to the owner too).
+- Code outside any organization (migrations, scripts) sees every row, as
+  with the ORM.
+
+SQLite and MySQL have no row-level security; there the ORM's scoping is
+the protection.
+
 ## Where "the current organization" comes from
 
 - **A request:** the signed-in user's current organization (the one they

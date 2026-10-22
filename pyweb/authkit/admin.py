@@ -149,6 +149,16 @@ def _list(c, model):
     table = model._meta.table
     q = c.query.get("q", "").strip()
     query = model.query()
+    org_pick = ""
+    org = c.query.get("org", "").strip()
+    if model._meta.tenant:                      # every organization's rows; filter to one if asked
+        if org.isdigit():
+            query = query.where(model._meta.field("org_id") == int(org))
+        from .orgs import Organization
+        opts = "".join(f'<option value="{o.id}"{" selected" if str(o.id) == org else ""}>{H.esc(o.name)}</option>'
+                       for o in Organization.query().order("name").limit(500))
+        org_pick = (f'<select name="org" aria-label="Organization"><option value="">All organizations</option>'
+                    f"{opts}</select>")
     if q:
         text_fields = [f for f in _shown(model) if f.kind in ("str", "text") and not f.encrypted]
         conds = [f.icontains(q) for f in text_fields]
@@ -170,10 +180,10 @@ def _list(c, model):
         for r in rows)
     search = (f'<form method="get" action="/admin/{table}" class="pw-row">'
               f'<input name="q" value="{H.esc(q)}" placeholder="Search" aria-label="Search" class="pw-code">'
-              f'<button class="pw-button pw-secondary pw-inline">Search</button></form>')
+              f'{org_pick}<button class="pw-button pw-secondary pw-inline">Search</button></form>')
     more = ""
     if rows.next:
-        params = urllib.parse.urlencode({k: v for k, v in (("q", q), ("after", rows.next)) if v})
+        params = urllib.parse.urlencode({k: v for k, v in (("q", q), ("org", org), ("after", rows.next)) if v})
         more = f'<p class="pw-links"><a href="/admin/{table}?{params}">Next page</a></p>'
     nav = f'<p class="pw-nav"><a href="/admin">All tables</a><a href="/admin/{table}/new">Add a row</a></p>'
     body = nav + search + f'<table class="pw-table"><tr>{head}</tr>{body_rows}</table>' + more

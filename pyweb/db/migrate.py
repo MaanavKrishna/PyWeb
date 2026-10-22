@@ -456,6 +456,8 @@ def make_migration(db_or_url, models, outdir="migrations", name=None, *, renames
                            + ", ".join(m.label for m in waiting))
     target = S.from_models(models)
     plan = S.diff(S.introspect(db), target, dialect_of(db), renames=renames, table_renames=table_renames)
+    from . import rls
+    plan.expand += rls.missing_ops(db, models)   # Postgres: row-level security for tenant tables
     if not plan:
         return [], plan
     digest = S.schema_hash(target)

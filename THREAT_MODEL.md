@@ -107,6 +107,7 @@ load balancer in front.
 | | Threat | Mitigation | Proof |
 |---|---|---|---|
 | I/E | A member of one organization reads or changes another's rows | Tenant Models are limited to the current organization on every query, save, bulk update and delete; a row of another organization answers 404 even if loaded some other way | `test_tenancy.py::test_rows_stay_inside_their_organization`, `test_tenancy.py::test_no_sequence_of_operations_crosses_organizations` (Hypothesis) |
+| I/E | Raw SQL (or SQL injection) skips the ORM's organization filter | On Postgres, forced row-level security on every tenant table, checked by the database with a per-statement setting | `integration/test_rls_postgres.py::test_raw_sql_is_limited_by_the_database` |
 | E | A background job reads every organization's data because no one is signed in | Jobs run for the organization that queued them | `test_tenancy.py::test_jobs_run_for_the_organization_that_queued_them` |
 | E | A viewer writes, an admin removes an owner, a member invites | Role checks on writes and on every management action; an organization keeps at least one owner | `test_org_pages.py::test_admins_cant_touch_owners_and_members_cant_manage`, `test_tenancy.py::test_switching_and_invitations` |
 | S | Someone else accepts a forwarded invitation, or reuses one | Invitations are for the invited email only, work once, expire after 7 days, and are stored as hashes | `test_org_pages.py::test_an_invitation_is_for_its_email_only`, `test_org_pages.py::test_the_whole_team_flow` |

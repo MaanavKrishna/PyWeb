@@ -56,7 +56,8 @@ project uses [semantic versioning](https://semver.org).
   to manage them (`/orgs`). `class Project(Model, tenant=True)` keeps each
   organization's rows to itself: queries, saves, bulk updates, live lists
   and background jobs are all limited to the current organization.
-  See [Teams](docs/30-teams.md).
+  On Postgres, migrations add row-level security, so raw SQL is limited to
+  the organization too. See [Teams](docs/30-teams.md).
 - **`THREAT_MODEL.md`**: every threat, its mitigation and the test that
   proves it (a test keeps the references current). CI fuzzes the RPC and
   form parsers with Hypothesis and runs an OWASP ZAP baseline scan.

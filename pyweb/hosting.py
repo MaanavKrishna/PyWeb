@@ -208,6 +208,46 @@ def body_limit(path, max_body):
     return max_body
 
 
+async def respond_within(site, start, method, path, headers):
+    """Await ``start()`` (``site.respond`` running on a thread) for at most ``site.time_limit``.
+
+    Past the limit the event loop stops waiting and answers :meth:`Site.timed_out`; Python
+    can't stop the thread, so the work finishes in the background, as before, but without a
+    second thread pool in between.
+    """
+    import asyncio
+    fut = asyncio.ensure_future(start())
+    limit = site.time_limit(method, path) if hasattr(site, "time_limit") else None
+    if not limit:
+        return await fut
+    # A timer and a callback on the same future: cheaper per request than wait_for + shield,
+    # which each create a task.
+    loop = asyncio.get_running_loop()
+    first = loop.create_future()
+
+    def settle(value):
+        if not first.done():
+            first.set_result(value)
+    fut.add_done_callback(settle)
+    timer = loop.call_later(limit, settle, None)
+    try:
+        winner = await first
+    finally:
+        timer.cancel()
+    if winner is None:
+        return site.timed_out(method, path, headers)
+    return winner.result()
+
+
+def _as_tuple(resp):
+    hdrs = []
+    for k, v in resp.headers.items():
+        for item in (v if isinstance(v, list) else [v]):
+            hdrs.append((k, str(item)))
+    raw = resp.body.encode() if isinstance(resp.body, str) else (resp.body or b"")
+    return resp.status, hdrs, raw
+
+
 class Site:
     """Serve an app from source (``app.pyweb``) or from a built ``dist/``."""
 
@@ -330,13 +370,42 @@ class Site:
         else:
             request = Request(method, path, headers, body, client=client)
             request.id = tel.request_id
-            resp = self.server.handle(request)
-            hdrs = []
-            for k, v in resp.headers.items():
-                for item in (v if isinstance(v, list) else [v]):
-                    hdrs.append((k, str(item)))
-            raw = resp.body.encode() if isinstance(resp.body, str) else (resp.body or b"")
-            out = (resp.status, hdrs, raw)
+            out = _as_tuple(self.server.handle(request))
+        return self._finish(method, headers, out)
+
+    # ---------------------------------------------------------- time limits
+    def use_transport_timeouts(self):
+        """The server in front of this site enforces time limits itself (see :meth:`time_limit`)."""
+        self.server_kwargs["transport_timeouts"] = True
+        self.server.transport_timeouts = True
+
+    def time_limit(self, method, path):
+        """Seconds the transport waits for :meth:`respond` before answering :meth:`timed_out`, or None."""
+        bare = path.split("?")[0]
+        if bare.startswith("/__pyweb/rpc/"):
+            return self.server.rpc_timeout or None
+        if method in ("GET", "HEAD") and not bare.startswith(("/static/", "/__pyweb/")) and not self.debug:
+            from . import config
+            return config.settings().render_timeout
+        return None
+
+    def timed_out(self, method, path, headers=None):
+        """The answer when a request ran past :meth:`time_limit` (its thread finishes in the background)."""
+        from .runtime.server import Response
+        bare = path.split("?")[0]
+        if bare.startswith("/__pyweb/rpc/"):
+            name = bare.rsplit("/", 1)[-1]
+            resp = self.server._err("timeout", f"{name} exceeded {self.server.rpc_timeout}s")
+        else:
+            # The default page (not the app's error page): its code must not run on the event loop.
+            body = ("<!doctype html><meta charset=utf-8><title>Gateway timeout</title>"
+                    "<h1>Gateway timeout</h1><p>The page took too long to load. Please try again.</p>")
+            resp = Response(504, body, {"Content-Type": "text/html"})
+        if self.server.logger is not None:
+            self.server.logger.error(f"{method} {bare} took longer than {self.time_limit(method, path)}s")
+        return self._finish(method, headers or {}, _as_tuple(resp))
+
+    def _finish(self, method, headers, out):
         if is_stream(out[2]) and method == "HEAD":
             out[2].close()               # never sent: release it (and its connection slot) now
             out = (out[0], out[1], b"")

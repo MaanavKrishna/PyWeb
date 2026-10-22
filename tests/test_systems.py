@@ -156,3 +156,48 @@ def test_check_production(tmp_path, monkeypatch, capsys):
         monkeypatch.setenv(var, value)
     cli.cmd_check(args)                                          # no SystemExit
     assert "production: ready" in capsys.readouterr().out
+
+
+def test_time_limits_over_pyweb_server_use_one_thread(tmp_path, monkeypatch):
+    """PyWeb's server enforces the limits itself: a slow page or function still gets a 504 on
+    time, other requests keep working, and no second pool sits between them."""
+    import json as _json
+    import threading as _threading
+    import urllib.error
+    import urllib.request
+
+    from pyweb.net.server import Running
+    from pyweb.runtime import server as rt
+    (tmp_path / "app.pyweb").write_text(
+        "import time\nfrom pyweb import App, server\napp=App()\n"
+        "@server\ndef slow() -> int:\n    time.sleep(3)\n    return 1\n"
+        "@app.page('/')\ndef H():\n    time.sleep(3)\n    <p>x</p>\n"
+        "@app.page('/fast')\ndef F():\n    <p>fast</p>\n")
+    monkeypatch.setenv("PYWEB_RENDER_TIMEOUT", "1")
+    calls = []
+    monkeypatch.setattr(rt, "_render_pool", lambda: calls.append("render") or None)
+    monkeypatch.setattr(rt, "_rpc_pool", lambda: calls.append("rpc") or None)
+    site = Site(str(tmp_path / "app.pyweb"), rpc_timeout=1, rate_limit=False)
+    running = Running(site)
+    try:
+        def get(path, data=None):
+            req = urllib.request.Request(running.url + path, data=data, headers={
+                "Content-Type": "application/json", "Origin": running.url} if data else {})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return r.status, r.read()
+            except urllib.error.HTTPError as exc:
+                return exc.code, exc.read()
+        start = time.monotonic()
+        results = {}
+        t = _threading.Thread(target=lambda: results.update(page=get("/")))
+        t.start()
+        assert get("/fast")[0] == 200                                # not blocked by the slow page
+        t.join()
+        status, body = results["page"]
+        assert status == 504 and b"took too long" in body and time.monotonic() - start < 2.5
+        status, body = get("/__pyweb/rpc/slow", _json.dumps({"args": {}}).encode())
+        assert status == 504 and _json.loads(body)["error"]["code"] == "timeout"
+        assert calls == []                                           # neither extra pool was used
+    finally:
+        running.stop(timeout=0.5)

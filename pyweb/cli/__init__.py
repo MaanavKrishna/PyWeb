@@ -234,6 +234,15 @@ class _DevSite:
         site = self.state.site
         return site.max_body if site is not None else 1_048_576
 
+    def use_transport_timeouts(self):
+        pass                       # no time limits while developing (a breakpoint can take a while)
+
+    def time_limit(self, method, path):
+        return None
+
+    def timed_out(self, method, path, headers=None):
+        return self.state.site.timed_out(method, path, headers)
+
     def respond(self, method, path, headers, body=b"", client=None):
         state = self.state
         if path == "/__pyweb/dev/version":

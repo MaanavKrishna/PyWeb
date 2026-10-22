@@ -7,7 +7,7 @@ import inspect
 import json
 import re
 import time
-import uuid
+from pyweb import _speedups
 
 from pyweb.db import in_scope as _in_scope
 from pyweb.rules import ValidationError
@@ -30,7 +30,7 @@ class Request:
                 if sep and name.strip():
                     cookies[name.strip()] = value.strip().strip('"')
         self.cookies = cookies
-        self.id = uuid.uuid4().hex[:12]
+        self.id = _speedups.trace_id()[:12]     # replaced by the telemetry's request id when there is one
 
 
 class Response:
@@ -350,7 +350,7 @@ class Server:
     def __init__(self, compiled=None, *, auth_secret=None, csrf_secret=None,
                  rate_limit=None, rpc_timeout=None, tracer=None,
                  logger=None, max_body=None, app=None, debug=False,
-                 secure_cookies=False):
+                 secure_cookies=False, transport_timeouts=False):
         if compiled is None:
             compiled = app.compiled if app is not None else {"pages": {}, "rpc": []}
         self.app = app
@@ -371,6 +371,10 @@ class Server:
         self.csrf_secret = csrf_secret
         self.rate_limit = rate_limit  # RateLimiter or None
         self.rpc_timeout = rpc_timeout  # seconds or None
+        # PyWeb's server and the ASGI adapter enforce page and RPC time limits themselves: the
+        # event loop stops waiting for the request's thread, so the work runs on that thread
+        # instead of being handed to another pool (one thread hop per request, not two).
+        self.transport_timeouts = transport_timeouts
         self.max_body = self.MAX_BODY if max_body is None else max_body
         self.tracer = tracer
         self.logger = logger
@@ -387,8 +391,8 @@ class Server:
         if tel is not None:
             return tel.request_id, tel.traceparent
         parsed = _rpc.parse_traceparent(req.headers.get("traceparent"))
-        trace_id = parsed[0] if parsed else uuid.uuid4().hex
-        span_id = uuid.uuid4().hex[:16]
+        trace_id = parsed[0] if parsed else _speedups.trace_id()
+        span_id = _speedups.span_id()
         return trace_id, _rpc.make_traceparent(trace_id, span_id)
 
     def _err(self, code, message, *, details=None, trace_id=None,
@@ -522,7 +526,7 @@ class Server:
                                               "X-Accel-Buffering": "no", "X-Request-Id": trace_id,
                                               "traceparent": traceparent})
             try:
-                if self.rpc_timeout:
+                if self.rpc_timeout and not self.transport_timeouts:
                     result = self._call_with_timeout(fn, clean)
                 else:
                     result = _in_scope(fn, clean)
@@ -925,7 +929,7 @@ class Server:
         import contextvars
         from pyweb.config import settings
         limit = 0 if self.debug else settings().render_timeout
-        if not limit:
+        if not limit or self.transport_timeouts:
             return self.app.render(name, params, query=query, path=path)
         ctx = contextvars.copy_context()
         fut = _render_pool().submit(ctx.run, self.app.render, name, params, query=query, path=path)

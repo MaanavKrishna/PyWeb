@@ -42,6 +42,8 @@ class Server:
         from pyweb.config import settings
         conf = settings()
         self.site = site
+        if hasattr(site, "use_transport_timeouts"):
+            site.use_transport_timeouts()    # time limits are enforced here, not by a second pool
         self.logger = logger
         self.max_connections = max_connections or conf.max_connections
         self.timeout = float(socket_timeout or conf.socket_timeout)
@@ -167,7 +169,7 @@ class Server:
         if head.upgrade and "websocket" in head.headers.get("upgrade", "").lower():
             await self._websocket(reader, writer, client, head)
             return False
-        from pyweb.hosting import body_limit
+        from pyweb.hosting import body_limit, respond_within
         limit = body_limit(path.split("?")[0], self.site.max_body)
         if head.length > limit:
             await self._send_error(writer, 413, "request body too large")
@@ -187,8 +189,9 @@ class Server:
         headers = head.header_dict()
         loop = asyncio.get_running_loop()
         try:
-            status, hdrs, out = await loop.run_in_executor(
-                self.pool, self.site.respond, head.method, path, headers, body, client)
+            status, hdrs, out = await respond_within(
+                self.site, lambda: loop.run_in_executor(self.pool, self.site.respond, head.method, path, headers,
+                                                        body, client), head.method, path, headers)
         except Exception as exc:  # noqa: BLE001
             if self.logger is not None:
                 self.logger.info(f"request failed: {type(exc).__name__}: {exc}")

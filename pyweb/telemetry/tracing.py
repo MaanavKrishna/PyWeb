@@ -21,7 +21,7 @@ from __future__ import annotations
 import contextvars
 import os
 import re
-import secrets
+from pyweb import _speedups as _ids
 import time
 
 _current: contextvars.ContextVar = contextvars.ContextVar("pyweb_telemetry", default=None)
@@ -88,8 +88,8 @@ def begin(kind="http", *, headers=None, trust_proxy=False, traceparent=None, rou
     if parsed:
         req.trace_id, req.parent_span, req.sampled = parsed
     else:
-        req.trace_id = secrets.token_hex(16)
-    req.span_id = secrets.token_hex(8)
+        req.trace_id = _ids.trace_id()
+    req.span_id = _ids.span_id()
     req.route, req.method, req.path, req.job = route, method, path, job
     if dev:
         req.query_log, req.spans, req.events = [], [], []

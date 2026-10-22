@@ -534,3 +534,32 @@ def test_metrics_add_up_across_worker_processes(tmp_path):
     finally:
         proc.terminate()
         proc.wait(10)
+
+
+def test_ids_are_w3c_shaped_unique_and_differ_after_fork():
+    import os
+    import re
+    from pyweb import _speedups
+    ids = {_speedups.trace_id() for _ in range(2000)}
+    assert len(ids) == 2000 and all(re.fullmatch(r"[0-9a-f]{32}", i) and i != "0" * 32 for i in ids)
+    assert re.fullmatch(r"[0-9a-f]{16}", _speedups.span_id())
+    if not hasattr(os, "fork"):
+        return
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:                                      # the child: a worker process
+        os.write(w, _speedups.trace_id().encode())
+        os._exit(0)
+    os.waitpid(pid, 0)
+    child = os.read(r, 64).decode()
+    assert child != _speedups.trace_id() and child not in ids
+
+
+def test_settings_are_cached_until_the_environment_changes(monkeypatch):
+    from pyweb.config import settings
+    first = settings()
+    assert settings() is first                        # nothing changed: parsed once
+    monkeypatch.setenv("PYWEB_RENDER_TIMEOUT", "9")
+    assert settings().render_timeout == 9             # a change is seen at once
+    monkeypatch.delenv("PYWEB_RENDER_TIMEOUT")
+    assert settings().render_timeout == 30

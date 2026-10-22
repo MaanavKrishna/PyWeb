@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 
-from .hosting import Site
+from .hosting import Site, respond_within
 
 
 async def _stream(stream, receive, send):
@@ -91,6 +91,7 @@ async def _websocket(site, scope, receive, send):
 def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_kwargs):
     """Return an ASGI 3 application serving ``target`` (a `.pyweb` file or dist dir)."""
     site = Site(target, debug=debug, max_body=max_body, **server_kwargs)
+    site.use_transport_timeouts()
 
     async def app(scope, receive, send):
         if scope["type"] == "lifespan":
@@ -136,9 +137,10 @@ def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_
             status, hdrs, body = 413, [("Content-Type", "application/json")], \
                 b'{"error": {"code": "http_413", "message": "request body too large"}}'
         else:
-            status, hdrs, body = await asyncio.to_thread(
-                site.respond, scope.get("method", "GET"), path, headers, b"".join(chunks),
-                (scope.get("client") or [None])[0])
+            method = scope.get("method", "GET")
+            status, hdrs, body = await respond_within(
+                site, lambda: asyncio.to_thread(site.respond, method, path, headers, b"".join(chunks),
+                                                (scope.get("client") or [None])[0]), method, path, headers)
         raw_headers = [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in hdrs]
         if hasattr(body, "aiter"):  # Server-Sent Events, streamed RPC results
             await send({"type": "http.response.start", "status": status, "headers": raw_headers})

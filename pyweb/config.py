@@ -132,9 +132,35 @@ class Settings:
         )
 
 
+#: Every variable ``Settings.from_env`` reads: when none of them changed, the parsed
+#: settings are reused (parsing them costs ~10 µs, and a request asks several times).
+_KEYS = ("PYWEB_ENV", "PYWEB_AUTH_SECRET", "PYWEB_AUTH_SECRET_PREVIOUS", "PYWEB_CSRF_SECRET",
+         "PYWEB_COOKIE_SECURE", "PYWEB_CSP", "PYWEB_TRUST_PROXY", "PYWEB_REDIS_URL", "PYWEB_MAX_CONNECTIONS",
+         "PYWEB_THREADS", "PYWEB_SOCKET_TIMEOUT", "PYWEB_MAX_STREAMS_PER_CLIENT", "PYWEB_RENDER_TIMEOUT",
+         "PYWEB_MAX_UPLOAD")
+_cached: tuple = (None, None)
+_encoded = None
+
+
 def settings(env=None) -> Settings:
-    """The current settings (read from the environment now)."""
-    return Settings.from_env(env)
+    """The current settings (read from the environment now; changes take effect at once)."""
+    global _cached
+    if env is not None:
+        return Settings.from_env(env)
+    environ = os.environ
+    data = getattr(environ, "_data", None)
+    if data is not None and hasattr(environ, "encodekey"):
+        global _encoded
+        if _encoded is None:
+            _encoded = tuple(environ.encodekey(k) for k in _KEYS)
+        key = tuple(map(data.get, _encoded))      # the raw values: no per-key encoding
+    else:
+        key = tuple(map(environ.get, _KEYS))
+    seen, value = _cached
+    if seen != key:
+        value = Settings.from_env()
+        _cached = (key, value)
+    return value
 
 
 def startup():

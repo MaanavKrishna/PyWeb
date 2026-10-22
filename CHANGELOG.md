@@ -56,6 +56,8 @@ project uses [semantic versioning](https://semver.org).
   to manage them (`/orgs`). `class Project(Model, tenant=True)` keeps each
   organization's rows to itself: queries, saves, bulk updates, live lists
   and background jobs are all limited to the current organization.
+  `@server(org_role="admin", feature="exports")` and `rate=..., per="org"`;
+  `auth.plans({...})` with features and limits (seats are enforced).
   On Postgres, migrations add row-level security, so raw SQL is limited to
   the organization too. See [Teams](docs/30-teams.md).
 - **`THREAT_MODEL.md`**: every threat, its mitigation and the test that

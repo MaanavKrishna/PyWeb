@@ -479,8 +479,14 @@ class Server:
             if limiter is None:
                 limiter = limiters[(calls, window)] = _rpc.default_rate_limiter(max_calls=calls, window=window)
         who = "all"
-        if per in ("user", "ip"):
+        if per in ("user", "ip", "org"):
             who = "ip:" + client_ip(req)
+        if per == "org":
+            kit = self._auth_kit()
+            org = kit.org() if kit is not None and getattr(kit, "orgs_enabled", False) else None
+            if org is not None:
+                return limiter.allow(f"fn:{getattr(fn, '__module__', '')}.{fn.__name__}:org:{org.id}")
+            per = "user"
         if per == "user":
             from pyweb.context import session
             try:
@@ -755,6 +761,27 @@ class Server:
                     return self.error_page(403, req, title="Not allowed",
                                            message="You don't have access to this page.")
                 return self._err(_rpc.Code.FORBIDDEN, "you don't have access to this")
+            if g.get("org_roles") or g.get("feature"):
+                problem = self._org_guard(kit, g)
+                if problem is not None:
+                    if page:
+                        return self.error_page(403, req, title="Not allowed", message=problem)
+                    return self._err(_rpc.Code.FORBIDDEN, problem,
+                                     details={"feature": g["feature"]} if g.get("feature") else None)
+        return None
+
+    @staticmethod
+    def _org_guard(kit, g):
+        """Why the current organization doesn't satisfy ``org_role=`` / ``feature=``, or None."""
+        if kit is None or not getattr(kit, "orgs_enabled", False):
+            return "organizations aren't turned on (app.use_auth(orgs=True))"
+        if kit.org() is None:
+            return "create or join an organization first"
+        allowed = g.get("org_roles")
+        if allowed and kit.role() not in allowed:
+            return f"this needs the {' or '.join(allowed)} role in your organization"
+        if g.get("feature") and not kit.feature(g["feature"]):
+            return f"your organization's plan doesn't include {g['feature']}"
         return None
 
     # ------------------------------------------------------------- forms

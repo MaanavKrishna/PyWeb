@@ -17,12 +17,19 @@ def component(fn=None):
     return _mark(fn, component=True) if fn else lambda t: _mark(t, component=True)
 
 
-def server(fn=None, *, login=False, roles=(), fresh=None, rate=None, per="user"):
+def server(fn=None, *, login=False, roles=(), fresh=None, rate=None, per="user", org_role=None, feature=None):
     """Make a function callable from the browser. ``login=True`` requires a signed-in
     user (401), ``roles=[...]`` those roles too (403), ``fresh=600`` a sign-in in
     the last 600 seconds. ``rate="5/minute"`` allows that many calls (429 beyond), counted
-    ``per="user"`` (signed-in user, else client address), ``"ip"`` or ``"all"`` callers together."""
-    guard = {"login": True, "roles": list(roles), "fresh": fresh} if (login or roles or fresh) else None
+    ``per="user"`` (signed-in user, else client address), ``"ip"``, ``"org"`` or ``"all"`` callers together.
+
+    With organizations (``app.use_auth(orgs=True)``): ``org_role="admin"`` (or a list) requires that role
+    in the user's current organization, ``feature="exports"`` requires its plan to include the feature
+    (see ``auth.plans()``); both 403 otherwise."""
+    org_roles = [org_role] if isinstance(org_role, str) else list(org_role or ())
+    guard = None
+    if login or roles or fresh or org_roles or feature:
+        guard = {"login": True, "roles": list(roles), "fresh": fresh, "org_roles": org_roles, "feature": feature}
     limit = parse_rate(rate, per) if rate is not None else None
 
     def apply(target):
@@ -44,8 +51,8 @@ _UNITS = {"second": 1, "sec": 1, "s": 1, "minute": 60, "min": 60, "m": 60, "hour
 def parse_rate(rate, per="user"):
     """``"10/minute"`` (also ``second``, ``hour``, ``day``, ``"30/5m"``) -> ``(calls, seconds, per)``."""
     import re
-    if per not in ("user", "ip", "all"):
-        raise ValueError(f"per= must be 'user', 'ip' or 'all' (got {per!r})")
+    if per not in ("user", "ip", "org", "all"):
+        raise ValueError(f"per= must be 'user', 'ip', 'org' or 'all' (got {per!r})")
     m = re.fullmatch(r"\s*(\d+)\s*/\s*(\d*)\s*([a-z]+?)s?\s*", str(rate).lower())
     if not m or m.group(3) not in _UNITS or int(m.group(1)) < 1:
         raise ValueError(f"rate= looks like '10/minute' (or second, hour, day; '30/5m'), got {rate!r}")

@@ -92,6 +92,33 @@ def count_projects():
     return len(Project.query().all())
 
 
+auth.plans({"free": {"seats": 2, "exports": False}, "pro": {"seats": 50, "exports": True}})
+
+
+@server(org_role="admin")
+def admin_only() -> str:
+    return "ok"
+
+
+@server(org_role=["owner", "admin"], feature="exports")
+def export() -> str:
+    return "exported"
+
+
+@server(login=True)
+def upgrade() -> str:
+    org = auth.org()
+    org.plan = "pro"
+    with system():
+        org.save()
+    return org.plan
+
+
+@server(rate="2/minute", per="org")
+def per_org() -> int:
+    return 1
+
+
 @app.page("/")
 def Home():
     <p>hi</p>
@@ -271,3 +298,24 @@ def test_no_sequence_of_operations_crosses_organizations(ops, tmp_path_factory):
     finally:
         M._state.db = old
         db.close()
+
+
+def test_org_roles_features_seats_and_per_org_limits(app_file):
+    from pyweb import mail
+    ann, bo, ann_org, bo_org = two_teams(app_file)
+    assert status(ann, "admin_only") == 403                    # the owner isn't "admin"
+    assert status(ann, "export") == 403                        # free plan: no exports
+    assert ann.rpc("upgrade") == "pro"
+    assert ann.rpc("export") == "exported"
+    assert status(bo, "export") == 403                         # Globex is still on free
+
+    mail.OUTBOX.clear()
+    bo.rpc("invite", email="c1@example.com")                   # 2 seats: Bo + one invitation
+    assert status(bo, "invite", email="c2@example.com") == 422
+
+    outsider = TestClient(app_file)
+    outsider.login("zed@example.com")
+    assert status(outsider, "admin_only") == 403               # no organization at all
+
+    assert [status(ann, "per_org") for _ in range(3)] == [200, 200, 429]
+    assert status(bo, "per_org") == 200                        # another organization's budget

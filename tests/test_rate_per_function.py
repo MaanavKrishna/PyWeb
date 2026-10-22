@@ -58,7 +58,7 @@ def test_parse_rate():
         with pytest.raises(ValueError, match="rate="):
             parse_rate(bad)
     with pytest.raises(ValueError, match="per="):
-        parse_rate("1/minute", "org")
+        parse_rate("1/minute", "team")
 
 
 def test_limits_apply_per_signed_in_user(app_file):

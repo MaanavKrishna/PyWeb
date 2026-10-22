@@ -66,6 +66,37 @@ The kit's Python API does the same for your own pages:
 | `auth.set_role(org, user, role)`, `auth.remove_member(org, user)`, `auth.transfer_ownership(org, user)` | Managing members (owners and admins). |
 | `auth.members(org)` | `[(membership, user)]`, owners first. |
 
+## Guards and plans
+
+```python
+@server(org_role="admin")                          # or a list: ["owner", "admin"]
+def rename_org(name: str): ...
+
+@server(org_role=["owner", "admin"], feature="exports")
+def export_everything(): ...
+
+@server(rate="100/hour", per="org")                # one budget for the whole organization
+def generate_report(): ...
+```
+
+`org_role=` needs that role in the user's current organization, and
+`feature=` needs the organization's plan to include the feature; both
+answer 403 with a message saying which. Plans are a dictionary in your
+code:
+
+```python
+auth.plans({
+    "free": {"seats": 3, "exports": False},
+    "pro": {"seats": 50, "exports": True},
+})
+```
+
+`True`/`False` values are features (`auth.feature("exports")`), numbers
+are limits (`auth.limit("seats")`). `seats` is enforced when inviting.
+Organizations start on `free`; your billing code changes `org.plan`. PyWeb
+doesn't take payments itself. Until you call `auth.plans()`, every feature
+is included.
+
 ## Tenant Models
 
 `class Project(Model, tenant=True)` adds an `org` column (a foreign key to

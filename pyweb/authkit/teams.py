@@ -20,6 +20,36 @@ def _now():
 
 class TeamsMixin:
     orgs_enabled = False
+    _plans: dict = {}
+
+    # ------------------------------------------------------------- plans and entitlements
+    def plans(self, plans=None, *, default="free"):
+        """What each plan includes: ``auth.plans({"free": {"seats": 3}, "pro": {"seats": 50, "exports": True}})``.
+
+        A value that is True/False is a feature (``feature("exports")``, ``@server(feature="exports")``);
+        a number is a limit (``limit("seats")``). Organizations start on ``default``; change
+        ``org.plan`` from your billing code. Returns the plans."""
+        if plans is not None:
+            self._plans = {str(k): dict(v) for k, v in plans.items()}
+            self._default_plan = default
+        return self._plans
+
+    def _plan_of(self, org):
+        org = org or self.org()
+        if org is None:
+            return {}
+        return self._plans.get(org.plan) or self._plans.get(getattr(self, "_default_plan", "free")) or {}
+
+    def feature(self, name, org=None):
+        """Does the organization's plan include ``name``? (Everything is included until plans are set.)"""
+        if not self._plans:
+            return True
+        return bool(self._plan_of(org).get(name))
+
+    def limit(self, name, org=None, default=None):
+        """A number from the organization's plan (``limit("seats")``), or ``default``."""
+        value = self._plan_of(org).get(name, default)
+        return None if isinstance(value, bool) else value
 
     def _enable_orgs(self):
         from pyweb import tenancy
@@ -161,6 +191,13 @@ class TeamsMixin:
             existing = User.where(email=email).first()
             if existing and Membership.where(org_id=org.id, user=existing).exists():
                 raise ValidationError({"email": "is already a member"})
+            seats = self.limit("seats", org)
+            if seats is not None:
+                taken = Membership.where(org_id=org.id).count() + Invitation.where(
+                    org_id=org.id, accepted_at__isnull=True).count()
+                if taken >= seats:
+                    raise ValidationError({"__all__": f"Your plan has {seats} seats and they're all taken or "
+                                                      "invited. Upgrade the plan or remove someone first."})
             inv, token = Invitation.issue(org, email, role, invited_by=self.user())
         link = self._link(f"/invite/{token}")
         self._mail(email, f"Join {org.name}",

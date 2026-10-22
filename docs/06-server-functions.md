@@ -286,3 +286,28 @@ empty list.
 - an optional per-call timeout (`rpc_timeout`, seconds);
 - CSRF checks for authenticated calls when `PYWEB_CSRF_SECRET` is set;
 - `POST` only for RPC endpoints (`405` otherwise).
+
+### Limits for one function
+
+Expensive or abusable functions (sending email, calling a paid API,
+checking a code) can have their own limit:
+
+```python
+@server(rate="5/minute")                 # 5 calls a minute for each signed-in user
+def send_invite(email: Email):
+    ...
+
+@server(rate="10/hour", per="ip")        # per client address, signed in or not
+def check_coupon(code: str):
+    ...
+
+@server(rate="1000/day", per="all")      # every caller together
+def generate_report():
+    ...
+```
+
+`rate` is `calls/unit` with `second`, `minute`, `hour` or `day` (also
+`"30/5m"`). `per="user"` (the default) counts each signed-in user, and
+visitors who aren't signed in by address. Beyond the limit the call gets
+`429 rate_limited` with `Retry-After`. With `PYWEB_REDIS_URL` set, the
+counts are shared by every server process.

@@ -136,6 +136,20 @@ def check(app="app.pyweb"):
             out.append(Finding(os.path.basename(app), 0, "origin",
                                "the auth kit needs PYWEB_ORIGIN (the site's address) in production for the links "
                                "in its emails", action=False))
+        migrations = os.path.join(app_dir, "migrations")
+        if "use_auth(" in source and os.path.isdir(migrations):
+            text = ""
+            for name in sorted(os.listdir(migrations)):
+                try:
+                    with open(os.path.join(migrations, name), encoding="utf-8") as fh:
+                        text += fh.read()
+                except (OSError, UnicodeDecodeError):
+                    pass
+            if "auth_sessions" not in text:
+                out.append(Finding("migrations", 0, "auth-sessions",
+                                   "0.6 lists each signed-in device on /account (table auth_sessions): run "
+                                   "`pyweb db diff --name auth_sessions` and `pyweb db upgrade` (until then, "
+                                   "sign-in works and the list stays empty)"))
     return sorted(out, key=lambda f: (f.file, f.line))
 
 

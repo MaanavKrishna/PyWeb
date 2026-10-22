@@ -47,7 +47,7 @@ import urllib.parse
 from pyweb.rules import EMAIL_RE, ValidationError
 
 from . import passwords
-from .models import MODELS, AuthEvent, AuthToken, Credential, Identity, User
+from .models import MODELS, AuthEvent, AuthSession, AuthToken, Credential, Identity, User, device_label, ip_prefix
 from .throttle import Throttle
 
 __all__ = ["AuthKit", "User", "Identity", "Credential", "AuthToken", "AuthEvent", "current_user", "MODELS"]
@@ -59,6 +59,16 @@ log = logging.getLogger("pyweb.auth")
 PENDING_2FA = "__pw_2fa"
 OAUTH_COOKIE = "__pw_oauth"
 WEBAUTHN_COOKIE = "__pw_webauthn"
+
+
+def secrets_randbelow(n):
+    import secrets
+    return secrets.randbelow(n)
+
+
+def _auth_absolute_age():
+    from pyweb import auth as _auth
+    return _auth.ABSOLUTE_AGE
 
 
 def _now():
@@ -93,6 +103,60 @@ class _DBSessionVersions:
             log.warning("session version check failed; refusing the session", exc_info=True)
             return 2 ** 62
         return int(row[0]["session_version"] or 0) if row else 0
+
+    def check(self, payload):
+        """Is this session still good: not older than a sign-out everywhere (the user's version) and
+        not signed out on its own (its row in auth_sessions)? One query; touches last_seen_at."""
+        sid = payload.get("sid")
+        if not sid:
+            return int(payload.get("ver", 0) or 0) >= self.get(payload.get("sub"))
+        try:
+            user_id = int(payload.get("sub"))
+        except (TypeError, ValueError):                    # not one of the kit's users: versions only
+            return int(payload.get("ver", 0) or 0) >= self.get(payload.get("sub"))
+        from pyweb.db.dialect import dialect_of
+        db = User._database()
+        q = dialect_of(db).quote
+        digest = AuthSession.digest(sid)
+        try:
+            row = db.execute(
+                f"SELECT u.{q('session_version')}, s.{q('id')}, s.{q('revoked_at')}, s.{q('last_seen_at')} "
+                f"FROM {q('users')} u LEFT JOIN {q('auth_sessions')} s ON s.{q('user_id')} = u.{q('id')} "
+                f"AND s.{q('sid_hash')} = ? WHERE u.{q('id')} = ?", (digest, user_id)).fetchone()
+        except Exception:  # noqa: BLE001 - e.g. an app upgraded without migrating auth_sessions yet
+            if not getattr(self, "_warned", False):
+                self._warned = True
+                log.warning("couldn't read auth_sessions (run `pyweb db diff` and `pyweb db upgrade`); "
+                            "checking sessions by version only", exc_info=True)
+            return int(payload.get("ver", 0) or 0) >= self.get(user_id)
+        if row is None:
+            return False                                   # no such user
+        version, sid_row, revoked, seen = row
+        if int(payload.get("ver", 0) or 0) < int(version or 0) or revoked is not None:
+            return False
+        if sid_row is not None:
+            self._touch(db, q, sid_row, seen)
+        return True
+
+    @staticmethod
+    def _touch(db, q, sid_row, seen):
+        from pyweb.db.dialect import dialect_of
+        now = _now()
+        if isinstance(seen, str):
+            try:
+                seen = dt.datetime.fromisoformat(seen)
+            except ValueError:
+                seen = None
+        if seen is not None and seen.tzinfo is None:
+            seen = seen.replace(tzinfo=dt.timezone.utc)
+        if seen is not None and (now - seen).total_seconds() < 300:
+            return                                         # at most one write per session every 5 minutes
+        try:
+            col = AuthSession._meta.field("last_seen_at")
+            db.execute(f"UPDATE {q('auth_sessions')} SET {q('last_seen_at')} = ? WHERE {q('id')} = ?",
+                       (col.to_db(now, dialect_of(db)), sid_row))
+        except Exception:  # noqa: BLE001 - last seen is a convenience, never a reason to fail a request
+            pass
 
     def bump(self, user_id):
         from pyweb.db.dialect import dialect_of
@@ -197,6 +261,11 @@ class AuthKit:
     def revoke(self, user):
         from pyweb import auth as _auth
         _auth.revoke_user(user.id)
+        try:
+            with system_writes():
+                AuthSession.where(user=user, revoked_at__isnull=True).update(revoked_at=_now())
+        except Exception:  # noqa: BLE001 - the version bump above already signed every session out
+            log.warning("couldn't mark sessions signed out", exc_info=True)
 
     def authenticate(self, email, password):
         """The user for this email and password, or raise ValidationError (same message either way).
@@ -229,9 +298,10 @@ class AuthKit:
     def login(self, user, method="password"):
         """Start a session for ``user`` (a new session id every time)."""
         from pyweb.context import current, session
-        session.login(user.id, roles=list(user.roles or []), name=user.name)
+        payload = session.login(user.id, roles=list(user.roles or []), name=user.name)
         user.last_login_at = _now()
         user.save(validate=False)
+        self._record_session(user, (payload or {}).get("sid"))
         try:
             current()._pw_user = user
         except RuntimeError:
@@ -239,9 +309,50 @@ class AuthKit:
         self.event("login", user=user, detail=method)
         return user
 
+    def _record_session(self, user, sid):
+        if not sid:
+            return
+        try:
+            from pyweb.context import request
+            ua, ip = request.headers.get("User-Agent") or "", self._ip()
+        except RuntimeError:
+            ua, ip = "", None
+        try:
+            with system_writes():
+                if secrets_randbelow(100) == 0:                     # now and then, forget old sessions
+                    AuthSession.where(created_at__lt=_now() - dt.timedelta(seconds=_auth_absolute_age() + 86400)
+                                      ).delete()
+                AuthSession.create(user=user, sid_hash=AuthSession.digest(sid), device=device_label(ua)[:120],
+                                   ip=ip_prefix(ip), last_seen_at=_now())
+        except Exception:  # noqa: BLE001 - without the table (not migrated yet) sign-in still works
+            log.warning("couldn't record the session in auth_sessions", exc_info=True)
+
+    def sessions(self, user):
+        """``user``'s signed-in devices, newest first (rows of :class:`AuthSession`)."""
+        cutoff = _now() - dt.timedelta(seconds=_auth_absolute_age())
+        with system_writes():
+            return AuthSession.where(user=user, revoked_at__isnull=True, created_at__gt=cutoff).order("-id").all()
+
+    def end_session(self, user, session_id):
+        """Sign out one of ``user``'s devices (True if it was theirs and still signed in)."""
+        with system_writes():
+            return AuthSession.where(id=session_id, user=user, revoked_at__isnull=True).update(revoked_at=_now()) == 1
+
+    def current_session_hash(self):
+        from pyweb.context import session
+        payload = session.user() or {}
+        return AuthSession.digest(payload["sid"]) if payload.get("sid") else None
+
     def logout(self):
         from pyweb.context import current, session
         user = self.user()
+        digest = self.current_session_hash()
+        if digest is not None:
+            try:
+                with system_writes():
+                    AuthSession.where(sid_hash=digest).update(revoked_at=_now())
+            except Exception:  # noqa: BLE001
+                log.warning("couldn't mark the session signed out", exc_info=True)
         session.logout()
         try:
             current()._pw_user = None

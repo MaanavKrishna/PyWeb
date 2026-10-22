@@ -347,6 +347,9 @@ def session_valid(payload, *, absolute_age=ABSOLUTE_AGE, now=None) -> bool:
     if not isinstance(started, (int, float)) or now - started > absolute_age:
         return False
     if _versions is not None and "sub" in payload:
+        check = getattr(_versions, "check", None)
+        if check is not None:                  # the auth kit: version and this session's own sign-out
+            return bool(check(payload))
         if int(payload.get("ver", 0) or 0) < _versions.get(payload["sub"]):
             return False
     return True

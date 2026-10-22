@@ -414,6 +414,14 @@ def _account_action(c, user, action):
         kit.event("signed_out_everywhere", user=user)
         kit.login(user, "revoke")
         return "Signed out of every other device.", ""
+    if action == "end_session":
+        try:
+            ended = kit.end_session(user, int(c.get("id")))
+        except ValueError:
+            ended = False
+        if ended:
+            kit.event("session_ended", user=user)
+        return ("Signed out of that device." if ended else "That device was already signed out."), ""
     if action == "passkey_remove":
         cred = Credential.where(id=c.get("id"), user=user).first()
         if cred is not None:
@@ -527,9 +535,27 @@ def _account_body(c, user, msg, err, extra):
     rows = "".join(f"<tr><td>{e.created_at:%Y-%m-%d %H:%M}</td><td>{H.esc(e.kind.replace('_', ' '))}"
                    f"{'' if e.ok else ' (failed)'}</td><td>{H.esc(e.ip or '')}</td></tr>" for e in events)
     out += f'<h2>Recent activity</h2><table class="pw-table">{rows}</table>'
-    out += ("<h2>Sessions</h2>" + H.form("/account", '<input type="hidden" name="action" value="revoke">' +
-                                        H.button("Sign out of every other device", kind="secondary pw-inline"),
-                                        csrf=c.csrf))
+    out += "<h2>Where you're signed in</h2>"
+    try:
+        sessions = kit.sessions(user)
+        mine = kit.current_session_hash()
+    except Exception:  # noqa: BLE001 - auth_sessions not migrated yet: keep the page working
+        sessions, mine = [], None
+    rows = ""
+    for s in sessions:
+        seen = s.last_seen_at or s.created_at
+        if s.sid_hash == mine:
+            action = '<span class="pw-muted">This device</span>'
+        else:
+            action = H.form("/account", '<input type="hidden" name="action" value="end_session">'
+                            f'<input type="hidden" name="id" value="{s.id}">' +
+                            H.button("Sign out", kind="danger pw-inline"), csrf=c.csrf)
+        rows += (f"<tr><td>{H.esc(s.device or 'Unknown device')}</td><td>{H.esc(s.ip or '')}</td>"
+                 f"<td>signed in {s.created_at:%Y-%m-%d}, last seen {seen:%Y-%m-%d %H:%M}</td><td>{action}</td></tr>")
+    if rows:
+        out += f'<table class="pw-table pw-sessions">{rows}</table>'
+    out += H.form("/account", '<input type="hidden" name="action" value="revoke">' +
+                  H.button("Sign out of every other device", kind="secondary pw-inline"), csrf=c.csrf)
     out += H.form("/logout", H.button("Sign out", kind="secondary pw-inline"), csrf=c.csrf)
     if kit.admin_enabled and user.has_role("admin"):
         out += '<p class="pw-links"><a href="/admin">Admin</a></p>'

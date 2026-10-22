@@ -174,6 +174,9 @@ def cmd_build(args):
         raise SystemExit(1) from None
     mode = " (production)" if production else ""
     print(f"built {len(manifest['pages'])} page(s) + {len(out['rpc'])} rpc(s) -> {args.out}/{mode}")
+    from pyweb import sbom as _sbom
+    app_dir = os.path.dirname(os.path.abspath(args.file))
+    _sbom.write_for_app(app_dir, args.out, name=os.path.basename(app_dir) or "app")
     from pathlib import Path as _Path
     from pyweb.observability import Timer as _Timer
     with _Timer() as _t:

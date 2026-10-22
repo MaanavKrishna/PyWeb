@@ -461,7 +461,35 @@ class Server:
             if not ok:
                 return self._err(_rpc.Code.RATE_LIMIT, "rate limit exceeded",
                                  retry_after=retry)
+        own = getattr(fn, "__pyweb_rate__", None)
+        if own is not None:
+            ok, retry = self._own_limit(req, fn, own)
+            if not ok:
+                return self._err(_rpc.Code.RATE_LIMIT, f"too many calls to {fn.__name__}: try again in "
+                                 f"{retry}s", retry_after=retry)
         return None
+
+    def _own_limit(self, req, fn, limit):
+        """``@server(rate=...)``: one limiter per (calls, window), shared through Redis when configured."""
+        calls, window, per = limit
+        from pyweb import rpc as _rpc
+        with _POOLS_LOCK:
+            limiters = self.__dict__.setdefault("_fn_limiters", {})
+            limiter = limiters.get((calls, window))
+            if limiter is None:
+                limiter = limiters[(calls, window)] = _rpc.default_rate_limiter(max_calls=calls, window=window)
+        who = "all"
+        if per in ("user", "ip"):
+            who = "ip:" + client_ip(req)
+        if per == "user":
+            from pyweb.context import session
+            try:
+                user = session.user()
+            except RuntimeError:
+                user = None
+            if user and user.get("sub") is not None:
+                who = f"user:{user['sub']}"
+        return limiter.allow(f"fn:{getattr(fn, '__module__', '')}.{fn.__name__}:{who}")
 
     def _validate(self, fn, args: dict):
         from .argcheck import ArgError, check_args

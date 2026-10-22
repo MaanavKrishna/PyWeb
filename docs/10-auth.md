@@ -40,7 +40,7 @@ JavaScript:
 | `/login/2fa` | The authenticator-app code (or a recovery code) for accounts with two-step sign-in. |
 | `/logout` | Signs out (a POST with the page's token; a GET only shows the button). |
 | `/reset` | Emails a link to choose a new password. Using it signs out every other device. |
-| `/account` | Name, email, password, passkeys, two-step sign-in with recovery codes, linked accounts, "sign out everywhere else" and recent activity. |
+| `/account` | Name, email, password, passkeys, two-step sign-in with recovery codes, linked accounts, recent activity, and every device you're signed in on (browser and system, network, last seen) with a button to sign each one out, or all of them but this one. |
 | `/admin` | Browse, search, edit and delete rows of every Model. Only for users with the `admin` role, who must have signed in within the hour to change anything. Private fields (password hashes, secrets) never appear. |
 
 To replace one, define a page at the same route; the others stay. The
@@ -55,6 +55,7 @@ kit's Python API does the work for custom pages:
 | `auth.create_user(email, password, name=, roles=)` | A new account. |
 | `auth.set_password(user, pw)`, `auth.set_roles(user, roles)` | Both sign the user out of their other sessions. |
 | `auth.revoke(user)` | Signs the user out everywhere. |
+| `auth.sessions(user)` / `auth.end_session(user, id)` | The user's signed-in devices (`AuthSession` rows), and signing one out. |
 | `auth.send_reset(email)`, `auth.send_magic_link(email)` | Email a link (nothing happens, silently, for unknown emails). |
 
 ### Guards
@@ -94,7 +95,10 @@ and skip policies; inside a request, `with system():` (from
 
 `users`, `auth_identities` (linked GitHub/Google/Microsoft accounts),
 `auth_credentials` (passkeys), `auth_tokens` (emailed links, stored only
-as hashes) and `auth_events` (the audit log). They're ordinary Models:
+as hashes), `auth_events` (the audit log) and `auth_sessions` (signed-in
+devices: a hash of the session id, a device label like "Firefox on macOS",
+the network as a /24 or /48 rather than the full address, and when it was
+last seen, updated at most every 5 minutes). They're ordinary Models:
 `from pyweb.authkit import User, AuthEvent`, query them, add them to
 migrations with `pyweb db diff`, or see them in `/admin`.
 

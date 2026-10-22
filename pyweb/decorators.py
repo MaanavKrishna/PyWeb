@@ -17,20 +17,39 @@ def component(fn=None):
     return _mark(fn, component=True) if fn else lambda t: _mark(t, component=True)
 
 
-def server(fn=None, *, login=False, roles=(), fresh=None):
+def server(fn=None, *, login=False, roles=(), fresh=None, rate=None, per="user"):
     """Make a function callable from the browser. ``login=True`` requires a signed-in
     user (401), ``roles=[...]`` those roles too (403), ``fresh=600`` a sign-in in
-    the last 600 seconds."""
+    the last 600 seconds. ``rate="5/minute"`` allows that many calls (429 beyond), counted
+    ``per="user"`` (signed-in user, else client address), ``"ip"`` or ``"all"`` callers together."""
     guard = {"login": True, "roles": list(roles), "fresh": fresh} if (login or roles or fresh) else None
+    limit = parse_rate(rate, per) if rate is not None else None
 
     def apply(target):
         _field_defaults(target)
         _mark(target, location="server")
         if guard is not None:
             target.__pyweb_guard__ = guard
+        if limit is not None:
+            target.__pyweb_rate__ = limit
         return target
     return apply(fn) if fn is not None else apply
 
+
+
+_UNITS = {"second": 1, "sec": 1, "s": 1, "minute": 60, "min": 60, "m": 60, "hour": 3600, "h": 3600,
+          "day": 86400, "d": 86400}
+
+
+def parse_rate(rate, per="user"):
+    """``"10/minute"`` (also ``second``, ``hour``, ``day``, ``"30/5m"``) -> ``(calls, seconds, per)``."""
+    import re
+    if per not in ("user", "ip", "all"):
+        raise ValueError(f"per= must be 'user', 'ip' or 'all' (got {per!r})")
+    m = re.fullmatch(r"\s*(\d+)\s*/\s*(\d*)\s*([a-z]+?)s?\s*", str(rate).lower())
+    if not m or m.group(3) not in _UNITS or int(m.group(1)) < 1:
+        raise ValueError(f"rate= looks like '10/minute' (or second, hour, day; '30/5m'), got {rate!r}")
+    return int(m.group(1)), int(m.group(2) or 1) * _UNITS[m.group(3)], per
 
 
 def _field_defaults(fn):

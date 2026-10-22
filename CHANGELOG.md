@@ -41,6 +41,16 @@ project uses [semantic versioning](https://semver.org).
 - **`pyweb.http.fetch`** for URLs other people choose: refuses internal
   addresses (including through redirects and DNS rebinding), with time and
   size limits. `PYWEB_FETCH_ALLOW` lets it reach internal services you name.
+- **`@server(rate="5/minute", per="user"|"ip"|"all")`** limits one server
+  function (429 with `Retry-After`; shared through Redis when configured).
+- **Signed-in devices.** `/account` lists each session (device, network,
+  last seen) and can sign one out; `auth.sessions(user)` and
+  `auth.end_session(user, id)` do the same from code. Apps with migrations
+  need one for the new `auth_sessions` table (`pyweb upgrade` says so);
+  until then sign-in works as before.
+- **Supply chain.** `pyweb build` writes a CycloneDX `sbom.json`; releases
+  get PEP 740 attestations on PyPI and a CycloneDX file; CI pins every
+  GitHub Action to a commit.
 - **CSP violation reports** go to `/__pyweb/csp-report`: a `pyweb.csp` log
   line and the `pyweb_csp_violations_total` metric.
 

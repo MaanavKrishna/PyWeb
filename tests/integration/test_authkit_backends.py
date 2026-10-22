@@ -20,7 +20,7 @@ URLS = {
     "postgres": os.environ.get("PYWEB_TEST_POSTGRES"),
     "mysql": os.environ.get("PYWEB_TEST_MYSQL"),
 }
-TABLES = ["auth_events", "auth_tokens", "auth_credentials", "auth_identities", "users"]
+TABLES = ["auth_sessions", "auth_events", "auth_tokens", "auth_credentials", "auth_identities", "users"]
 
 
 def _drop(database):

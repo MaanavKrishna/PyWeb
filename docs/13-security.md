@@ -237,7 +237,13 @@ table and column identifiers.
 - `pyweb.lock` records a SHA-256 for every npm file; `pyweb build`
   refuses files that changed since `pyweb add`.
 - Releases carry signed build provenance: check a downloaded file with
-  `gh attestation verify FILE --repo MaanavKrishna/PyWeb`.
+  `gh attestation verify FILE --repo MaanavKrishna/PyWeb`. PyPI shows the
+  same for each file (PEP 740 attestations), and each GitHub release has a
+  CycloneDX bill of materials (`pyweb-stack-<version>.cdx.json`). Every
+  GitHub Action PyWeb's own CI uses is pinned to a commit.
+- `pyweb build` writes `sbom.json` (CycloneDX) next to the built app: PyWeb
+  and each npm package it vendors, with the registry's integrity hash, for
+  scanners such as Grype, Trivy or Dependency-Track.
 - Live-update channels can only be read with a feed from `channel()`:
   an HMAC-signed token that expires after 24 hours. A page that shows
   private data should only create a feed after checking the visitor

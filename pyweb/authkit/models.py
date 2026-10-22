@@ -131,4 +131,47 @@ class AuthEvent(Model):
         indexes = [Index("user", "created_at")]
 
 
-MODELS = [User, Identity, Credential, AuthToken, AuthEvent]
+class AuthSession(Model):
+    """A signed-in device: listed on /account, where it can be signed out on its own."""
+
+    user: User = ForeignKey(related_name="sessions")
+    sid_hash: str = Field(unique=True, max=64)
+    device: str = Field("", max=120)
+    ip: str | None = Field(None, max=64)
+    created_at: dt.datetime = Field(auto_now_add=True)
+    last_seen_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+
+    class Meta:
+        table = "auth_sessions"
+        indexes = [Index("user", "created_at")]
+
+    @staticmethod
+    def digest(sid):
+        return hashlib.sha256(str(sid).encode()).hexdigest()
+
+
+def device_label(user_agent):
+    """"Firefox on macOS" from a User-Agent header (good enough to recognise your own devices)."""
+    ua = user_agent or ""
+    browser = next((name for key, name in (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"),
+                                           ("Chrome/", "Chrome"), ("Safari/", "Safari")) if key in ua), "")
+    system = next((name for key, name in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"),
+                                          ("CrOS", "ChromeOS"), ("Mac OS X", "macOS"), ("Windows", "Windows"),
+                                          ("Linux", "Linux")) if key in ua), "")
+    if browser and system:
+        return f"{browser} on {system}"
+    return browser or system or (ua[:60] if ua else "Unknown device")
+
+
+def ip_prefix(ip):
+    """The network an address belongs to (a /24 or /48), not the address itself."""
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address((ip or "").strip())
+    except ValueError:
+        return None
+    return str(ipaddress.ip_network(f"{addr}/{24 if addr.version == 4 else 48}", strict=False))
+
+
+MODELS = [User, Identity, Credential, AuthToken, AuthEvent, AuthSession]

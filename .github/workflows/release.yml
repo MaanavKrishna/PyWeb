@@ -28,8 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - name: Tag matches pyproject version
@@ -37,19 +37,26 @@ jobs:
           v=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != pyproject version $v"; exit 1; }
       - run: pip install build && python -m build
+      # A CycloneDX bill of materials for the release (the files' hashes and the optional extras).
+      - run: |
+          pip install -e .
+          python -m pyweb.sbom --release dist --out "pyweb-stack-${GITHUB_REF_NAME#v}.cdx.json"
       # Signed build provenance: anyone can check the files came from this workflow
       # (gh attestation verify <file> --repo MaanavKrishna/PyWeb).
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: dist/*
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      # PEP 740 attestations: PyPI shows that each file was built by this workflow from this repository.
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          attestations: true
       - name: Attach files and changelog notes to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${GITHUB_REF_NAME#v}"
           awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
-          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/* pyweb-stack-*.cdx.json --clobber
           if [ -z "$(gh release view "$GITHUB_REF_NAME" --json body -q .body)" ]; then
             gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
           fi
@@ -61,8 +68,8 @@ jobs:
       run:
         working-directory: editors/vscode
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
       - name: Extension version matches the release
@@ -70,7 +77,7 @@ jobs:
           v=$(node -p "require('./package.json').version")
           test "v$v" = "${GITHUB_REF_NAME}" || { echo "editors/vscode version $v != ${GITHUB_REF_NAME}"; exit 1; }
       - run: npm ci && npm test && npx vsce package
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: editors/vscode/*.vsix
       - name: Attach the .vsix to the GitHub release

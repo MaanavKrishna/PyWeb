@@ -87,7 +87,7 @@ def test_current_link_marks_follow_the_request_path():
     assert compiled[1] == '<a aria-current="true" href="/docs">Docs</a><a aria-current="page" href="/docs/x">X</a>'
 
 
-def test_examples_render_the_same_both_ways(monkeypatch):
+def test_examples_render_the_same_both_ways(monkeypatch, tmp_path):
     """Every example's pages (that need no route data) give identical HTML."""
     import glob
     import os
@@ -96,7 +96,8 @@ def test_examples_render_the_same_both_ways(monkeypatch):
     from pyweb.testing import TestClient
     monkeypatch.setattr(ssr, "_VERIFY", True)        # each render is checked against the interpreter
     monkeypatch.setenv("PYWEB_WORKER", "0")
-    root = os.path.join(os.path.dirname(__file__), "..", "examples")
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "examples"))
+    monkeypatch.chdir(tmp_path)                       # databases the examples create land here
     checked = 0
     for app in sorted(glob.glob(os.path.join(root, "*", "app.pyweb"))):
         if "saas" in app or "ai-chat" in app:

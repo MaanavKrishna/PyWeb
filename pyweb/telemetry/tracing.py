@@ -228,7 +228,18 @@ def otel_tracer():
     global _tracer, _checked
     if _checked:
         return _tracer
-    _checked = True
+    with _tracer_lock:
+        if _checked:
+            return _tracer
+        _tracer = _find_tracer()
+        _checked = True
+    return _tracer
+
+
+_tracer_lock = __import__("threading").Lock()
+
+
+def _find_tracer():
     if os.environ.get("PYWEB_OTEL", "").lower() in ("0", "false", "off"):
         return None
     try:
@@ -241,8 +252,7 @@ def otel_tracer():
     if type(provider).__name__ in ("ProxyTracerProvider", "NoOpTracerProvider"):
         return None                     # nobody set up OTel: don't pay for spans nobody receives
     from pyweb import __version__
-    _tracer = trace.get_tracer("pyweb", __version__)
-    return _tracer
+    return trace.get_tracer("pyweb", __version__)
 
 
 def _configure_sdk():

@@ -133,8 +133,18 @@ _configured = False
 def setup(*, production=None, stream=None, force=False):
     """Send PyWeb's (and the app's) logging to stderr in the chosen format. Called by the servers."""
     global _configured
-    if _configured and not force:
-        return
+    with _setup_lock:                       # two threads must not install two handlers
+        if _configured and not force:
+            return
+        handler = _setup(production, stream)
+        _configured = True
+        return handler
+
+
+_setup_lock = __import__("threading").RLock()
+
+
+def _setup(production, stream):
     from pyweb.config import settings
     production = settings().production if production is None else production
     fmt = os.environ.get("PYWEB_LOG_FORMAT", "json" if production else "text").strip().lower()
@@ -145,5 +155,4 @@ def setup(*, production=None, stream=None, force=False):
     root = logging.getLogger()
     root.handlers = [h for h in root.handlers if not getattr(h, "_pyweb", False)] + [handler]
     root.setLevel(getattr(logging, level, logging.INFO))
-    _configured = True
     return handler

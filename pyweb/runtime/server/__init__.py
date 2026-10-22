@@ -170,10 +170,17 @@ async def _awaited(aw):
 _RENDER_POOL = None
 
 
+_POOLS_LOCK = __import__("threading").Lock()
+
+
 def _render_pool():
     """Threads for page renders: as many as the server accepts connections."""
     global _RENDER_POOL
-    if _RENDER_POOL is None:
+    if _RENDER_POOL is not None:
+        return _RENDER_POOL
+    with _POOLS_LOCK:                      # free-threaded Python: never two pools
+        if _RENDER_POOL is not None:
+            return _RENDER_POOL
         import concurrent.futures as _fut
         from pyweb.config import settings
         _RENDER_POOL = _fut.ThreadPoolExecutor(max_workers=settings().max_connections,
@@ -183,9 +190,12 @@ def _render_pool():
 
 def _rpc_pool():
     global _POOL
-    if _POOL is None:
-        import concurrent.futures as _fut
-        _POOL = _fut.ThreadPoolExecutor(max_workers=32, thread_name_prefix="pyweb-rpc")
+    if _POOL is not None:
+        return _POOL
+    with _POOLS_LOCK:
+        if _POOL is None:
+            import concurrent.futures as _fut
+            _POOL = _fut.ThreadPoolExecutor(max_workers=32, thread_name_prefix="pyweb-rpc")
     return _POOL
 
 

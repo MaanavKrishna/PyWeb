@@ -178,6 +178,16 @@ def storage():
     spec = os.environ.get("PYWEB_STORAGE", "file://./uploads")
     if _current is not None and getattr(_current, "_spec", None) == spec:
         return _current
+    with _lock:
+        if _current is None or getattr(_current, "_spec", None) != spec:
+            _current = _make(spec)
+        return _current
+
+
+_lock = __import__("threading").Lock()
+
+
+def _make(spec):
     if spec.startswith("s3://"):
         rest = spec[5:]
         bucket, _, prefix = rest.partition("/")
@@ -186,7 +196,6 @@ def storage():
         root = spec[7:] if spec.startswith("file://") else spec
         found = LocalStorage(root)
     found._spec = spec
-    _current = found
     return found
 
 

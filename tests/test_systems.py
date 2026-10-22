@@ -201,3 +201,38 @@ def test_time_limits_over_pyweb_server_use_one_thread(tmp_path, monkeypatch):
         assert calls == []                                           # neither extra pool was used
     finally:
         running.stop(timeout=0.5)
+
+
+def test_many_threads_render_and_call_at_once(tmp_path, monkeypatch):
+    """Pages and server functions from 8 threads at once (on a free-threaded Python they really
+    run in parallel): every response is right and every write lands exactly once."""
+    import threading as _threading
+
+    from pyweb.testing import TestClient
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYWEB_WORKER", "0")
+    (tmp_path / "app.pyweb").write_text(
+        "from pyweb import App, Field, Model, server\n"
+        "app = App(database='sqlite:///t.db')\n\n\n"
+        "class Note(Model):\n    body: str = Field(max=40)\n\n\n"
+        "@server\ndef add(body: str) -> int:\n    return Note.create(body=body).id\n\n\n"
+        "@app.page('/')\ndef Home(q: str = ''):\n    notes = Note.query().order('id').limit(5).all()\n"
+        "    <h1>{q}</h1>\n    <ul>\n        for n in notes:\n            <li>{n['body']}</li>\n    </ul>\n")
+    client = TestClient(str(tmp_path / "app.pyweb"))
+    errors, ids = [], []
+
+    def work(t):
+        try:
+            for i in range(40):
+                page = client.get(f"/?q=t{t}-{i}")
+                assert page.status == 200 and f"<h1>t{t}-{i}</h1>" in page.text
+                ids.append(client.rpc("add", body=f"{t}-{i}"))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(repr(exc))
+    threads = [_threading.Thread(target=work, args=(t,)) for t in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert len(ids) == len(set(ids)) == 320

@@ -262,6 +262,7 @@ def _alive(pid):
 
 
 _dumper = None
+_dump_lock = threading.Lock()
 
 
 def start_dumping(every=None):
@@ -269,6 +270,10 @@ def start_dumping(every=None):
     global _dumper
     if not shared_dir() or _dumper is not None:
         return
+    with _dump_lock:
+        if _dumper is not None:
+            return
+        _dumper = True                     # claimed: another thread won't start a second one
     every = float(every or os.environ.get("PYWEB_METRICS_EVERY") or 5.0)
     import atexit
 

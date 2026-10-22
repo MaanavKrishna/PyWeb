@@ -159,6 +159,12 @@ class LoadedApp:
         stem = os.path.splitext(os.path.basename(filename))[0] or "app"
         mod = types.ModuleType(module_name or f"pyweb_app_{stem}")
         mod.__file__ = os.path.abspath(filename) if self.path else filename
+        # A loader that hands back the .pyweb source, so tracebacks show the app's real lines
+        # (and linecache doesn't need a module without a __spec__, deprecated in Python 3.15).
+        import importlib.machinery
+        loader = _SourceLoader(source)
+        mod.__loader__ = loader
+        mod.__spec__ = importlib.machinery.ModuleSpec(mod.__name__, loader, origin=mod.__file__)
         mod.__dict__["__pyweb_ui__"] = lambda *_a: None
         from .forms import specs as _form_specs
         mod.__dict__["__pw_form_specs__"] = _form_specs
@@ -298,6 +304,22 @@ class LoadedApp:
                 value = base + value
             out[key] = value
         return {k: v for k, v in out.items() if v not in (None, False, "")}
+
+
+class _SourceLoader:
+    """Gives ``linecache`` (tracebacks, debuggers) the source of an app module."""
+
+    def __init__(self, source):
+        self.source = source
+
+    def get_source(self, name):
+        return self.source
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):     # modules are executed by LoadedApp, never re-imported
+        raise ImportError("PyWeb app modules are loaded by LoadedApp")
 
 
 def _state(info, env):

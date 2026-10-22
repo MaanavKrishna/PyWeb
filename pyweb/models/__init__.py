@@ -389,11 +389,29 @@ def _list_of_model(ann):
     return None
 
 
+def _namespace_annotations(ns):
+    """A class body's annotations, on every Python version.
+
+    Before 3.14 the body holds an ``__annotations__`` dict. From 3.14 (PEP 649/749)
+    annotations are evaluated lazily and the body holds a function instead; asking it
+    for forward references means a Model can name another Model defined later in the
+    file (``author: User`` above ``class User``), as before.
+    """
+    if "__annotations__" in ns:
+        return dict(ns["__annotations__"])
+    fn = ns.get("__annotate_func__") or ns.get("__annotate__")
+    if fn is None:
+        return {}
+    import annotationlib
+    out = annotationlib.call_annotate_function(fn, annotationlib.Format.FORWARDREF)
+    return {k: (v.__forward_arg__ if isinstance(v, annotationlib.ForwardRef) else v) for k, v in out.items()}
+
+
 class ModelMeta(type):
     _registry: list = []
 
     def __new__(mcls, name, bases, ns, **kw):
-        annotations = dict(ns.get("__annotations__", {}))
+        annotations = _namespace_annotations(ns)
         meta_opts = {}
         inner_meta = ns.pop("Meta", None)
         if inner_meta is not None:

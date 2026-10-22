@@ -371,8 +371,11 @@ def cmd_serve(args):
         from pyweb.hosting import Site
         return Site(args.dir, max_body=1_048_576)
 
+    free_threaded = not getattr(sys, "_is_gil_enabled", lambda: True)()
+
     def ready(port):
-        print(f"serving {args.dir} on http://{args.host}:{port} with {workers} worker(s) (health: /healthz)",
+        note = " on a free-threaded Python (each process uses every core)" if free_threaded else ""
+        print(f"serving {args.dir} on http://{args.host}:{port} with {workers} worker(s){note} (health: /healthz)",
               flush=True)
 
     _net.run(make_site, host=args.host, port=args.port, workers=workers, logger=logger, ready=ready)

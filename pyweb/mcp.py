@@ -379,6 +379,40 @@ def tool_check(args):
             **({"layouts": {n: lay["prefix"] for n, lay in out["layouts"].items()}} if out.get("layouts") else {})}
 
 
+def tool_openapi(args):
+    """The app's server functions as an OpenAPI 3.1 document."""
+    from .openapi import generate
+    path = args.get("path") or "app.pyweb"
+    with contextlib.redirect_stdout(sys.stderr):
+        return generate(path, server_url=args.get("server_url"))
+
+
+def tool_security_check(args):
+    """Every security finding PyWeb can make about the app, in one list."""
+    from .cli import production_problems
+    from .lsp_data import parse
+    from .lsp_teams import problems as team_problems
+    from .secret_scan import scan_app
+    from .security import check_source
+    path = args.get("path") or "app.pyweb"
+    source, filename = _read_source(args)
+    findings = [{"kind": f["kind"], "line": f["line"], "message": f["message"], "file": f.get("file") or filename}
+                for f in check_source(source, filename)]
+    if os.path.exists(path):
+        findings += [{"kind": f["kind"], "line": f["line"], "message": f["message"], "file": f.get("file") or path}
+                     for f in scan_app(path)]
+    tree, _ui = parse(source, filename)
+    findings += [{"kind": code, "line": line, "message": msg, "file": filename}
+                 for line, code, msg in team_problems(source, tree)]
+    blocking = {"secret-leak", "hardcoded-secret", "tenant-unscoped"}
+    res = {"ok": not any(f["kind"] in blocking for f in findings), "findings": findings,
+           "threat_model": "https://github.com/MaanavKrishna/PyWeb/blob/main/THREAT_MODEL.md"}
+    if args.get("production"):
+        res["production"] = production_problems(source, os.path.dirname(os.path.abspath(path)))
+        res["ok"] = res["ok"] and not res["production"]
+    return res
+
+
 def tool_routes(args):
     """Every URL the app answers: pages, their parameters (path or query, typed), layouts, error pages."""
     import ast
@@ -477,11 +511,25 @@ def tool_compiled(args):
 APPS = _Apps()
 
 
+def _sign_in(client, args):
+    """``as_user`` (an email) signs in first, with ``roles`` and, for apps with organizations, ``org``
+    (a name: created if missing) and ``org_role``."""
+    email = args.get("as_user")
+    if email:
+        client.logout()
+        client.login(email, roles=tuple(args.get("roles") or ()), org=args.get("org"),
+                     org_role=args.get("org_role") or "owner")
+    elif args.get("org"):
+        raise ValueError("org needs as_user (who is working in it)")
+
+
 def tool_render(args):
     path = args.get("path") or "app.pyweb"
     url = args.get("url") or "/"
     with contextlib.redirect_stdout(sys.stderr):
-        resp = APPS.client(path).get(url)
+        client = APPS.client(path)
+        _sign_in(client, args)
+        resp = client.get(url)
     text = resp.text
     limit = int(args.get("max_chars") or 20000)
     res = {"status": resp.status, "content_type": resp.header("Content-Type")}
@@ -518,6 +566,7 @@ def tool_call(args):
         s["name"] == fn and s.get("stream") for lib in client.app.libraries for s in lib.rpc)
     try:
         with contextlib.redirect_stdout(sys.stderr):
+            _sign_in(client, args)
             result = client.rpc(fn, **(args.get("args") or {}))
         if streams:
             return {"ok": True, "streamed": True, "chunks": result, "cookies": sorted(client.cookies)}
@@ -818,6 +867,13 @@ TOOLS = [
                     "app's server code. Session cookies from pyweb_call are reused.",
      "inputSchema": {"type": "object", "properties": {
          "path": PATH_PROP, "url": {"type": "string", "description": "URL path, e.g. / or /posts/1?x=y"},
+         "as_user": {"type": "string", "description": "Sign in as this email first (with the auth kit, the "
+                                                   "account is created if needed)."},
+         "roles": {"type": "array", "items": {"type": "string"}, "description": "Roles for as_user."},
+         "org": {"type": "string", "description": "With organizations: work in this organization (by name; "
+                                                 "created if missing) as as_user."},
+         "org_role": {"type": "string", "enum": ["owner", "admin", "member", "viewer"],
+                      "description": "as_user's role in org (default owner)."},
          "max_chars": {"type": "integer", "description": "Truncate the body (default 20000)."}}}},
     {"name": "pyweb_call", "fn": tool_call, "readOnly": False,
      "description": "Call an @server function of the app exactly like the browser does (JSON RPC with "
@@ -826,7 +882,27 @@ TOOLS = [
                     "calls, so e.g. call a login function, then pyweb_render a protected page.",
      "inputSchema": {"type": "object", "required": ["function"], "properties": {
          "path": PATH_PROP, "function": {"type": "string"},
+         "as_user": {"type": "string", "description": "Sign in as this email first (with the auth kit, the "
+                                                   "account is created if needed)."},
+         "roles": {"type": "array", "items": {"type": "string"}, "description": "Roles for as_user."},
+         "org": {"type": "string", "description": "With organizations: work in this organization (by name; "
+                                                 "created if missing) as as_user."},
+         "org_role": {"type": "string", "enum": ["owner", "admin", "member", "viewer"],
+                      "description": "as_user's role in org (default owner)."},
          "args": {"type": "object", "description": "Keyword arguments by parameter name."}}}},
+    {"name": "pyweb_openapi", "fn": tool_openapi, "readOnly": True,
+     "description": "The app's server functions as an OpenAPI 3.1 document (paths, argument schemas from the type "
+                    "hints and Field rules, the guards each one has), as `pyweb openapi` writes it.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": PATH_PROP, "server_url": {"type": "string", "description": "The API's base URL, if known."}}}},
+    {"name": "pyweb_security_check", "fn": tool_security_check, "readOnly": True,
+     "description": "Security findings for the app in one list: secrets reaching the browser, hard-coded keys in "
+                    "the app's files, unsafe patterns, tenant Models read across organizations (.unscoped() "
+                    "outside system()), bad rate limits and roles; with production=true also what the "
+                    "environment is missing (secrets, HTTPS cookies, proxies). Links THREAT_MODEL.md.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": PATH_PROP, "source": SOURCE_PROP,
+         "production": {"type": "boolean", "description": "Also check the environment for production."}}}},
     {"name": "pyweb_routes", "fn": tool_routes, "readOnly": True,
      "description": "Map of the app: every page with its route, parameters (from the path or the query "
                     "string, with types and defaults), title and head tags, the layouts that wrap it, live-data "

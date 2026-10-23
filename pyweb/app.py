@@ -75,13 +75,15 @@ class App:
             self.use(plugin)
 
     def page(self, route, *, title=None, render="server", description=None, image=None, canonical=None,
-             noindex=False, layout=..., login=False, roles=(), fresh=None):
+             noindex=False, layout=..., login=False, roles=(), fresh=None, org_role=None, feature=None):
         """Register a page at ``route``. ``{name}`` segments and other parameters of the
         function (from the query string) become its arguments.
 
         ``login=True`` sends visitors who aren't signed in to ``/login`` first;
         ``roles=["admin"]`` also requires those roles (403 otherwise);
-        ``fresh=600`` requires a sign-in in the last 600 seconds.
+        ``fresh=600`` requires a sign-in in the last 600 seconds;
+        ``org_role="admin"`` (or a list) requires that role in the current organization and
+        ``feature="exports"`` a plan with that feature (with ``use_auth(orgs=True)``).
         """
         def deco(fn):
             self.pages.append((route, fn.__name__, {"render": render, "title": title}))
@@ -92,11 +94,12 @@ class App:
 
         return deco
 
-    def layout(self, prefix="/", *, login=False, roles=(), fresh=None):
+    def layout(self, prefix="/", *, login=False, roles=(), fresh=None, org_role=None, feature=None):
         """Wrap every page under ``prefix`` in this function's markup (``{children}`` is the page).
 
-        Use as ``@app.layout`` or ``@app.layout("/admin")``. ``login=``, ``roles=``
-        and ``fresh=`` (as on :meth:`page`) then guard every page under ``prefix``.
+        Use as ``@app.layout`` or ``@app.layout("/admin")``. ``login=``, ``roles=``,
+        ``fresh=``, ``org_role=`` and ``feature=`` (as on :meth:`page`) then guard every page
+        under ``prefix``.
         """
         if callable(prefix):
             self.layouts.append(("/", prefix.__name__))

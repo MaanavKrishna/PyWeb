@@ -40,7 +40,8 @@ def test_initialize_and_listing(server):
     assert call(server, "initialize", {"protocolVersion": "1999-01-01"})["protocolVersion"] == mcp.PROTOCOL_VERSIONS[0]
     names = [t["name"] for t in call(server, "tools/list")["tools"]]
     assert names == ["pyweb_guide", "pyweb_new_app", "pyweb_check", "pyweb_inspect",
-                     "pyweb_compiled", "pyweb_render", "pyweb_call", "pyweb_routes", "pyweb_packages",
+                     "pyweb_compiled", "pyweb_render", "pyweb_call", "pyweb_openapi", "pyweb_security_check",
+                     "pyweb_routes", "pyweb_packages",
                      "pyweb_screenshot", "pyweb_db_schema", "pyweb_db_query", "pyweb_migrations",
                      "pyweb_jobs", "pyweb_requests", "pyweb_test"]
     uris = [r["uri"] for r in call(server, "resources/list")["resources"]]

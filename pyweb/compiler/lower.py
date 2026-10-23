@@ -56,7 +56,8 @@ BUILTIN_COMPONENTS = ("Markdown",) + FORM_TAGS
 FORMS_VAR = "__pw_forms__"
 FORMS_FN = "__pw_form_specs__"
 ERROR_DECORATOR = "error"
-PAGE_OPTIONS = ("title", "description", "image", "canonical", "noindex", "layout", "login", "roles", "fresh")
+PAGE_OPTIONS = ("title", "description", "image", "canonical", "noindex", "layout", "login", "roles", "fresh",
+                "org_role", "feature")
 SERVER_DECORATORS = ("server", "worker", "edge", "task")
 
 
@@ -92,11 +93,14 @@ def _page_kwargs(fn):
 
 
 def _guard(options):
-    """``login=`` / ``roles=`` / ``fresh=`` from a page or layout decorator, or None."""
+    """``login=`` / ``roles=`` / ``fresh=`` / ``org_role=`` / ``feature=`` from a page or layout
+    decorator, or None."""
     login, roles, fresh = options.get("login"), options.get("roles"), options.get("fresh")
-    if not (login or roles or fresh):
+    org_role, feature = options.get("org_role"), options.get("feature")
+    if not (login or roles or fresh or org_role or feature):
         return None
-    return {"login": True, "roles": list(roles or ()), "fresh": fresh}
+    org_roles = [org_role] if isinstance(org_role, str) else list(org_role or ())
+    return {"login": True, "roles": list(roles or ()), "fresh": fresh, "org_roles": org_roles, "feature": feature}
 
 
 def _decorator_arg(fn, name):

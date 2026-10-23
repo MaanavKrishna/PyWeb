@@ -454,3 +454,16 @@ def test_kit_pages_load_only_the_behaviour_they_use():
         r = c.get(f"/__pyweb/ui/{name}.js")
         assert r.status == 200, name
         assert "innerHTML" not in r.text and "insertAdjacentHTML" not in r.text, name
+
+
+def test_upgrade_points_at_css_for_the_old_auth_pages(tmp_path):
+    from pyweb import upgrade
+    app = tmp_path / "app.pyweb"
+    app.write_text('from pyweb import App\napp = App(stylesheets=["/static/site.css", "/static/app.css"])\n')
+    (tmp_path / "static").mkdir()
+    (tmp_path / "static" / "site.css").write_text("body { margin: 0 }\n.pw-primary { background: hotpink }\n")
+    (tmp_path / "static" / "app.css").write_text(":root { --accent: #3d5afe; --accent-soft: #e9edff; }\n")
+    found = {f.code: f for f in upgrade.check(str(app))}
+    assert found["auth-css"].file == os.path.join("static", "site.css") and found["auth-css"].line == 2
+    assert "data-variant" in found["auth-css"].message and found["auth-css"].action
+    assert found["template-css"].action is False

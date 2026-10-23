@@ -112,6 +112,33 @@ def _script_findings(path, text):
     return out
 
 
+#: The auth pages' 0.5 classes and colour variables (they use the UI kit and the theme in 0.6).
+_AUTH_CSS = re.compile(r"\.pw-(?:primary|secondary|danger|notice|inline)\b|--pw-(?:ink|line|card|accent-ink|muted|bg)\b")
+#: A line only the 0.5 starter stylesheet has.
+_OLD_TEMPLATE_CSS = "--accent-soft: #e9edff"
+
+
+def _css_findings(path, text):
+    out = []
+    rel = os.path.basename(path)
+    if _OLD_TEMPLATE_CSS in text:
+        out.append(Finding(rel, 1, "template-css",
+                           "this is the 0.5 starter stylesheet. 0.6's templates use the UI kit (pyweb.ui) and "
+                           "a layout-only app.css; yours keeps working. To compare: pyweb new demo --template todo",
+                           action=False))
+        return out
+    for i, line in enumerate(text.splitlines(), 1):
+        m = _AUTH_CSS.search(line)
+        if m:
+            out.append(Finding(rel, i, "auth-css",
+                               f"{m.group(0)} styled the 0.5 sign-in and admin pages. In 0.6 they use the UI kit: "
+                               'buttons are .pw-button[data-variant="default|outline|destructive"], notices '
+                               ".pw-alert[data-tone], cards .pw-card, and colours come from App(theme=Theme(...)) "
+                               "(--pw-fg, --pw-border, --pw-surface, --pw-accent ...)"))
+            break
+    return out
+
+
 def _is_script(path):
     fn = os.path.basename(path)
     return fn in SCRIPT_FILES or fn.endswith(SCRIPT_EXT) or fn.startswith("Dockerfile")
@@ -134,6 +161,19 @@ def check(app="app.pyweb"):
         for f in found:
             f.file = rel
             out.append(f)
+    for root, dirs, files in os.walk(app_dir):              # stylesheets live in static/ too
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS - {"static"} and not d.startswith(".") and d != "vendor"]
+        for fn in files:
+            if fn.endswith(".css"):
+                path = os.path.join(root, fn)
+                try:
+                    with open(path, encoding="utf-8") as fh:
+                        text = fh.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                for f in _css_findings(path, text):
+                    f.file = os.path.relpath(path, app_dir)
+                    out.append(f)
     if os.path.isfile(app):
         with open(app, encoding="utf-8") as fh:
             source = fh.read()

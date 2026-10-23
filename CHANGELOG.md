@@ -115,6 +115,21 @@ project uses [semantic versioning](https://semver.org).
   without alt, clicks keyboards can't reach, unlabelled fields, unnamed
   buttons and links, positive tabindex, an empty page language. The
   examples and templates were fixed where they fell short.
+- **Testing apps with organizations:** `client.login(email, org="Acme",
+  org_role="admin")` signs in as a member of that organization (created
+  if needed) and makes it the current one; `with as_org(org):` runs code
+  for an organization; `Factory(...).for_org(org)` makes tenant rows in it.
+- **`@app.page(..., org_role=..., feature=...)`** (and on layouts), like
+  `@server`: the page needs that role in the current organization, or a
+  plan with that feature (403 otherwise).
+- **Editor:** completions for `@server(...)` and `@app.page(...)` options,
+  `org_role=`, `per=`, `rate=`, plan features, `tenant=True` and webhook
+  schemes; warnings for a malformed `rate=`, an unknown role, and a
+  `tenant=True` Model read with `.unscoped()` outside `with system():`.
+- **MCP:** `pyweb_render` and `pyweb_call` take `as_user`, `roles`, `org`
+  and `org_role`; new `pyweb_openapi` and `pyweb_security_check` tools.
+- **`pyweb upgrade`** points at stylesheets written for the 0.5 sign-in and
+  admin pages' classes.
 - **Plain functions from other `.pyweb` files work in browser code**,
   along with the functions and constants they use.
 - **`math` in browser code.** `import math` (and `from math import pi`)

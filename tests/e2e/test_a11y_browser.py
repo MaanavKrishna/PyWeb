@@ -181,6 +181,7 @@ def test_saas_signed_in(audit, tmp_path, monkeypatch):
             pg.fill("input[name=email]", "ann@example.com")
             pg.fill("input[name=password]", "correct horse battery")
             pg.click("button[type=submit]")
+            pg.wait_for_url(base + "/")          # signed in; loading /projects sooner can cancel the POST
             pg.goto(base + "/projects")
             ready(pg)
             settle(pg)

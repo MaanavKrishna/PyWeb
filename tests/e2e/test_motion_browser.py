@@ -309,6 +309,13 @@ def test_drag_and_counting(page, tmp_path):
         assert mid.isdigit() and 1000 < int(mid) < 5500, mid                   # counting up
         expect(page.locator("#num")).to_have_text("5500", timeout=3000)
 
+        page.evaluate("""() => { window.__log = []; const el = document.querySelector('#home');
+            for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture',
+                             'dragstart', 'dragend']) {
+              addEventListener(t, (e) => window.__log.push(t + (e.target === el ? '' : '@' + (e.target.id || e.target.tagName))
+                                                           + (e.pointerId !== undefined ? ':' + e.pointerId : '')), true);
+            }
+            addEventListener('error', (e) => window.__log.push('error:' + e.message)); }""")
         h = page.locator("#home").bounding_box()
         page.mouse.move(h["x"] + 25, h["y"] + 25)
         page.mouse.down()
@@ -319,7 +326,7 @@ def test_drag_and_counting(page, tmp_path):
                   timeout=4)                                                   # snaps back home
         except AssertionError:
             state = page.evaluate("""() => { const el = document.querySelector('#home');
-                return {translate: getComputedStyle(el).translate, style: el.getAttribute('style'),
+                return {log: window.__log, translate: getComputedStyle(el).translate, style: el.getAttribute('style'),
                         animations: el.getAnimations().map((a) => [a.playState, a.currentTime,
                                                                     JSON.stringify(a.effect.getKeyframes().slice(-1))])}; }""")
             raise AssertionError(f"#home didn't snap back: {state}") from None

@@ -26,25 +26,16 @@ def axe():
         pytest.skip(f"axe-core unavailable: {exc}")
 
 
-def _without_csp(route):
-    if route.request.resource_type != "document" or route.request.method != "GET":
-        return route.continue_()
-    resp = route.fetch(max_redirects=0)            # the browser follows redirects itself
-    if resp.status != 200:
-        return route.continue_()                   # WebKit can't fulfill a redirect; a GET can be repeated
-    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-security-policy"}
-    return route.fulfill(response=resp, headers=headers)
-
-
 @pytest.fixture
 def audit(browser, axe):
     """``audit(page)`` -> serious and critical violations on the page as it is now."""
     contexts = []
 
     def page(**kw):
-        ctx = browser.new_context(bypass_csp=True, **kw)
-        # WebKit enforces Trusted Types even with bypass_csp, so drop the page's CSP to add axe.
-        ctx.route("**/*", _without_csp)
+        ctx = browser.new_context(**kw)
+        # An init script runs before the page's own and isn't subject to its CSP (WebKit applies
+        # Trusted Types even to add_script_tag with bypass_csp).
+        ctx.add_init_script(script=axe)
         contexts.append(ctx)
         return ctx.new_page()
 
@@ -52,8 +43,6 @@ def audit(browser, axe):
         # Colours mid-animation (a dialog fading in) aren't the colours people read.
         until(pg, "document.getAnimations().every((a) => a.playState !== 'running' || "
                   "a.effect.getComputedTiming().iterations === Infinity)")
-        if not pg.evaluate("!!window.axe"):
-            pg.add_script_tag(content=axe)
         found = pg.evaluate("""async () => {
           const r = await axe.run(document, {resultTypes: ["violations"]});
           return r.violations.filter((v) => v.impact === "serious" || v.impact === "critical")

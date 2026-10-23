@@ -1,6 +1,8 @@
 // PyWeb UI kit loader: wakes up components marked data-pw-ui="<kind>" when they appear
 // (server-rendered, created in the browser, or brought in by client navigation), loading each
-// kind's module once, only on pages that use it. Removed components are cleaned up.
+// kind's module once, only on pages that use it. Removed components are cleaned up. Plain
+// components (Card, Alert, Table, Breadcrumb) carry a kind with no module: it only marks them as
+// the owner of their parts, so a Card's "content" inside Tabs isn't taken for a tab panel.
 
 const KINDS = new Set(["dialog", "popover", "tooltip", "hover-card", "menu", "context-menu", "menubar",
   "select", "combobox", "command", "toaster", "tabs", "accordion", "collapsible", "switch", "slider",

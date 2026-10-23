@@ -79,7 +79,9 @@ EXAMPLES = [
     ("saas", "Teamboard (SaaS)", "Accounts, Models with migrations and row policies, forms, lists that update live in "
      "every tab, a background job, a daily email and an admin.", False),
     ("counter", "Counter", "Signals, a computed value and a bound number input.", True),
-    ("todo", "Todos", "Components, list mutation, filters and keyed lists.", True),
+    ("todo", "Todos", "Components, list mutation, filters and keyed lists, with rows that animate in and out.", True),
+    ("ui", "UI kit and motion", "Dialogs, menus, pickers, toasts, a data table and charts from pyweb.ui, plus "
+     "staggered, layout, drag and shared-element animations.", True),
     ("blog", "Blog", "A Model, server functions, route parameters, 404s and validation errors.", False),
     ("auth", "Accounts", "Your own registration, password hashing, sessions and protected pages.", False),
     ("chat", "Chat rooms", "Route parameters, shared server state and live updates with publish() and subscribe().",
@@ -439,6 +441,7 @@ LOGO = ('<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="p
         'stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="16" r="3.3" fill="#fff"/></svg>')
 
 _ICON_PATHS = {
+    "sparkles": '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
     "database": '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M20 12c0 1.66-3.58 3-8 3s-8-1.34-8-3"/>'
                 '<path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/>',
     "form": '<path d="m9 11 3 3 9-9"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
@@ -478,7 +481,8 @@ def icon(name):
 PYODIDE_VERSION = "0.29.5"
 # The full distribution: the core plus every package (SQLite for apps with a database).
 PYODIDE_CDN = f"https://cdn.jsdelivr.net/pyodide/v{PYODIDE_VERSION}/full/"
-PLAYGROUND_EXAMPLES = [("counter", "Counter"), ("todo", "Todo list"), ("showcase", "Showcase: server search"),
+PLAYGROUND_EXAMPLES = [("counter", "Counter"), ("todo", "Todo list"), ("ui", "UI kit and motion"),
+                       ("showcase", "Showcase: server search"),
                        ("site", "Multi-page site with a layout"), ("blog", "Blog: a Model and pages"),
                        ("saas", "SaaS: accounts, data, forms, jobs"), ("auth", "Sign-in and sessions"),
                        ("chat", "Chat with live updates"), ("ai-chat", "AI chat (demo model)")]
@@ -617,8 +621,20 @@ def doc_page(slug, title, toc, content, prev, nxt, source_file):
 
 # ----------------------------------------------------------------- examples
 
+#: Static demos can't call the server: these examples' server-made toasts become browser ones there.
+DEMO_TOASTS = {
+    'notify("saved")': 'window.pywebUI.toast({"title": "Changes saved", "description": "Your settings are up to date.", '
+                       '"tone": "success"})',
+    'notify("failed")': 'window.pywebUI.toast({"title": "Something went wrong", "description": "Nothing was changed. '
+                        'Try again.", "tone": "danger"})',
+}
+
+
 def build_demo(name):
-    """Compile an example and write a static, self-contained copy under demos/."""
+    """Write a static, self-contained copy of an example under demos/: the page as the server sends
+    it, plus every stylesheet and module it uses (the runtime, the UI kit and motion)."""
+    import tempfile
+    from pyweb.testing import TestClient
     src_path = os.path.join(ROOT, "examples", name, "app.pyweb")
     with open(src_path, encoding="utf-8") as fh:
         source = fh.read()
@@ -629,27 +645,48 @@ def build_demo(name):
                                 '{"id": 2, "title": "Run pyweb dev", "done": False}, '
                                 '{"id": 3, "title": "Ship it", "done": False}]', 1)
         source = source.replace("next_id = 1", "next_id = 4", 1)
+    for call, browser in DEMO_TOASTS.items():
+        source = source.replace(call, browser)
     out = compile_source(source, filename="app.pyweb")
-    page = next(iter(out["pages"].values()))
     d = os.path.join(OUT, "demos", name)
+    shutil.rmtree(d, ignore_errors=True)
     os.makedirs(os.path.join(d, "static"), exist_ok=True)
-    page_html = page["html"]
-    page_html = re.sub(r'(src|href)="/static/', r'\1="static/', page_html)
+    with tempfile.TemporaryDirectory() as tmp:
+        static_src = os.path.join(ROOT, "examples", name, "static")
+        if os.path.isdir(static_src):
+            shutil.copytree(static_src, os.path.join(tmp, "static"))
+        with open(os.path.join(tmp, "app.pyweb"), "w", encoding="utf-8") as fh:
+            fh.write(source)
+        client = TestClient(os.path.join(tmp, "app.pyweb"))
+        page_html = client.get("/").text
+
+        def save(url, rel):
+            path = os.path.join(d, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            body = client.get(url).body
+            if rel.endswith(".js"):
+                body = minify_js(body.decode()).encode()
+            with open(path, "wb") as fh:
+                fh.write(body)
+
+        # Server paths become relative ones (no folder names starting with "_" on the docs site).
+        def local(m):
+            url = m.group(2).replace("&amp;", "&")
+            rel = url.split("?")[0].lstrip("/").replace("__pyweb/", "kit/")
+            save(url, rel)
+            return f'{m.group(1)}="{rel}"'
+        page_html = re.sub(r'(src|href)="(/(?:static|__pyweb)/[^"]+)"', local, page_html)
+        # Modules load others by relative path on demand: the kit's behaviours, motion's add-ons.
+        browser_dir = os.path.join(ROOT, "pyweb", "runtime", "browser")
+        if "kit/ui/index.js" in page_html:
+            for fn in sorted(os.listdir(os.path.join(browser_dir, "ui"))):
+                if fn.endswith(".js"):
+                    save("/__pyweb/ui/" + fn, "kit/ui/" + fn)
+        for fn in sorted(os.listdir(browser_dir)):
+            if fn.startswith(("runtime", "markdown", "motion")) and fn.endswith(".js"):
+                save("/static/" + fn, "static/" + fn)
     with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(page_html)
-    with open(os.path.join(d, "static", f"{next(iter(out['pages']))}.js"), "w", encoding="utf-8") as fh:
-        fh.write(minify_js(page["js"]))
-    with open(os.path.join(ROOT, "pyweb", "runtime", "browser", "runtime.js"), encoding="utf-8") as fh:
-        rt = minify_js(fh.read())
-    with open(os.path.join(d, "static", "runtime.js"), "w", encoding="utf-8") as fh:
-        fh.write(rt)
-    with open(os.path.join(ROOT, "pyweb", "runtime", "browser", "markdown.js"), encoding="utf-8") as fh:
-        md = minify_js(fh.read())
-    with open(os.path.join(d, "static", "markdown.js"), "w", encoding="utf-8") as fh:
-        fh.write(md)
-    static_src = os.path.join(ROOT, "examples", name, "static")
-    if os.path.isdir(static_src):
-        shutil.copytree(static_src, os.path.join(d, "static"), dirs_exist_ok=True)
     return out
 
 
@@ -733,6 +770,10 @@ def landing(bench, demo_gz):
          "state while links load without a full reload."),
         ("link", "both", "No API layer to write",
          "<code>@server</code> functions get endpoints, argument validation, typed errors and generated browser calls."),
+        ("sparkles", "browser", "A UI kit and motion, built in",
+         "Sixty accessible components in the spirit of shadcn/ui and Radix, and spring animations like motion.dev: "
+         "<code>animate=</code>, <code>exit=</code>, <code>layout</code>, gestures and drag. One "
+         "<code>Theme(...)</code> restyles everything, sign-in and <code>/admin</code> included."),
         ("pulse", "browser", "Variables are state",
          "The compiler sees which variables your handlers change and makes exactly those reactive. Updates touch "
          "only the DOM nodes that read them."),
@@ -845,6 +886,18 @@ def landing(bench, demo_gz):
   </div>
   <div class="demo reveal"><div class="demo-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">localhost:8000</span></div>
     <iframe src="demos/todo/index.html" title="Todo demo" loading="lazy"></iframe></div>
+</section>
+<section class="band">
+  <div class="band-text reveal"><div class="kicker">UI kit and motion</div>
+    <h2>Components and animation, from Python</h2>
+    <p>Accessible dialogs, menus, pickers, tables and charts from <code>pyweb.ui</code>; springs, exit animations,
+    layout changes and drag from plain attributes. Restyle all of it with one <code>Theme(...)</code>.</p>
+    <ul class="checks"><li>Open the dialog, the menu and ⌘K</li><li>Switch to Motion: hover, drag, reorder</li>
+    <li>Flip the Dark switch</li></ul>
+    <a class="more" href="example-ui.html">See its source →</a>
+  </div>
+  <div class="demo reveal"><div class="demo-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">localhost:8000</span></div>
+    <iframe src="demos/ui/index.html" title="UI kit and motion demo" loading="lazy"></iframe></div>
 </section>
 <section>
   <div class="section-head reveal"><div class="kicker">Why PyWeb</div><h2>The good parts of modern web stacks, in Python</h2></div>

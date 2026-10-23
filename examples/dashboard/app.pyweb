@@ -1,4 +1,4 @@
-"""Sales dashboard: live queries and a Chart.js chart from npm.
+"""Sales dashboard: live queries, counters that count, the UI kit's chart and a Chart.js chart from npm.
 
 Open it in two windows and record a sale: both update at once.
 Set up with `pyweb add chart.js/auto` (already done here: see pyweb.lock).
@@ -9,6 +9,7 @@ import random
 from pyweb import App, live, npm, server
 from pyweb.browser import watch
 from pyweb.db import connect
+from pyweb.ui import BarChart, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Sparkline
 
 Chart = npm("chart.js/auto")
 
@@ -63,24 +64,65 @@ def Dashboard():
         record(product, float(amount or 0))
 
     <main>
-        <h1>Sales</h1>
-        <div class="row">
-            <div class="card-stat"><b id="count">{totals[0]["n"]}</b> sales</div>
-            <div class="card-stat"><b id="revenue">{f"${totals[0]['revenue']:,.2f}"}</b> revenue</div>
+        <div class="head">
+            <h1>Sales</h1>
+            <Button id="simulate" variant="outline" onclick={lambda: simulate()}>Simulate 10 sales</Button>
         </div>
-        <canvas id="chart" ref={canvas} height="160"></canvas>
-        <form onsubmit={add}>
-            <select bind={product} aria-label="Product">
-                for p in PRODUCTS:
-                    <option value={p}>{p}</option>
-            </select>
-            <input bind={amount} type="number" step="0.01" min="0" aria-label="Amount" style={{"max-width": "120px"}} />
-            <button>Record sale</button>
-        </form>
-        <button id="simulate" onclick={lambda: simulate()}>Simulate 10 sales</button>
-        <h2>Latest</h2>
-        <ul id="recent">
-            for s in recent:
-                <li><span>{s["product"]}</span><span class="muted">{f"${s['amount']:.2f}"}</span></li>
-        </ul>
+        <div class="kpis">
+            <Card>
+                <CardHeader><CardDescription>Sales</CardDescription></CardHeader>
+                <CardContent><b id="count" class="kpi" animate="count">{totals[0]["n"]}</b></CardContent>
+            </Card>
+            <Card>
+                <CardHeader><CardDescription>Revenue</CardDescription></CardHeader>
+                <CardContent>
+                    <b id="revenue" class="kpi" animate="count">{f"${totals[0]['revenue']:,.2f}"}</b>
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader><CardDescription>Latest amounts</CardDescription></CardHeader>
+                <CardContent>
+                    <Sparkline values={[s["amount"] for s in reversed(recent)]} width={160} height={40} area={True}
+                               label="Latest sale amounts" />
+                </CardContent>
+            </Card>
+        </div>
+        <div class="charts">
+            <Card>
+                <CardHeader>
+                    <CardTitle>By product</CardTitle>
+                    <CardDescription>The UI kit's chart: plain SVG, no JavaScript.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <BarChart data={by_product} x="product" y="revenue" height={180} label="Revenue by product" />
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Chart.js</CardTitle>
+                    <CardDescription>The same numbers through an npm package.</CardDescription>
+                </CardHeader>
+                <CardContent><canvas id="chart" ref={canvas} height="180"></canvas></CardContent>
+            </Card>
+        </div>
+        <Card>
+            <CardHeader><CardTitle>Record a sale</CardTitle></CardHeader>
+            <CardContent>
+                <form class="add" onsubmit={add}>
+                    <select class="pw-control" bind={product} aria-label="Product">
+                        for p in PRODUCTS:
+                            <option value={p}>{p}</option>
+                    </select>
+                    <input class="pw-control" bind={amount} type="number" step="0.01" min="0" aria-label="Amount" />
+                    <Button type="submit">Record sale</Button>
+                </form>
+                <h2>Latest</h2>
+                <ul id="recent">
+                    for s in recent:
+                        <li initial={{"opacity": 0, "y": -6}} animate={{"opacity": 1, "y": 0}}>
+                            <span>{s["product"]}</span><span class="muted">{f"${s['amount']:.2f}"}</span>
+                        </li>
+                </ul>
+            </CardContent>
+        </Card>
     </main>

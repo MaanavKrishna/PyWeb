@@ -193,7 +193,7 @@ def NavigationMenuLink(href, active=False, description=None, children=None, **at
 # ------------------------------------------------------------------ breadcrumb
 
 def Breadcrumb(label="Breadcrumb", children=None, **attrs):
-    <nav class="pw-breadcrumb" data-part="breadcrumb" aria-label={label} {**attrs}>
+    <nav class="pw-breadcrumb" data-pw-ui="breadcrumb" data-part="breadcrumb" aria-label={label} {**attrs}>
         <ol data-part="list">{children}</ol>
     </nav>
 

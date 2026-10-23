@@ -1,0 +1,319 @@
+"""The UI kit and motion in one page: components, animations and data, all from Python.
+
+Every component is a `.pyweb` file inside PyWeb: `pyweb ui add Dialog` copies one into your
+app to change it. Colours come from the theme (`App(theme=...)`), animations from `Motion(...)`.
+"""
+
+from pyweb import App, server
+from pyweb.motion import Motion
+from pyweb.ui import *
+from pyweb.ui import Theme, toast
+
+app = App(title="UI kit and motion", stylesheets=["/static/app.css"], theme=Theme(accent="#6d5dfc", radius=10),
+          motion=Motion(feel="snappy"))
+
+FRAMEWORKS = ["PyWeb", "Django", "Flask", "FastAPI", "Streamlit", "Reflex"]
+SALES = [{"month": "Jan", "revenue": 42}, {"month": "Feb", "revenue": 58}, {"month": "Mar", "revenue": 51},
+         {"month": "Apr", "revenue": 74}, {"month": "May", "revenue": 69}, {"month": "Jun", "revenue": 91}]
+PEOPLE = [{"id": 1, "name": "Ada Lovelace", "role": "Owner", "tasks": 12},
+          {"id": 2, "name": "Grace Hopper", "role": "Admin", "tasks": 9},
+          {"id": 3, "name": "Alan Turing", "role": "Member", "tasks": 15},
+          {"id": 4, "name": "Katherine Johnson", "role": "Member", "tasks": 7},
+          {"id": 5, "name": "Guido van Rossum", "role": "Viewer", "tasks": 3}]
+
+
+@server
+def notify(kind: str) -> None:
+    """Toasts can come from the server: they ride on the answer to this call."""
+    if kind == "saved":
+        toast("Changes saved", "Your settings are up to date.", tone="success")
+    else:
+        toast("Something went wrong", "Nothing was changed. Try again.", tone="danger")
+
+
+@app.page("/")
+def Tour():
+    dark = False
+    volume = 40
+    shown = True
+    order = ["Plan", "Build", "Ship", "Learn"]
+    picked = "Overview"
+    framework = ""
+    ran = ""
+
+    def toggle_dark(e):
+        dark = e.target.checked
+        document.documentElement.dataset.theme = "dark" if dark else "light"
+
+    def set_volume(e):
+        volume = e.detail["value"]
+
+    def pick_framework(e):
+        framework = e.detail["value"]
+
+    def run(name):
+        ran = name
+
+    def replay():
+        shown = not shown
+
+    def rotate():
+        order = order[1:] + order[:1]
+
+    def choose(name):
+        picked = name
+
+    <main>
+        <header class="top">
+            <div>
+                <h1>UI kit and motion</h1>
+                <p class="muted">Components like shadcn/ui, behaviour like Radix, animation like motion.dev: all Python.</p>
+            </div>
+            <div class="row">
+                <Switch id="dark" label="Dark" onchange={toggle_dark} />
+                <Tooltip text="Open the command palette">
+                    <Kbd>⌘K</Kbd>
+                </Tooltip>
+            </div>
+        </header>
+
+        <Tabs default="components">
+            <TabsList>
+                <TabsTrigger value="components">Components</TabsTrigger>
+                <TabsTrigger value="motion">Motion</TabsTrigger>
+                <TabsTrigger value="data">Data</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="components">
+                <div class="grid">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Buttons</CardTitle>
+                            <CardDescription>Six variants, four sizes, links that look like buttons.</CardDescription>
+                        </CardHeader>
+                        <CardContent class_="row">
+                            <Button>Default</Button>
+                            <Button variant="secondary">Secondary</Button>
+                            <Button variant="outline">Outline</Button>
+                            <Button variant="ghost">Ghost</Button>
+                            <Button variant="destructive">Delete</Button>
+                            <Button loading={True}>Saving</Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Overlays</CardTitle>
+                            <CardDescription>Focus is trapped and returned; Escape and outside clicks close.</CardDescription>
+                        </CardHeader>
+                        <CardContent class_="row">
+                            <Dialog>
+                                <DialogTrigger id="open-dialog">Open dialog</DialogTrigger>
+                                <DialogContent>
+                                    <DialogHeader>
+                                        <DialogTitle>Edit profile</DialogTitle>
+                                        <DialogDescription>Make changes here, then save.</DialogDescription>
+                                    </DialogHeader>
+                                    <label class="pw-field">Name <input class="pw-control" value="Ada Lovelace" /></label>
+                                    <DialogFooter>
+                                        <DialogClose>Cancel</DialogClose>
+                                        <DialogClose variant="default" onclick={lambda: notify("saved")}>Save</DialogClose>
+                                    </DialogFooter>
+                                </DialogContent>
+                            </Dialog>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger>Menu</DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                    <MenuLabel>My account</MenuLabel>
+                                    <MenuItem shortcut="⌘P">Profile</MenuItem>
+                                    <MenuItem shortcut="⌘,">Settings</MenuItem>
+                                    <MenuSeparator />
+                                    <MenuItem>Sign out</MenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                            <Popover>
+                                <PopoverTrigger>Popover</PopoverTrigger>
+                                <PopoverContent arrow={True}>
+                                    <p><b>Dimensions</b></p>
+                                    <p class="muted">Placed next to its trigger; it flips when there's no room.</p>
+                                </PopoverContent>
+                            </Popover>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Toasts</CardTitle>
+                            <CardDescription>From a server function, with ui.toast(...).</CardDescription>
+                        </CardHeader>
+                        <CardContent class_="row">
+                            <Button id="toast-ok" variant="outline" onclick={lambda: notify("saved")}>Success</Button>
+                            <Button variant="outline" onclick={lambda: notify("failed")}>Error</Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Pickers</CardTitle>
+                            <CardDescription>Type to filter; arrows, Enter and Escape work.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Combobox placeholder="Pick a framework…" onvaluechange={pick_framework} aria-label="Framework">
+                                for f in FRAMEWORKS:
+                                    <ComboboxOption value={f}>{f}</ComboboxOption>
+                            </Combobox>
+                            <p class="muted">Picked: <b id="framework">{framework or "nothing yet"}</b></p>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Controls</CardTitle>
+                            <CardDescription>Real form fields underneath, so forms post them.</CardDescription>
+                        </CardHeader>
+                        <CardContent class_="stack">
+                            <Slider value={volume} label="Volume" show_value={True} onvaluechange={set_volume} />
+                            <Progress value={volume} label="Volume level" />
+                            <Checkbox label="Email me about releases" checked={True} />
+                            <RadioGroup name="plan" value="pro" options={[("free", "Free"), ("pro", "Pro"), ("team", "Team")]}
+                                        orientation="horizontal" label="Plan" />
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Disclosure</CardTitle>
+                            <CardDescription>Built on details and summary: it works without JavaScript.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Accordion>
+                                <AccordionItem value="a11y">
+                                    <AccordionTrigger>Is it accessible?</AccordionTrigger>
+                                    <AccordionContent>Yes: every part follows the WAI-ARIA patterns.</AccordionContent>
+                                </AccordionItem>
+                                <AccordionItem value="change">
+                                    <AccordionTrigger>Can I change it?</AccordionTrigger>
+                                    <AccordionContent>Theme, props, variants, CSS, or copy the source with pyweb ui add.</AccordionContent>
+                                </AccordionItem>
+                            </Accordion>
+                        </CardContent>
+                    </Card>
+                </div>
+            </TabsContent>
+
+            <TabsContent value="motion">
+                <div class="grid">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Stagger</CardTitle>
+                            <CardDescription>A parent's label flows to its children, one after another.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <ul class="stagger" initial="hidden" animate={"show" if shown else "hidden"}
+                                variants={{"hidden": {}, "show": {}}} transition={{"stagger_children": 0.06}}>
+                                for step in ["Design", "Build", "Test", "Ship"]:
+                                    <li variants={{"hidden": {"opacity": 0, "x": -16}, "show": {"opacity": 1, "x": 0}}}>{step}</li>
+                            </ul>
+                            <Button id="replay" variant="outline" size="sm" onclick={replay}>{"Hide" if shown else "Show"}</Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Gestures</CardTitle>
+                            <CardDescription>Hover, press, and drag within the box.</CardDescription>
+                        </CardHeader>
+                        <CardContent class_="row">
+                            <div class="tile" while_hover={{"scale": 1.08, "rotate": 3}} while_tap={{"scale": 0.94}}>Hover me</div>
+                            <div class="drag-area">
+                                <div id="ball" class="ball" drag drag_constraints="parent" drag_elastic={0.4}
+                                     tabindex="0" aria-label="Drag me">Drag</div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Layout</CardTitle>
+                            <CardDescription>Rows glide to their new places when the order changes.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <ul id="order" class="order">
+                                for step in order:
+                                    <li layout>{step}</li>
+                            </ul>
+                            <Button id="rotate" variant="outline" size="sm" onclick={rotate}>Move the first to the end</Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Shared element</CardTitle>
+                            <CardDescription>One underline, moving between tabs with layout_id.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div class="seg" role="group" aria-label="Section">
+                                for name in ["Overview", "Activity", "Settings"]:
+                                    <button type="button" class="seg-item" aria-pressed={"true" if picked == name else "false"}
+                                            onclick={lambda: choose(name)}>
+                                        {name}
+                                        if picked == name:
+                                            <span class="underline" layout_id="underline"></span>
+                                    </button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </TabsContent>
+
+            <TabsContent value="data">
+                <div class="grid">
+                    <Card class_="wide">
+                        <CardHeader>
+                            <CardTitle>Team</CardTitle>
+                            <CardDescription>Search, sort and pages run in the browser; the first page is server-rendered.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <DataTable rows={PEOPLE} page_size={4} label="Team" columns={[
+                                {"key": "name", "label": "Name"},
+                                {"key": "role", "label": "Role"},
+                                {"key": "tasks", "label": "Open tasks", "align": "end"},
+                            ]} />
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Revenue</CardTitle>
+                            <CardDescription>SVG charts with no JavaScript.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <BarChart data={SALES} x="month" y="revenue" height={180} label="Revenue by month" />
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Trend</CardTitle>
+                            <CardDescription>A sparkline for small spaces.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Sparkline values={[s["revenue"] for s in SALES]} width={240} height={60} area={True}
+                                       label="Revenue trend" />
+                        </CardContent>
+                    </Card>
+                </div>
+            </TabsContent>
+        </Tabs>
+
+        <CommandDialog>
+            <CommandInput placeholder="Search components…" />
+            <CommandList>
+                <CommandEmpty>Nothing found.</CommandEmpty>
+                <CommandGroup heading="Components">
+                    for name in ["Dialog", "Popover", "Combobox", "Data table", "Toast"]:
+                        <CommandItem value={name} onclick={lambda: run(name)}>{name}</CommandItem>
+                </CommandGroup>
+            </CommandList>
+        </CommandDialog>
+        if ran:
+            <p class="muted" id="ran">Command palette: {ran}</p>
+    </main>

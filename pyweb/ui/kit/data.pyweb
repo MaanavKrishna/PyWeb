@@ -48,7 +48,7 @@ def _sort_value(row, key):
 
 
 def Table(caption=None, children=None, **attrs):
-    <div class="pw-table-wrap" data-part="table-wrap">
+    <div class="pw-table-wrap" data-pw-ui="table" data-part="table-wrap">
         <table class="pw-table" data-part="table" {**attrs}>
             if caption:
                 <caption>{caption}</caption>
@@ -142,7 +142,7 @@ def DataTable(rows=None, columns=None, key="id", page_size=10, search=True, plac
                 if selectable and picked:
                     <span class="pw-muted" data-part="selection">{len(picked)} selected</span>
             </div>
-        <div class="pw-table-wrap" data-part="table-wrap">
+        <div class="pw-table-wrap" data-pw-ui="table" data-part="table-wrap">
             <table class="pw-table" data-part="table" aria-label={None if caption else label}>
                 if caption:
                     <caption>{caption}</caption>

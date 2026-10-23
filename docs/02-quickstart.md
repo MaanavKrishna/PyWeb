@@ -27,7 +27,8 @@ pyweb dev app.pyweb          # http://localhost:8000, reloads on save
 `AGENTS.md`/`CLAUDE.md` (instructions for AI coding agents). Add
 `--template saas` for a small product with accounts, a database,
 migrations, live updates, a background job and an admin, or `todo`,
-`blog`, `auth`, `chat`, `ai-chat` or `blank`. The default counter app is:
+`blog`, `auth`, `chat`, `ai-chat` or `blank`. The default app is a counter.
+Without its styling (the template uses the UI kit's `Card` and `Button`), it is:
 
 ```pyweb
 from pyweb import App

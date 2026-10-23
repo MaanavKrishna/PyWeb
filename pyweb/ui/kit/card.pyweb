@@ -2,7 +2,7 @@
 
 
 def Card(children=None, **attrs):
-    <div class="pw-card" data-part="card" {**attrs}>{children}</div>
+    <div class="pw-card" data-pw-ui="card" data-part="card" {**attrs}>{children}</div>
 
 
 def CardHeader(children=None, **attrs):

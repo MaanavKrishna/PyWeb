@@ -278,7 +278,7 @@ jobs:
       - run: pip install -e . build
       - name: Check and build every example
         run: |
-          for app in counter todo blog auth chat showcase; do
+          for app in counter todo blog auth chat showcase ui dashboard; do
             python -m pyweb.cli check examples/$app/app.pyweb
             python -m pyweb.cli build examples/$app/app.pyweb --out /tmp/dist-$app --production
           done

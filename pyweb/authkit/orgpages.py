@@ -69,7 +69,7 @@ def orgs(c):
         rows += (f'<tr><td><a href="/orgs/{H.esc(org.slug)}">{H.esc(org.name)}</a></td><td>{H.esc(m.role)}</td>'
                  f"<td>{action}</td></tr>")
     body = H.notice(msg, "success") + H.notice(err, "error")
-    body += f'<table class="pw-table">{rows}</table>' if rows else '<p class="pw-muted">You aren\'t in any yet.</p>'
+    body += H.table(rows) if rows else '<p class="pw-muted">You aren\'t in any yet.</p>'
     body += "<h2>New organization</h2>" + H.form("/orgs", _hidden("action", "create") +
                                                   H.field("name", "Name", form="new", minlength=2, maxlength=80) +
                                                   H.button("Create"), csrf=c.csrf)
@@ -127,7 +127,7 @@ def org_settings(c, slug):
                 remove = H.form(f"/orgs/{org.slug}", _hidden("action", "leave") +
                                 H.button("Leave", kind="danger pw-inline"), csrf=c.csrf)
         rows += f"<tr>{cells}<td>{role_cell}</td><td>{remove}</td></tr>"
-    body += f'<h2>Members</h2><table class="pw-table pw-members">{rows}</table>'
+    body += f'<h2>Members</h2><div class="pw-table-wrap"><table class="pw-table pw-members">{rows}</table></div>'
     if manage:
         allowed = ROLES if mine.role == "owner" else [r for r in ROLES if r != "owner"]
         opts = "".join(f'<option value="{r}"{" selected" if r == "member" else ""}>{r}</option>' for r in allowed)
@@ -143,7 +143,7 @@ def org_settings(c, slug):
                            H.form(f"/orgs/{org.slug}", _hidden("action", "cancel_invite") + _hidden("id", i.id) +
                                   H.button("Cancel", kind="secondary pw-inline"), csrf=c.csrf) + "</td></tr>"
                            for i in pending)
-            body += f'<h3>Waiting for an answer</h3><table class="pw-table">{rows}</table>'
+            body += f'<h3>Waiting for an answer</h3><div class="pw-table-wrap"><table class="pw-table">{rows}</table></div>'
     if mine.role == "owner":
         others = [(m, u) for m, u in kit.members(org) if u.id != user.id]
         if others:

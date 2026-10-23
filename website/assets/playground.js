@@ -405,26 +405,40 @@
     frame.srcdoc = preview(r.body || `<p>${r.status}</p>`);
   }
 
-  // Point a module's imports of the runtime and its add-ons (markdown.js, forms.js,
-  // live.js) at their blob: URLs.
-  const addonUrls = {};
-  function linkModules(js) {
-    js = js.replace(/from\s+"\.\/runtime\.js"/g, `from "${runtimeUrl}"`);
-    return js.replace(/(from\s+|import\s+)"\.\/(markdown|forms|live)\.js"/g, (m, kw, name) => {
-      if (!addonUrls[name]) {
-        const src = request("GET", `/static/${name}.js`).body.replace(/from\s+"\.\/runtime\.js"/g, `from "${runtimeUrl}"`);
-        addonUrls[name] = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
-      }
-      return `${kw}"${addonUrls[name]}"`;
+  // Point a module's imports of the runtime and its add-ons (markdown.js, forms.js, live.js,
+  // motion*.js and the UI kit's modules) at blob: URLs. blob: URLs can't resolve "./x.js", so
+  // every "./x.js" string in a module becomes the blob: URL of that file (from the same folder).
+  const shared = {};          // the kit's and motion's modules, one instance each across pages
+  const isShared = (p) => /^\/__pyweb\/ui\/|^\/static\/(motion[\w-]*|markdown|forms|live)\.js$/.test(p);
+  function moduleUrl(p) {
+    if (!shared[p]) {
+      const r = request("GET", p);
+      const dir = p.slice(0, p.lastIndexOf("/") + 1);
+      shared[p] = URL.createObjectURL(new Blob([r.status === 200 ? linkModules(r.body, dir) : ""],
+        { type: "text/javascript" }));
+    }
+    return shared[p];
+  }
+  function linkModules(js, dir = "/static/") {
+    // The kit's loader imports `./${kind}.js` for each kind it knows (its KINDS list).
+    js = js.replace(/import\(`\.\/\$\{(\w+)\}\.js`\)/g, (m, v) => {
+      const kinds = /const KINDS = new Set\(\[([^\]]*)\]/.exec(js);
+      const urls = {};
+      for (const [, k] of (kinds ? kinds[1] : "").matchAll(/"([\w-]+)"/g)) urls[k] = moduleUrl(dir + k + ".js");
+      return `import(${JSON.stringify(urls)}[${v}])`;
     });
+    return js.replace(/(["'])\.\/([\w-]+)\.js\1/g, (m, q, name) =>
+      JSON.stringify(name === "runtime" ? runtimeUrl : moduleUrl(dir + name + ".js")));
   }
 
   // Page HTML with /static/ files turned into blob: URLs and a bridge
   // that sends the app's own requests (/__pyweb/...) to Python and its
   // console messages and errors to the playground's Console.
   function preview(html) {
-    html = html.replace(/(src|href)="(\/static\/[^"]+)"/g, (m, attr, url) => {
-      const res = request("GET", url.replace(/&amp;/g, "&"));
+    html = html.replace(/(src|href)="(\/(?:static|__pyweb)\/[^"]+)"/g, (m, attr, url) => {
+      url = url.replace(/&amp;/g, "&");
+      if (isShared(url.split("?")[0])) return `${attr}="${moduleUrl(url.split("?")[0])}"`;
+      const res = request("GET", url);
       if (res.status !== 200) return `${attr}="${blobFor("", "text/plain")}"`; // missing: don't ask the docs site
       let body = res.body;
       const type = (res.headers["content-type"] || "text/plain").split(";")[0];

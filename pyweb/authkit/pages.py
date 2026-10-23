@@ -88,7 +88,7 @@ def page(c, title, body, *, status=200, wide=False, lead="", passkeys=False):
     css = list(getattr(c.kit.app, "stylesheets", []) or [])
     scripts = ["/__pyweb/auth/auth.js"] if passkeys else []
     html = H.shell(title, H.card(title, body, wide=wide, lead=lead), site=c.kit.site_name, css=css, scripts=scripts,
-                   lang=getattr(c.kit.app, "lang", "en") or "en")
+                   lang=getattr(c.kit.app, "lang", "en") or "en", app=c.kit.app)
     return _resp(status, html)
 
 
@@ -137,7 +137,7 @@ def login_page(c, *, error="", info="", email="", status=200):
         parts += '<p class="pw-or">or</p>'
         q = urllib.parse.urlencode({"next": nxt}) if nxt else ""
         for p in providers:
-            parts += (f'<a class="pw-button pw-secondary" href="/auth/{p.name}/start{("?" + q) if q else ""}">'
+            parts += (f'<a class="pw-button pw-block" data-variant="outline" href="/auth/{p.name}/start{("?" + q) if q else ""}">'
                       f"Continue with {H.esc(p.label)}</a>")
     links = []
     if kit.signup:
@@ -440,8 +440,9 @@ def account_tokens(c):
                 err = "Unknown token."
     body = H.notice(msg, "success") + H.notice(err, "error")
     if made:
-        body += ('<div class="pw-notice pw-success" role="status"><p>Your new token. Copy it now: it won\'t be '
-                 f'shown again.</p><input class="pw-code" readonly value="{H.esc(made)}" aria-label="Token"></div>')
+        body += ('<div class="pw-alert pw-notice" data-tone="success" role="status"><p data-part="description">'
+                 'Your new token. Copy it now: it won\'t be shown again.</p>'
+                 f'<input class="pw-control pw-code" readonly value="{H.esc(made)}" aria-label="Token"></div>')
     rows = ""
     for t in kit.tokens(user):
         scopes = ", ".join(t.scopes or ["*"])
@@ -453,7 +454,7 @@ def account_tokens(c):
                         f'<input type="hidden" name="id" value="{t.id}">' + H.button("Revoke", kind="danger pw-inline"),
                         csrf=c.csrf) + "</td></tr>")
     if rows:
-        body += f'<table class="pw-table">{rows}</table>'
+        body += H.table(rows)
     body += ("<h2>New token</h2><p>For scripts and other services: send it as <code>Authorization: Bearer "
              "&lt;token&gt;</code> when calling a server function.</p>" +
              H.form("/account/tokens", '<input type="hidden" name="action" value="create">' +
@@ -582,8 +583,8 @@ def _account_body(c, user, msg, err, extra):
                      f'<input type="hidden" name="id" value="{p.id}">' + H.button("Remove", kind="danger pw-inline"),
                      csrf=c.csrf) + "</td></tr>"
             for p in Credential.where(user=user).order("id"))
-        table = (f'<table class="pw-table"><tr><th>Passkey</th><th>Added</th><th>Last used</th><th></th></tr>{rows}'
-                 "</table>") if rows else '<p class="pw-muted">No passkeys yet.</p>'
+        table = (f'<div class="pw-table-wrap"><table class="pw-table"><tr><th>Passkey</th><th>Added</th><th>Last used</th><th></th></tr>{rows}'
+                 "</table></div>") if rows else '<p class="pw-muted">No passkeys yet.</p>'
         out += ("<h2>Passkeys</h2><p class=\"pw-muted\">Sign in with your fingerprint, face or device PIN.</p>" + table +
                 '<div data-pw-passkey-only hidden>' + H.field("passkey_name", "Name for the new passkey",
                                                               value="Passkey", required=False, form="pk") +
@@ -614,11 +615,11 @@ def _account_body(c, user, msg, err, extra):
             else:
                 action = f'<a href="/auth/{p.name}/start?next=/account">Connect</a>'
             rows += f"<tr><td>{H.esc(p.label)}</td><td>{H.esc(ident.email or '') if ident else ''}</td><td>{action}</td></tr>"
-        out += f'<h2>Connected accounts</h2><table class="pw-table">{rows}</table>'
+        out += f'<h2>Connected accounts</h2><div class="pw-table-wrap"><table class="pw-table">{rows}</table></div>'
     events = AuthEvent.where(user=user).order("-id").limit(8).all()
     rows = "".join(f"<tr><td>{e.created_at:%Y-%m-%d %H:%M}</td><td>{H.esc(e.kind.replace('_', ' '))}"
                    f"{'' if e.ok else ' (failed)'}</td><td>{H.esc(e.ip or '')}</td></tr>" for e in events)
-    out += f'<h2>Recent activity</h2><table class="pw-table">{rows}</table>'
+    out += f'<h2>Recent activity</h2><div class="pw-table-wrap"><table class="pw-table">{rows}</table></div>'
     out += "<h2>Where you're signed in</h2>"
     try:
         sessions = kit.sessions(user)
@@ -637,7 +638,7 @@ def _account_body(c, user, msg, err, extra):
         rows += (f"<tr><td>{H.esc(s.device or 'Unknown device')}</td><td>{H.esc(s.ip or '')}</td>"
                  f"<td>signed in {s.created_at:%Y-%m-%d}, last seen {seen:%Y-%m-%d %H:%M}</td><td>{action}</td></tr>")
     if rows:
-        out += f'<table class="pw-table pw-sessions">{rows}</table>'
+        out += H.table(rows, cls="pw-sessions")
     out += H.form("/account", '<input type="hidden" name="action" value="revoke">' +
                   H.button("Sign out of every other device", kind="secondary pw-inline"), csrf=c.csrf)
     out += H.form("/logout", H.button("Sign out", kind="secondary pw-inline"), csrf=c.csrf)

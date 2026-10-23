@@ -55,15 +55,26 @@ def test_counter_runs_hydrated_and_shows_compiler_output(page, site):
     expect(page.locator("#pg-place td.name", has_text="increment")).to_be_visible()
 
 
+def test_ui_kit_and_motion_run_in_the_preview(page, site):
+    app = open_playground(page, site, "#ui")
+    app.locator("#open-dialog").click()                      # the kit's modules load from blob: URLs
+    expect(app.get_by_role("dialog", name="Edit profile")).to_be_visible()
+    app.locator("dialog").get_by_role("button", name="Save").click()
+    expect(app.get_by_text("Changes saved")).to_be_visible()     # a toast from a server function
+    app.get_by_role("tab", name="Motion").click()
+    app.locator("#rotate").click()
+    expect(app.locator("#order li")).to_have_text(["Build", "Ship", "Learn", "Plan"])
+
+
 def test_edits_recompile_and_errors_show_line_and_fix(page, site):
     app = open_playground(page, site)
     editor = page.locator("#pg-source")
-    editor.fill(editor.input_value().replace("<h1>Counter</h1>", "<h1>Edited</h1>"))
+    editor.fill(editor.input_value().replace(">Counter</h1>", ">Edited</h1>"))
     expect(app.locator("h1")).to_have_text("Edited")
-    editor.fill(editor.input_value().replace("<h1>Edited</h1>", "<h1>Edited</div>"))
+    editor.fill(editor.input_value().replace(">Edited</h1>", ">Edited</div>"))
     expect(page.locator("#pg-error")).to_contain_text("mismatched </div>")
     expect(page.locator("#pg-error em")).to_contain_text("closing tags")
-    expect(page.locator("#pg-gutter b")).to_have_text("19")
+    expect(page.locator("#pg-gutter b")).to_have_text("22")
 
 
 def test_server_functions_sessions_and_navigation(page, site):
@@ -174,7 +185,7 @@ def test_several_files_share_and_download(page, site):
     page.locator("#pg-files button", has_text="app.pyweb").click()
     editor = page.locator("#pg-source")
     editor.fill(editor.input_value().replace("from pyweb import App", "from pyweb import App\nfrom widgets import Badge")
-                .replace("<h1>Counter</h1>", '<h1>Counter</h1>\n        <Badge text="from another file" />'))
+                .replace(">Counter</h1>", '>Counter</h1>\n                <Badge text="from another file" />'))
     expect(app.locator("#badge")).to_have_text("from another file", timeout=15000)
     # an error in the other file opens it and points at the line
     page.locator("#pg-files button", has_text="widgets.pyweb").click()
@@ -225,8 +236,9 @@ def test_database_jobs_and_sign_in(page, site):
         print("error:", page.locator("#pg-error").inner_text(), "| status:", page.locator("#pg-status").inner_text())
         print("frame:", app.locator("body").inner_text()[:2000])
         raise
+    app.locator("#new-project").click()                                    # the form is in a dialog
     app.locator("input[name=name]").fill("Launch")
-    app.locator("button[type=submit]").click()
+    app.locator("dialog button[type=submit]").click()
     expect(app.locator("#tasks li")).to_have_count(3, timeout=15000)       # the welcome_tasks job ran
     expect(page.locator("#pg-console")).to_contain_text("welcome_tasks ran")
     page.click('.pg-tabs [data-tab="db"]')

@@ -101,6 +101,11 @@ project uses [semantic versioning](https://semver.org).
   - The editor completes variant, size and tone values, presets,
     `Theme(...)`/`Motion(...)` settings and transition keys, and warns
     about unknown ones or out-of-range springs.
+- **A "UI kit and motion" example** (`examples/ui`): dialogs, menus,
+  pickers, toasts, a data table and charts, plus staggered, gesture,
+  drag, layout and shared-element animations. It runs on the website, as
+  a live demo and in the playground.
+- `MenuItem(href=...)` makes a menu item a link.
 - **Accessibility checks** in `pyweb check` and the editor: images
   without alt, clicks keyboards can't reach, unlabelled fields, unnamed
   buttons and links, positive tabindex, an empty page language. The
@@ -167,6 +172,20 @@ project uses [semantic versioning](https://semver.org).
   and request ids no longer cost a system call each.
 - **`import pyweb` takes 2 ms** instead of 87 ms, and `pyweb --version`
   about a third of the time it did: modules load when first used.
+- **The sign-in, account, organization and admin pages use the UI kit**
+  and the app's theme: `App(theme=...)` restyles them along with your
+  pages. `/__pyweb/auth/auth.css` now only lays them out.
+- **The templates and examples use the UI kit and motion.** `todo` rows
+  animate in and out and filter with a toggle group; `counter` counts;
+  `saas` (Teamboard) has a sidebar layout with an account menu, a
+  new-project dialog, toasts, animated live tasks, empty states and the
+  zinc theme; the dashboard's totals count up and it adds the kit's bar
+  chart and a sparkline. The shared `static/app.css` only lays pages out.
+- The CI benchmark measures fixed copies of the todo and saas apps
+  (`bench/apps/`), so redesigning an example doesn't read as a speed
+  change.
+- The website's live demos are what the server sends (with the kit's and
+  motion's files), and the playground runs apps that use the kit.
 - Tracebacks from `.pyweb` files show the source lines.
 - `pyweb check` reports the line of a Python syntax error.
 - **`pyweb.platform` is real and supported:** `platform.desktop`,
@@ -175,6 +194,11 @@ project uses [semantic versioning](https://semver.org).
   were placeholders); `pyweb upgrade` points at them.
 
 ### Fixed
+- A `Card` (or `Alert`, `Table`, `Breadcrumb`) inside `Tabs` had its
+  content taken for a tab panel and hidden; and the card's header styles
+  reached a data table's header row inside it.
+- The saas template's daily digest called a query method that doesn't
+  exist (`values_list`); it uses `pluck`, and a test runs it.
 - A menubar arrow key pressed right after opening a menu (before focus
   moved into it) left that menu open.
 - `lambda n=n: go(n)` in an event handler kept the event instead of `n`.

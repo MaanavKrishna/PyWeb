@@ -106,7 +106,35 @@ after the commit, and failures are retried. The cron job emails everyone
 their open tasks on weekday mornings, exactly once even with many
 servers. See [Background jobs](24-jobs.md).
 
-## 6. Change something
+## 6. The look
+
+Teamboard is built from the UI kit (`from pyweb.ui import ...`):
+
+```html
+<Dialog>
+    <DialogTrigger id="new-project">New project</DialogTrigger>
+    <DialogContent>
+        <DialogHeader><DialogTitle>New project</DialogTitle></DialogHeader>
+        <Form action={create_project} redirect="/projects/{id}">...</Form>
+    </DialogContent>
+</Dialog>
+```
+
+- the layout is a `SidebarProvider` with your projects (and their open
+  task counts) on the left and a `DropdownMenu` for your account;
+- "New project" opens a `Dialog` around the same `<Form>`;
+- `create_project` calls `toast("Project created", ...)` and the page
+  shows it;
+- each task row has `initial`, `animate`, `exit` and `layout`, so new
+  tasks slide in, deleted ones slide out and the rest glide into place,
+  in every open tab;
+- `App(theme=Theme.preset("zinc"))` sets the colours, for the sign-in
+  pages and `/admin` too.
+
+Change the theme in the dev toolbar (`pyweb dev`, then Theme) and save
+it into `app.pyweb`. See [UI kit and motion](34-ui-and-motion.md).
+
+## 7. Change something
 
 Add a due date to tasks. In `app.pyweb`:
 
@@ -142,7 +170,7 @@ pyweb db upgrade
 The new input is a date picker, because the parameter is a `date`, and
 the server rejects anything that isn't a date.
 
-## 7. See what it does
+## 8. See what it does
 
 The badge in the corner of every page is the dev toolbar. It shows each
 request's time and SQL. If the project page ever reads `task.owner.name`
@@ -150,7 +178,7 @@ in a loop without `.include("owner")`, the toolbar and your editor both
 flag the N+1 query and name the fix. See
 [Logs, metrics & tracing](26-observability.md).
 
-## 8. Test it
+## 9. Test it
 
 ```bash
 pytest
@@ -161,7 +189,7 @@ projects, runs the queued jobs and checks that Bob can't see Ann's
 project. Add a test for each thing you change. `pyweb db check` in CI
 fails if a Model changed without a migration.
 
-## 9. Ship it
+## 10. Ship it
 
 ```bash
 pyweb deploy compose --domain teamboard.example.com

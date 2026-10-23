@@ -2,6 +2,7 @@
 
 from pyweb import App, RPCError, redirect, server, session
 from pyweb.auth import hash_password, verify_password
+from pyweb.ui import Badge, Button, Card, CardContent, CardDescription, CardFooter, CardHeader
 
 app = App(title="Accounts", stylesheets=["/static/app.css"])
 
@@ -50,17 +51,26 @@ def Login():
         else:
             error = "Wrong email or password."
 
-    <main>
-        <h1>Sign in</h1>
-        <form onsubmit={submit}>
-            <div style={{"flex": "1"}}>
-                <input id="email" type="email" bind={email} placeholder="Email" />
-                <input id="password" type="password" bind={password} placeholder="Password" />
-                <p class="error" id="error">{error}</p>
-                <button id="login" class="primary">Sign in</button>
-            </div>
-        </form>
-        <p class="muted">No account? <a href="/register">Create one</a>.</p>
+    <main class="narrow">
+        <Card animate="fade-up">
+            <CardHeader>
+                <h1 data-part="title">Sign in</h1>
+                <CardDescription>Welcome back.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <form class="stack" onsubmit={submit}>
+                    <label class="pw-field">Email <input id="email" class="pw-control" type="email" bind={email} /></label>
+                    <label class="pw-field">Password
+                        <input id="password" class="pw-control" type="password" bind={password} />
+                    </label>
+                    <p class="error" id="error" role="alert">{error}</p>
+                    <Button id="login" type="submit">Sign in</Button>
+                </form>
+            </CardContent>
+            <CardFooter>
+                <p class="muted">No account? <a href="/register">Create one</a>.</p>
+            </CardFooter>
+        </Card>
     </main>
 
 
@@ -78,17 +88,25 @@ def Register():
         except RPCError as e:
             error = str(e)
 
-    <main>
-        <h1>Create account</h1>
-        <form onsubmit={submit}>
-            <div style={{"flex": "1"}}>
-                <input id="name" bind={name} placeholder="Name" />
-                <input id="email" type="email" bind={email} placeholder="Email" />
-                <input id="password" type="password" bind={password} placeholder="Password (8+ characters)" />
-                <p class="error" id="error">{error}</p>
-                <button id="register" class="primary">Create account</button>
-            </div>
-        </form>
+    <main class="narrow">
+        <Card animate="fade-up">
+            <CardHeader>
+                <h1 data-part="title">Create account</h1>
+                <CardDescription>It takes ten seconds.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <form class="stack" onsubmit={submit}>
+                    <label class="pw-field">Name <input id="name" class="pw-control" bind={name} /></label>
+                    <label class="pw-field">Email <input id="email" class="pw-control" type="email" bind={email} /></label>
+                    <label class="pw-field">Password
+                        <input id="password" class="pw-control" type="password" bind={password}
+                               placeholder="8+ characters" />
+                    </label>
+                    <p class="error" id="error" role="alert">{error}</p>
+                    <Button id="register" type="submit">Create account</Button>
+                </form>
+            </CardContent>
+        </Card>
     </main>
 
 
@@ -104,8 +122,14 @@ def Account():
         logout()
         window.location.href = "/"
 
-    <main>
-        <h1>Hello, {name}</h1>
-        <p class="muted">Signed in as {email}</p>
-        <button id="logout" onclick={sign_out}>Sign out</button>
+    <main class="narrow">
+        <Card animate="fade-up">
+            <CardHeader>
+                <h1 data-part="title">Hello, {name}</h1>
+                <CardDescription>Signed in as {email} <Badge tone="success">active session</Badge></CardDescription>
+            </CardHeader>
+            <CardFooter>
+                <Button id="logout" variant="outline" onclick={sign_out}>Sign out</Button>
+            </CardFooter>
+        </Card>
     </main>

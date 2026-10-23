@@ -3,7 +3,7 @@
 from playwright.sync_api import expect
 
 from pyweb.testing import serve
-from tests.e2e.conftest import ready
+from tests.e2e.conftest import ready, settle
 
 
 def test_counter(page):
@@ -45,6 +45,27 @@ def test_todo(page):
         expect(page.locator("#list li span")).to_have_text(["write docs", "celebrate"])
         page.locator("#list li .remove").first.click()
         expect(page.locator("#left")).to_have_text("1 item left")
+        settle(page)
+
+
+def test_todo_rows_animate_in_and_out(page):
+    from tests.e2e.conftest import until
+    with serve("examples/todo/app.pyweb") as url:
+        page.goto(url)
+        ready(page)
+        for title in ["one", "two"]:
+            page.fill("#new", title)
+            page.press("#new", "Enter")
+        expect(page.locator("#list li")).to_have_count(2)
+        settle(page)
+        page.locator("#list li .remove").first.click()
+        until(page, "!!document.querySelector('#list li[inert]')")           # leaving, still on screen
+        expect(page.locator("#list li")).to_have_count(1)                    # then gone
+        expect(page.locator("#list li span")).to_have_text(["two"])
+        page.emulate_media(reduced_motion="reduce")
+        page.locator("#list li .remove").first.click()
+        expect(page.locator("#list li")).to_have_count(0, timeout=500)
+        expect(page.locator(".empty")).to_be_visible()
 
 
 def test_blog(page, tmp_path, monkeypatch):

@@ -163,7 +163,7 @@ def test_kit_components_render_with_theme_and_styles():
     assert re.search(r'<link rel="stylesheet" href="/__pyweb/theme\.css\?v=\w+"><link rel="stylesheet" '
                      r'href="/__pyweb/ui\.css\?v=\w+">', html)
     b = body(html)
-    assert '<div data-part="card" class="pw-card wide" id="c">' in b
+    assert '<div data-pw-ui="card" data-part="card" class="pw-card wide" id="c">' in b
     assert ('<button data-part="button" data-variant="default" data-size="md" type="button" class="pw-button" '
             'aria-label="add">Clicked 0</button>') in b
     assert '<a data-part="button" data-variant="outline" data-size="sm" href="/plans" class="pw-button">Plans</a>' in b

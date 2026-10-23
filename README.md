@@ -378,13 +378,14 @@ real browser by the test suite.
 |---|---|
 | [`saas`](examples/saas/app.pyweb) | accounts, Models with migrations, row policies, forms, live lists, a job, a daily email, an admin |
 | [`counter`](examples/counter/app.pyweb) | signals, computed values, binding a number input |
-| [`todo`](examples/todo/app.pyweb) | components, list mutation, filters, keyed lists |
+| [`todo`](examples/todo/app.pyweb) | components, list mutation, filters, keyed lists, rows that animate in and out |
+| [`ui`](examples/ui/app.pyweb) | the UI kit (dialogs, menus, pickers, toasts, a data table, charts) and motion (stagger, gestures, drag, layout) |
 | [`blog`](examples/blog/app.pyweb) | a Model, server functions, route parameters, 404s, validation errors |
 | [`auth`](examples/auth/app.pyweb) | your own registration, password hashing and sessions (or use `app.use_auth()`) |
 | [`chat`](examples/chat/app.pyweb) | route parameters, shared server state, live updates with `publish`/`subscribe` |
 | [`showcase`](examples/showcase/app.pyweb) | everything on one page, with a stylesheet |
 | [`site`](examples/site/app.pyweb) | a layout, client-side navigation, query parameters, page titles, a 404 page |
-| [`dashboard`](examples/dashboard/app.pyweb) | live queries and a Chart.js chart from npm, in every open window |
+| [`dashboard`](examples/dashboard/app.pyweb) | live queries, counters that count, the kit's chart and a Chart.js chart from npm, in every open window |
 | [`ai-chat`](examples/ai-chat/app.pyweb) | streaming AI replies with Stop and Markdown (Anthropic, OpenAI-compatible or a demo model) |
 
 ## Documentation

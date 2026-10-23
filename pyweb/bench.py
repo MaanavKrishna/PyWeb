@@ -148,7 +148,10 @@ def network_rps(seconds=2.0, connections=32):
     import sys
     from pyweb.hosting import Site
     from pyweb.net.server import Running
-    app = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples", "todo", "app.pyweb")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    app = os.path.join(root, "bench", "apps", "todo.pyweb")      # a fixed copy, so redesigning the example
+    if not os.path.exists(app):                                  # doesn't read as a speed change
+        app = os.path.join(root, "examples", "todo", "app.pyweb")
     if not os.path.exists(app):
         return None                     # installed without the examples
     running = Running(Site(app))
@@ -163,8 +166,9 @@ def network_rps(seconds=2.0, connections=32):
 
 
 def saas_page_us(repeat=300):
-    """A signed-in project page with 23 tasks (the saas template on SQLite), in microseconds."""
+    """A signed-in project page with 23 tasks (a fixed copy of the 0.5 saas template on SQLite), in microseconds."""
     import os
+    import shutil
     import tempfile
     from pyweb.mcp import scaffold
     from pyweb.testing import TestClient
@@ -172,7 +176,11 @@ def saas_page_us(repeat=300):
     with tempfile.TemporaryDirectory() as tmp:
         try:
             os.chdir(tmp)
-            scaffold(os.path.join(tmp, "team"), template="saas")
+            fixed = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bench", "apps", "saas")
+            if os.path.isdir(fixed):
+                shutil.copytree(fixed, os.path.join(tmp, "team"))
+            else:
+                scaffold(os.path.join(tmp, "team"), template="saas")
             os.chdir(os.path.join(tmp, "team"))
             client = TestClient("app.pyweb")
             client.login("bench@example.com")

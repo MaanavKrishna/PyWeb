@@ -27,6 +27,14 @@ def Billing():
     </Card>
 ```
 
+**See it:** the UI kit and motion example (`examples/ui/app.pyweb`,
+also in the playground and as a live demo on the website) tours the
+components and the animations. The `pyweb new` templates use the kit
+too: `todo` animates its rows, and `saas` has a sidebar layout, an
+account menu, a dialog, toasts and animated live tasks. The sign-in,
+account and `/admin` pages are built from the same classes and follow
+your theme.
+
 Pages that use the kit get its stylesheet (`/__pyweb/ui.css`, about
 9 KB gzipped) and the theme (`/__pyweb/theme.css`); pages that don't
 use it get neither.

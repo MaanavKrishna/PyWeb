@@ -125,7 +125,8 @@ class Browser:
 
 
 def errors(html):
-    return re.findall(r'class="pw-(?:error|notice pw-error)"[^>]*>([^<]+)<', html)
+    return re.findall(r'(?:class="pw-error"[^>]*>|data-tone="danger" role="alert"><p data-part="description">)([^<]+)<',
+                      html)
 
 
 @pytest.fixture
@@ -648,3 +649,29 @@ def test_audit_entries_survive_a_rolled_back_request(make):
             raise RuntimeError("the request failed")
     assert User.where(email="temp@example.com").first() is None     # its writes rolled back
     assert AuthEvent.where(kind="login_failed", email="mallory@example.com").exists()   # the audit entry didn't
+
+
+# ------------------------------------------------------------------- look
+
+def test_auth_and_admin_pages_use_the_kit_and_the_app_theme(make):
+    from pyweb.ui import Theme
+    site = make()
+    site.app.app.theme = Theme(accent="#ff0066", radius=4)
+    anon = Browser(site)
+    _, _, login = anon.get("/login")
+    assert 'href="/__pyweb/ui.css?v=' in login and 'href="/__pyweb/auth/auth.css"' in login
+    assert 'class="pw-card"' in login and 'data-part="title"' in login
+    assert 'class="pw-button pw-block" data-variant="default"' in login
+    theme_href = re.search(r'href="(/__pyweb/theme\.css\?v=[^"]+)"', login).group(1)
+    status, _, css = anon.get(theme_href)
+    assert status == 200 and css.startswith(Theme(accent="#ff0066", radius=4).css()[:200])
+    assert "--pw-radius:4px" in css.replace(" ", "")
+    status, _, sheet = anon.get("/__pyweb/auth/auth.css")
+    assert status == 200 and "#4f46e5" not in sheet          # colours come from the theme now
+    admin, _, _ = signed_up(site, email="boss@example.com", roles=["admin"])
+    _, _, account = admin.get("/account")
+    assert 'data-variant="destructive"' in account and 'class="pw-table-wrap"' in account
+    _, _, users = admin.get("/admin/users")
+    assert '<nav class="pw-nav" aria-label="Admin">' in users and 'aria-current="page"' in users
+    _, _, bad = admin.post("/account", {"action": "password", "current": "wrong", "password": "x"})
+    assert 'class="pw-alert pw-notice" data-tone="danger" role="alert"' in bad

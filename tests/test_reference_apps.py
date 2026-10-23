@@ -6,6 +6,7 @@ Interactive behaviour of the same apps is covered in a real browser by
 
 from __future__ import annotations
 
+import re
 import threading
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -51,7 +52,7 @@ class TestCounterApp:
     def test_reactive_nodes_and_build(self):
         out = compile_source(_src("counter"))
         page = out["pages"]["Home"]
-        assert '<button id="inc">Count: 0</button>' in page["html_body"]
+        assert re.search(r'<button [^>]*id="inc"[^>]*>Count: 0</button>', page["html_body"])
         assert page["signals"] == ["count", "step"]
         assert "count($py.add(count(), step()))" in page["js"]
 

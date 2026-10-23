@@ -65,3 +65,14 @@ def test_tasks(client):
     task = client.rpc("add_task", project_id=project["id"], title="Water plants")
     assert client.rpc("toggle", task_id=task["id"]) is True
     assert "Water plants" in client.get(f"/projects/{project['id']}").text
+
+
+def test_the_morning_digest_emails_open_tasks(client):
+    from pyweb import mail
+    from pyweb.jobs.core import REGISTRY
+    client.login("ann@example.com")
+    project = client.rpc("create_project", project={"name": "Chores"})
+    client.rpc("add_task", project_id=project["id"], title="Water plants")
+    mail.OUTBOX.clear()
+    REGISTRY["morning_digest"].run()
+    assert any("Water plants" in m.text for m in mail.OUTBOX)

@@ -1,4 +1,5 @@
 from pyweb import App
+from pyweb.ui import Button, Card, CardContent, CardDescription, CardHeader
 
 app = App(title="Counter")
 
@@ -15,12 +16,22 @@ def Home():
     def reset():
         count = 0
 
-    <main>
-        <h1>Counter</h1>
-        <button id="inc" onclick={increment}>Count: {count}</button>
-        <button id="reset" onclick={reset} disabled={count == 0}>Reset</button>
-        <label>
-            Step <input id="step" type="number" bind={step} />
-        </label>
-        <p id="doubled">Doubled: {doubled}</p>
+    <main style="max-width: 420px; margin: 64px auto; padding: 0 16px">
+        <Card>
+            <CardHeader>
+                <h1 data-part="title">Counter</h1>
+                <CardDescription>A signal, a computed value and a bound input.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <p style="font-size: 56px; font-weight: 700; line-height: 1; margin: 8px 0 24px" animate="count">{count}</p>
+                <div style="display: flex; gap: 8px; margin-bottom: 16px">
+                    <Button id="inc" onclick={increment}>Count: {count}</Button>
+                    <Button id="reset" variant="outline" onclick={reset} disabled={count == 0}>Reset</Button>
+                </div>
+                <label class="pw-field">
+                    Step <input id="step" class="pw-control" type="number" bind={step} />
+                </label>
+                <p id="doubled">Doubled: {doubled}</p>
+            </CardContent>
+        </Card>
     </main>

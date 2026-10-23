@@ -123,7 +123,8 @@ def dispatch(kit, server, req):
         if not parts:
             rows = "".join(f'<tr><td><a href="/admin/{t}">{H.esc(_label(m))}</a></td><td>{m.query().count()}</td></tr>'
                            for t, m in sorted(models.items()))
-            body = f'<table class="pw-table"><tr><th>Table</th><th>Rows</th></tr>{rows}</table>'
+            body = (f'<div class="pw-table-wrap"><table class="pw-table"><tr><th>Table</th><th>Rows</th></tr>{rows}'
+                    '</table></div>')
             return page(c, "Admin", body, wide=True)
         model = models.get(parts[0])
         if model is None:
@@ -157,7 +158,7 @@ def _list(c, model):
         from .orgs import Organization
         opts = "".join(f'<option value="{o.id}"{" selected" if str(o.id) == org else ""}>{H.esc(o.name)}</option>'
                        for o in Organization.query().order("name").limit(500))
-        org_pick = (f'<select name="org" aria-label="Organization"><option value="">All organizations</option>'
+        org_pick = (f'<select name="org" class="pw-control" aria-label="Organization"><option value="">All organizations</option>'
                     f"{opts}</select>")
     if q:
         text_fields = [f for f in _shown(model) if f.kind in ("str", "text") and not f.encrypted]
@@ -178,15 +179,17 @@ def _list(c, model):
             (f'<td><a href="/admin/{table}/{r.pk}">{_cell(r.__dict__.get(f.name))}</a></td>' if i == 0
              else f"<td>{_cell(r.__dict__.get(f.name))}</td>") for i, f in enumerate(cols)) + "</tr>"
         for r in rows)
-    search = (f'<form method="get" action="/admin/{table}" class="pw-row">'
-              f'<input name="q" value="{H.esc(q)}" placeholder="Search" aria-label="Search" class="pw-code">'
-              f'{org_pick}<button class="pw-button pw-secondary pw-inline">Search</button></form>')
+    search = (f'<form method="get" action="/admin/{table}" class="pw-search">'
+              f'<input name="q" value="{H.esc(q)}" placeholder="Search" aria-label="Search" class="pw-control">'
+              f'{org_pick}<button class="pw-button" data-variant="outline">Search</button></form>')
     more = ""
     if rows.next:
         params = urllib.parse.urlencode({k: v for k, v in (("q", q), ("org", org), ("after", rows.next)) if v})
         more = f'<p class="pw-links"><a href="/admin/{table}?{params}">Next page</a></p>'
-    nav = f'<p class="pw-nav"><a href="/admin">All tables</a><a href="/admin/{table}/new">Add a row</a></p>'
-    body = nav + search + f'<table class="pw-table"><tr>{head}</tr>{body_rows}</table>' + more
+    nav = (f'<nav class="pw-nav" aria-label="Admin"><a href="/admin">All tables</a>'
+           f'<a href="/admin/{table}" aria-current="page">{H.esc(_label(model))}</a>'
+           f'<a href="/admin/{table}/new">Add a row</a></nav>')
+    body = nav + search + f'<div class="pw-table-wrap"><table class="pw-table"><tr>{head}</tr>{body_rows}</table></div>' + more
     return page(c, _label(model), body, wide=True)
 
 
@@ -243,7 +246,8 @@ def _edit(c, model, row):
     fields = "".join(_input(f, values.get(f.name), errors.get(f.name, "")) for f in _shown(model))
     title = f"{_label(model)} {row.pk}" if row is not None and row.pk is not None else f"New {_label(model).lower()}"
     action = f"/admin/{table}/{row.pk}" if row is not None and row.pk is not None else f"/admin/{table}/new"
-    body = f'<p class="pw-nav"><a href="/admin/{table}">Back to {H.esc(_label(model))}</a></p>'
+    body = (f'<nav class="pw-nav" aria-label="Admin"><a href="/admin">All tables</a>'
+            f'<a href="/admin/{table}">Back to {H.esc(_label(model))}</a></nav>')
     body += H.notice(errors.get("__all__", ""), "error")
     body += H.form(action, fields + H.button("Save", kind="primary pw-inline"), csrf=c.csrf)
     if row is not None and model._meta.table == "pyweb_jobs" and getattr(row, "state", "") in ("dead", "failed"):

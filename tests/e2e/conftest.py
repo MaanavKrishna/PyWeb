@@ -49,3 +49,11 @@ def until(pg, expression, timeout=5.0):
         if time.monotonic() > end:
             raise AssertionError(f"timed out waiting for {expression}")
         pg.wait_for_timeout(25)
+
+
+def settle(pg, timeout=5.0):
+    """Wait for the UI kit and motion modules that elements added late load on demand, so a test
+    doesn't stop its server while the page is still fetching one."""
+    plain = ":not([data-pw-ui=card]):not([data-pw-ui=alert]):not([data-pw-ui=table]):not([data-pw-ui=breadcrumb])"
+    until(pg, f"!document.querySelector('[data-pw-ui]:not([data-pw-ui-ready]){plain}')", timeout)
+    pg.wait_for_timeout(150)

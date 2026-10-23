@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 
 from pyweb import App, Markdown, RPCError, server
+from pyweb.ui import Badge, Button
 
 app = App(title="AI chat", stylesheets=["/static/app.css"])
 
@@ -154,10 +155,10 @@ def Chat():
 
     <main>
         <h1>Chat</h1>
-        <p class="muted">{model_name}</p>
+        <p><Badge variant="secondary">{model_name}</Badge></p>
         <div class="chat">
             for m in messages:
-                <div class={"bubble " + m["role"]}>
+                <div class={"bubble " + m["role"]} initial={{"opacity": 0, "y": 8}} animate={{"opacity": 1, "y": 0}}>
                     if m["role"] == "assistant":
                         if m["content"]:
                             <Markdown text={m["content"]} />
@@ -169,12 +170,13 @@ def Chat():
             if not messages:
                 <p class="empty">Ask something to start.</p>
         </div>
-        <p class="error">{error}</p>
-        <form onsubmit={send}>
-            <input id="prompt" bind={draft} placeholder="Message" autocomplete="off" />
+        <p class="error" role="alert">{error}</p>
+        <form class="add composer" onsubmit={send}>
+            <input id="prompt" class="pw-control" bind={draft} placeholder="Message" aria-label="Message"
+                   autocomplete="off" />
             if busy:
-                <button id="stop" type="button" onclick={stop}>Stop</button>
+                <Button id="stop" variant="outline" onclick={stop}>Stop</Button>
             else:
-                <button id="send">Send</button>
+                <Button id="send" type="submit">Send</Button>
         </form>
     </main>

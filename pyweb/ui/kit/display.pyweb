@@ -8,7 +8,7 @@ def Badge(variant="soft", tone=None, children=None, **attrs):
 
 def Alert(tone=None, children=None, **attrs):
     role = "alert" if tone in ("danger", "warning") else "status"
-    <div class="pw-alert" data-part="alert" data-tone={tone} role={role} {**attrs}>{children}</div>
+    <div class="pw-alert" data-pw-ui="alert" data-part="alert" data-tone={tone} role={role} {**attrs}>{children}</div>
 
 
 def AlertTitle(children=None, **attrs):

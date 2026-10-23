@@ -4,6 +4,7 @@ import itertools
 import threading
 
 from pyweb import App, RPCError, channel, publish, server, subscribe
+from pyweb.ui import Avatar, Badge, Button, Card, CardContent
 
 app = App(title="Chat", stylesheets=["/static/app.css"])
 
@@ -35,13 +36,24 @@ def send(room: str, author: str, text: str) -> None:
     publish("chat:" + room, message)  # every open page for this room receives it
 
 
+def room_list():
+    return [{"name": room, "count": len(_messages[room])} for room in ROOMS]
+
+
 @app.page("/", title="Chat rooms")
 def Lobby():
+    rooms = room_list()
+
     <main>
         <h1>Rooms</h1>
-        <ul>
-            for room in ROOMS:
-                <li><a href={"/chat/" + room}>#{room}</a></li>
+        <ul class="rooms">
+            for room in rooms:
+                <li animate="fade-up">
+                    <a class="pw-card room" href={"/chat/" + room["name"]}>
+                        <b>#{room["name"]}</b>
+                        <Badge variant="secondary">{room["count"]} messages</Badge>
+                    </a>
+                </li>
         </ul>
     </main>
 
@@ -65,17 +77,24 @@ def Room(room: str):
             draft = ""
 
     <main>
-        <p><a href="/">← Rooms</a></p>
+        <p><Button href="/" variant="ghost" size="sm">← Rooms</Button></p>
         <h1>#{room}</h1>
-        <div id="messages">
-            for m in messages:
-                <div class="msg"><b>{m["author"]}</b>{m["text"]}</div>
-            if not messages:
-                <p class="empty">No messages yet. Say hi!</p>
-        </div>
-        <form onsubmit={submit}>
-            <input id="author" bind={author} aria-label="Your name" style={{"flex": "0 0 120px"}} />
-            <input id="draft" bind={draft} placeholder="Message" />
-            <button id="send">Send</button>
-        </form>
+        <Card>
+            <CardContent>
+                <div id="messages">
+                    for m in messages:
+                        <div class="msg-row" initial={{"opacity": 0, "y": 8}} animate={{"opacity": 1, "y": 0}}>
+                            <Avatar fallback={m["author"][:2].upper()} size="sm" aria-hidden="true" />
+                            <div class="msg"><b>{m["author"]}</b>{m["text"]}</div>
+                        </div>
+                    if not messages:
+                        <p class="empty">No messages yet. Say hi!</p>
+                </div>
+                <form class="add" onsubmit={submit}>
+                    <input id="author" class="pw-control name" bind={author} aria-label="Your name" />
+                    <input id="draft" class="pw-control" bind={draft} placeholder="Message" aria-label="Message" />
+                    <Button id="send" type="submit">Send</Button>
+                </form>
+            </CardContent>
+        </Card>
     </main>

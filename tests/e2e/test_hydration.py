@@ -3,7 +3,7 @@
 from playwright.sync_api import expect
 
 from pyweb.testing import serve
-from tests.e2e.conftest import ready
+from tests.e2e.conftest import ready, settle
 from tests.e2e.test_runtime_dom import open_runtime, run
 
 
@@ -85,6 +85,7 @@ def test_real_app_keeps_typing_done_before_the_script_loads(page):
         assert page.evaluate("document.querySelector('h1') === window.__h1")
         page.press("#new", "Enter")
         expect(page.locator("#list li span")).to_have_text(["buy milk"])
+        settle(page)
 
 
 def test_examples_hydrate_without_falling_back(page, tmp_path, monkeypatch):

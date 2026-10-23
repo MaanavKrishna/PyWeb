@@ -5,6 +5,7 @@
         <DropdownMenuContent>
             <MenuLabel>My account</MenuLabel>
             <MenuItem onclick={profile} shortcut="⌘P">Profile</MenuItem>
+            <MenuItem href="/settings">Settings</MenuItem>
             <MenuCheckboxItem checked={compact} oncheckedchange={toggle_compact}>Compact</MenuCheckboxItem>
             <MenuSeparator />
             <MenuSub>
@@ -14,7 +15,8 @@
         </DropdownMenuContent>
     </DropdownMenu>
 
-Choosing an item runs its onclick and closes the menu (keep_open=True keeps it open).
+Choosing an item runs its onclick and closes the menu (keep_open=True keeps it open); an item with
+href= is a link.
 """
 
 
@@ -60,13 +62,21 @@ def MenubarContent(children=None, **attrs):
     <div class="pw-menu" data-part="content" data-state="closed" hidden {**attrs}>{children}</div>
 
 
-def MenuItem(shortcut=None, disabled=False, keep_open=False, onclick=None, children=None, **attrs):
-    <div class="pw-menu-item" data-part="item" aria-disabled={"true" if disabled else None}
-         data-keep-open={"" if keep_open else None} onclick={onclick} {**attrs}>
-        {children}
-        if shortcut:
-            <span class="pw-menu-shortcut" data-part="shortcut">{shortcut}</span>
-    </div>
+def MenuItem(shortcut=None, disabled=False, keep_open=False, href=None, onclick=None, children=None, **attrs):
+    if href:
+        <a class="pw-menu-item" data-part="item" href={href} aria-disabled={"true" if disabled else None}
+           onclick={onclick} {**attrs}>
+            {children}
+            if shortcut:
+                <span class="pw-menu-shortcut" data-part="shortcut">{shortcut}</span>
+        </a>
+    else:
+        <div class="pw-menu-item" data-part="item" aria-disabled={"true" if disabled else None}
+             data-keep-open={"" if keep_open else None} onclick={onclick} {**attrs}>
+            {children}
+            if shortcut:
+                <span class="pw-menu-shortcut" data-part="shortcut">{shortcut}</span>
+        </div>
 
 
 def MenuCheckboxItem(checked=False, shortcut=None, disabled=False, keep_open=False, children=None, **attrs):

@@ -1,6 +1,7 @@
 """Blog: a Model, server functions, server-rendered pages, route params."""
 
 from pyweb import App, Field, Model, RPCError, component, server
+from pyweb.ui import Button, Card, CardContent, CardDescription, CardHeader
 
 app = App(title="PyWeb Blog", database="sqlite:///blog.db", stylesheets=["/static/app.css"])
 
@@ -25,7 +26,7 @@ def publish(title: str, body: str) -> list:
 
 @component
 def PostCard(post):
-    <article>
+    <article class="pw-card post" animate="fade-up">
         <h2><a href={"/posts/" + str(post["id"])}>{post["title"]}</a></h2>
         <p class="muted">{post["body"][:140]}</p>
     </article>
@@ -49,18 +50,27 @@ def Home():
 
     <main>
         <h1>Blog</h1>
-        <form onsubmit={submit}>
-            <div style={{"flex": "1"}}>
-                <input id="title" bind={title} placeholder="Title" />
-                <textarea id="body" bind={body} placeholder="Write something…"></textarea>
-                <p class="error" id="error">{error}</p>
-                <button id="publish" class="primary">Publish</button>
-            </div>
-        </form>
-        for post in posts:
-            <PostCard post={post} />
-        if not posts:
-            <p class="empty">No posts yet.</p>
+        <Card>
+            <CardHeader>
+                <h2 data-part="title">New post</h2>
+                <CardDescription>Saved with a server function; the list re-renders from its answer.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <form class="stack" onsubmit={submit}>
+                    <input id="title" class="pw-control" bind={title} placeholder="Title" aria-label="Title" />
+                    <textarea id="body" class="pw-control" bind={body} placeholder="Write something…"
+                              aria-label="Post"></textarea>
+                    <p class="error" id="error" role="alert">{error}</p>
+                    <div><Button id="publish" type="submit">Publish</Button></div>
+                </form>
+            </CardContent>
+        </Card>
+        <div class="posts">
+            for post in posts:
+                <PostCard post={post} />
+            if not posts:
+                <p class="empty">No posts yet.</p>
+        </div>
     </main>
 
 
@@ -69,7 +79,9 @@ def Post(post_id: int):
     post = Article.get_or_404(post_id)
 
     <main>
-        <p><a href="/">← All posts</a></p>
-        <h1>{post.title}</h1>
-        <p>{post.body}</p>
+        <p><Button href="/" variant="ghost" size="sm">← All posts</Button></p>
+        <article class="pw-card post" animate="fade-up">
+            <h1>{post.title}</h1>
+            <p>{post.body}</p>
+        </article>
     </main>

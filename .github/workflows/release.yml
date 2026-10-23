@@ -17,6 +17,13 @@ name: Release
 on:
   release:
     types: [published]
+  # Re-publish only the VS Code extension for a release that already exists
+  # (e.g. after adding VSCE_PAT / OVSX_PAT); PyPI is not touched.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag whose extension to publish, e.g. v0.6.0"
+        required: true
 
 permissions:
   contents: write
@@ -25,6 +32,7 @@ permissions:
 
 jobs:
   release:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment: pypi
     steps:
@@ -63,19 +71,24 @@ jobs:
 
   vscode:
     needs: release
+    if: ${{ !cancelled() && (needs.release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     defaults:
       run:
         working-directory: editors/vscode
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - name: Extension version matches the release
         run: |
           v=$(node -p "require('./package.json').version")
-          test "v$v" = "${GITHUB_REF_NAME}" || { echo "editors/vscode version $v != ${GITHUB_REF_NAME}"; exit 1; }
+          test "v$v" = "${TAG}" || { echo "editors/vscode version $v != ${TAG}"; exit 1; }
       - run: npm ci && npm test && npx vsce package
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -83,7 +96,7 @@ jobs:
       - name: Attach the .vsix to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" *.vsix --clobber
+        run: gh release upload "$TAG" *.vsix --clobber
       - name: Publish to the VS Code Marketplace (if VSCE_PAT is set)
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}

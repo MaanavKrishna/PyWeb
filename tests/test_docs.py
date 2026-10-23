@@ -2,6 +2,7 @@
 
 import ast
 import re
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from pyweb.compiler import compile_source
 
 ROOT = Path(__file__).parent.parent
 FILES = sorted((ROOT / "docs").glob("*.md")) + [ROOT / "README.md"]
-BLOCK = re.compile(r"```(pyweb|python)\n(.*?)```", re.S)
+BLOCK = re.compile(r"```(pyweb|python)\n(.*?) *```", re.S)
 
 
 def blocks():
@@ -18,7 +19,8 @@ def blocks():
         text = path.read_text(encoding="utf-8")
         for i, m in enumerate(BLOCK.finditer(text)):
             line = text[:m.start()].count("\n") + 1
-            yield pytest.param(m.group(1), m.group(2), id=f"{path.name}:{line}")
+            # Blocks inside list items are indented with their item.
+            yield pytest.param(m.group(1), textwrap.dedent(m.group(2)), id=f"{path.name}:{line}")
 
 
 @pytest.mark.parametrize("lang, code", list(blocks()))

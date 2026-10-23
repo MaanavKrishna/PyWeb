@@ -207,6 +207,8 @@ def test_kit_files_follow_the_conventions():
     """Every kit component passes attributes through, marks its part, and uses only theme tokens."""
     from pyweb.compiler.pipeline import KIT_DIR, kit_index
     for name, path in kit_index().items():
+        if not name[:1].isupper():
+            continue                                  # cx, variants, style: functions, not components
         src = open(path, encoding="utf-8").read()
         fn = re.search(rf"^def {name}\((.*?)\):\n(.*?)(?=^def |\Z)", src, re.M | re.S)
         assert fn, name

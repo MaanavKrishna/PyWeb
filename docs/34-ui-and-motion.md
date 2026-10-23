@@ -337,11 +337,53 @@ the components they use.
 
 Each level is optional; most apps stop at the first.
 
-1. **The theme.** `Theme(...)`, a preset, or CSS variables.
-2. **Props.** `variant=`, `size=` and `tone=` on components. Any other
+1. **The theme.** `Theme(...)`, a preset, or CSS variables. In `pyweb
+   dev`, the toolbar's **Theme** tab changes the accent, gray, radius,
+   font, density and dark mode on the running app as you drag. "Copy as
+   code" gives the `Theme(...)` line; "Save to app.pyweb" writes it into
+   your `App(...)` call. Nothing else in the file changes.
+2. **Props.** `variant=`, `size=` and `tone=` on components (the editor
+   completes the values and warns about unknown ones). Any other
    attribute (`id`, `aria-*`, `data-*`, handlers) reaches the element,
    and `class_=` adds your classes to the kit's.
-3. **State and part attributes.** Every element marks its part and
+3. **Your own variants of kit components.** `ui.extend` adds them, as
+   CSS in the theme stylesheet:
+
+   ```python
+   from pyweb import ui
+
+   ui.extend("Button", variant={
+       "brand": {"background": "var(--pw-accent-11)", "color": "white",
+                 "hover": {"background": "var(--pw-accent-12)"}},
+   }, size={"xl": {"height": "52px", "padding": "0 28px"}})
+   ```
+
+   Then `<Button variant="brand" size="xl">` works, and the editor
+   completes it. Sub-dicts named `hover`, `focus`, `active`, `disabled`,
+   `open` or `checked` style that state. `Theme(extend={"Button":
+   {"variant": {...}}})` does the same from the theme.
+4. **Variants for your own components** (like cva, and tailwind-merge's
+   core): `variants()` describes the classes, `style()` picks them, and
+   `cx()` joins classes, the last of a conflicting group winning. They
+   work in server code and browser code alike:
+
+   ```python
+   from pyweb.ui import cx, variants, style
+
+   card = variants(
+       base="rounded-lg border p-4",
+       variant={"plain": "bg-white", "brand": "bg-indigo-600 text-white"},
+       size={"sm": "p-2 text-sm", "lg": "p-6"},
+       default={"variant": "plain"},
+       compound=[{"variant": "brand", "size": "lg", "class": "shadow-lg"}],
+   )
+   ```
+
+   In the component, `class={style(card, variant=variant, size=size,
+   class_=class_)}` gives the classes, and the caller's `class_` wins
+   conflicts (`p-10` replaces `p-4`). Options are `variant`, `size`,
+   `tone` and `shape`.
+5. **State and part attributes.** Every element marks its part and
    state (`data-part="title"`, `data-variant="outline"`,
    `data-state="open"`), so CSS can style any part in any state:
 
@@ -352,11 +394,37 @@ Each level is optional; most apps stop at the first.
 
    The kit's CSS lives in the `pyweb` cascade layer, so any CSS you
    write wins, however specific its selectors.
-4. **Own the code.** `pyweb ui add button` copies the component's
+6. **Own the code.** `pyweb ui add button` copies the component's
    `.pyweb` file into `components/`. Change it as you like and import it
    from there (`from components.button import Button`). `pyweb ui diff
    button` shows how your copy differs from the kit after an upgrade;
    `pyweb ui list` lists everything in the kit.
+
+Motion follows the same ladder:
+1. **Global:** `App(motion=Motion(...))`.
+2. **Named:** presets, including your own (`pyweb.motion.preset`).
+3. **Per element:** `transition={{...}}`.
+4. **Visual tuning:** in `pyweb dev`, the toolbar's **Motion** tab picks
+   any animated element and changes its spring or duration with
+   sliders. Each change replays the animation. "Copy as code" gives the
+   `transition={{...}}`.
+
+Plain functions in other `.pyweb` files can be imported into browser
+code too (`from formatting import money`), along with the functions and
+constants they use.
+
+### Accessibility checks
+
+`pyweb check` and the editor point out:
+- images without `alt`;
+- clicks on elements a keyboard can't reach (use `<Button>`);
+- form fields without a label;
+- buttons and links with no text;
+- a positive `tabindex`;
+- an empty `App(lang=...)`.
+
+They're warnings; `pyweb check --strict` fails on them. The kit,
+examples and templates pass.
 
 ## Motion
 

@@ -1,0 +1,118 @@
+"""Class helpers for your own components, on the server and in the browser
+(from pyweb.ui import cx, variants, style).
+
+    card = variants(
+        base="rounded-lg border p-4",
+        variant={"plain": "bg-white", "brand": "bg-indigo-600 text-white"},
+        size={"sm": "p-2 text-sm", "lg": "p-6 text-lg"},
+        default={"variant": "plain"},
+        compound=[{"variant": "brand", "size": "lg", "class": "shadow-lg"}],
+    )
+
+    def Card(variant=None, size=None, class_=None, children=None, **attrs):
+        <div class={style(card, variant=variant, size=size, class_=class_)} {**attrs}>{children}</div>
+
+cx("px-2 py-1", active and "bg-blue-500", {"opacity-50": disabled}) joins classes; for common
+Tailwind groups (padding, margin, text size and colour, background, rounding, shadow, width,
+height, gap, font weight, display...) the last one wins, so a caller's class_ overrides the base.
+"""
+
+_SIZES = ["xs", "sm", "base", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl", "9xl"]
+_ALIGN = ["left", "center", "right", "justify", "start", "end"]
+_WEIGHTS = ["thin", "extralight", "light", "normal", "medium", "semibold", "bold", "extrabold", "black"]
+_DISPLAY = ["block", "inline", "inline-block", "flex", "inline-flex", "grid", "inline-grid", "hidden", "contents",
+            "table"]
+_PREFIXES = ["px", "py", "pt", "pr", "pb", "pl", "ps", "pe", "p", "mx", "my", "mt", "mr", "mb", "ml", "ms", "me",
+             "m", "bg", "w", "h", "min-w", "min-h", "max-w", "max-h", "gap-x", "gap-y", "gap", "opacity", "z",
+             "leading", "tracking", "inset", "top", "right", "bottom", "left", "rounded-t", "rounded-b",
+             "rounded-l", "rounded-r", "rounded", "shadow", "ring", "grid-cols", "flex"]
+
+
+def _group(cls):
+    """The group a class belongs to ("md:px" for "md:px-4"), or None when it conflicts with nothing."""
+    cut = cls.rfind(":")
+    prefix = cls[:cut + 1] if cut >= 0 else ""
+    base = cls[cut + 1:]
+    if base.startswith("!"):
+        base = base[1:]
+    if base.startswith("-"):
+        base = base[1:]
+    if base in _DISPLAY:
+        return prefix + "display"
+    if base.startswith("text-"):
+        value = base[5:]
+        if value in _SIZES or value.startswith("["):
+            return prefix + "text-size"
+        if value in _ALIGN:
+            return prefix + "text-align"
+        return prefix + "text-color"
+    if base.startswith("font-"):
+        return prefix + ("font-weight" if base[5:] in _WEIGHTS else "font-family")
+    if base == "rounded" or base == "shadow":
+        return prefix + base
+    for p in _PREFIXES:
+        if base.startswith(p + "-"):
+            return prefix + p
+    return None
+
+
+def _words(value):
+    out = []
+    if not value:
+        return out
+    if isinstance(value, str):
+        for w in value.split():
+            out.append(w)
+    elif isinstance(value, dict):
+        for k in value:
+            if value[k]:
+                for w in str(k).split():
+                    out.append(w)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            for w in _words(v):
+                out.append(w)
+    return out
+
+
+def cx(a=None, b=None, c=None, d=None, e=None, f=None):
+    """Join classes (strings, lists, {class: condition} dicts; falsy ones are skipped). Within a
+    group of conflicting utilities the last one wins; duplicates are dropped."""
+    words = _words([a, b, c, d, e, f])
+    last = {}
+    for i in range(len(words)):
+        g = _group(words[i])
+        last[g if g is not None else "=" + words[i]] = i
+    kept = []
+    for i in range(len(words)):
+        g = _group(words[i])
+        if last[g if g is not None else "=" + words[i]] == i:
+            kept.append(words[i])
+    return " ".join(kept)
+
+
+def variants(base="", variant=None, size=None, tone=None, shape=None, default=None, compound=None):
+    """A component's classes by option (like cva): use it with style(spec, variant=..., size=...)."""
+    return {"base": base, "variant": variant or {}, "size": size or {}, "tone": tone or {}, "shape": shape or {},
+            "default": default or {}, "compound": compound or []}
+
+
+def style(spec, variant=None, size=None, tone=None, shape=None, class_=None):
+    """The class string for these options; ``class_`` (the caller's classes) wins conflicts."""
+    picked = {"variant": variant, "size": size, "tone": tone, "shape": shape}
+    for key in ["variant", "size", "tone", "shape"]:
+        if picked[key] is None:
+            picked[key] = spec["default"].get(key)
+    parts = [spec["base"]]
+    for key in ["variant", "size", "tone", "shape"]:
+        if picked[key] is not None:
+            parts.append(spec[key].get(picked[key], ""))
+    for rule in spec["compound"]:
+        hit = True
+        for key in ["variant", "size", "tone", "shape"]:
+            if key in rule and rule[key] != picked[key]:
+                hit = False
+        if hit:
+            parts.append(rule.get("class", ""))
+    parts.append(class_)
+    return cx(parts)

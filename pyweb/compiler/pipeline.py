@@ -100,7 +100,7 @@ def kit_index():
         for fname, _m in stamp:
             path = os.path.join(KIT_DIR, fname)
             with open(path, encoding="utf-8") as fh:
-                for m in re.finditer(r"^def ([A-Z]\w*)\(", fh.read(), re.M):
+                for m in re.finditer(r"^def ([A-Z]\w*|cx|variants|style)\(", fh.read(), re.M):
                     index[m.group(1)] = path
         _kit_index_cache.update(stamp=stamp, index=index)
     return _kit_index_cache["index"]

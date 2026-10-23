@@ -10,7 +10,7 @@ FILTERS = ["all", "active", "done"]
 @component
 def TodoItem(todo, on_toggle, on_remove):
     <li class={{"done": todo["done"]}}>
-        <input type="checkbox" checked={todo["done"]} onchange={on_toggle} />
+        <input type="checkbox" checked={todo["done"]} onchange={on_toggle} aria-label={"Done: " + todo["title"]} />
         <span>{todo["title"]}</span>
         <button class="remove" onclick={on_remove} aria-label="Remove">×</button>
     </li>

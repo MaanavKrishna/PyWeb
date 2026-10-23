@@ -74,7 +74,7 @@ def Room(room: str):
                 <p class="empty">No messages yet. Say hi!</p>
         </div>
         <form onsubmit={submit}>
-            <input id="author" bind={author} style={{"flex": "0 0 120px"}} />
+            <input id="author" bind={author} aria-label="Your name" style={{"flex": "0 0 120px"}} />
             <input id="draft" bind={draft} placeholder="Message" />
             <button id="send">Send</button>
         </form>

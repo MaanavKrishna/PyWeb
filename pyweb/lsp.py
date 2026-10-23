@@ -136,6 +136,13 @@ def diagnostics(text, path=None, analysis=None):
         for line, msg in D.n_plus_one(tree, ui, known):
             out.append({"range": _range(line - 1, text=text), "severity": 2, "source": "pyweb",
                         "code": "missing-include", "message": msg})
+        from . import a11y, lsp_ui
+        for line, code, msg in lsp_ui.problems(text, tree, ui):
+            out.append({"range": _range(line - 1, text=text), "severity": 2, "source": "pyweb",
+                        "code": code, "message": msg})
+        for f in a11y.check(text, path):
+            out.append({"range": _range(f["line"] - 1, text=text), "severity": 3, "source": "pyweb",
+                        "code": f["kind"], "message": f["message"]})
     return out
 
 
@@ -271,6 +278,10 @@ def completions(text, path, line, col, analysis=None, parsed=None):
             found = D.complete(prefix, tree, known)
         if found is not None:
             return found
+    from . import lsp_ui
+    found = lsp_ui.completions(prefix, text, tree)
+    if found is not None:
+        return found
     if re.search(r"^\s*from\s+pyweb\s+import\s+[\w\s,]*$", prefix):
         return [{"label": n, "kind": 9} for n in PYWEB_EXPORTS]
     if re.search(r"""\bnpm\(\s*["'][^"']*$""", prefix):

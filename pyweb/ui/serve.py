@@ -52,11 +52,12 @@ def _motion_css(app):
 
 
 def _theme_version(app, th):
-    m = getattr(app, "motion", None)
-    if m is None:
+    from .extending import registered
+    m, ext = getattr(app, "motion", None), registered()
+    if m is None and not ext:
         return th.version()
     import hashlib
-    return hashlib.sha256((th.version() + repr(m)).encode()).hexdigest()[:10]
+    return hashlib.sha256((th.version() + repr(m) + repr(sorted(ext.items()))).encode()).hexdigest()[:10]
 
 
 def handle(server, req):
@@ -68,7 +69,9 @@ def handle(server, req):
     if path == "/__pyweb/theme.css":
         from . import theme as T
         app = getattr(getattr(server, "app", None), "app", None)
-        body = (T.config(app).css() + _motion_css(app)).encode()
+        from .extending import css as extend_css
+        th = T.config(app)
+        body = (th.css() + _motion_css(app) + extend_css(th)).encode()
         return Response(200, body, {"Content-Type": "text/css; charset=utf-8", "Cache-Control": cache})
     if path == "/__pyweb/motion.css":
         return Response(200, MOTION_CSS, {"Content-Type": "text/css; charset=utf-8", "Cache-Control": cache})

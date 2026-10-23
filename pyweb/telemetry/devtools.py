@@ -35,11 +35,64 @@ def _same_origin(headers):
     return origin is None or origin.split("://", 1)[-1] == host
 
 
-def handle(method, path, headers):
+def _theme_fields(app, query):
+    """The app's theme with the toolbar's changes (from the query string) on top."""
+    from urllib.parse import parse_qsl
+
+    from pyweb.ui import theme as T
+    from pyweb.ui.source_edit import FIELDS
+    th = T.config(app)
+    fields = {k: getattr(th, k) for k in FIELDS}
+    for k, v in parse_qsl(query):
+        if k == "preset" and v in T.PRESETS:
+            fields.update(T.PRESETS[v])
+        elif k in FIELDS:
+            fields[k] = v or None
+    return fields
+
+
+def theme_preview(app, query):
+    """``/__pyweb/dev/theme.css?accent=…``: the theme stylesheet with the toolbar's changes."""
+    from pyweb.ui import serve as ui_serve
+    from pyweb.ui.extending import css as extend_css
+    from pyweb.ui.source_edit import make_theme
+    import dataclasses
+
+    from pyweb.ui import theme as T
+    th = dataclasses.replace(make_theme(_theme_fields(app, query)), extend=T.config(app).extend)
+    body = th.css() + ui_serve._motion_css(app) + extend_css(th)
+    return 200, [("Content-Type", "text/css; charset=utf-8"), ("Cache-Control", "no-store")], body.encode()
+
+
+def handle(method, path, headers, body=b"", app=None, app_path=None):
     """Answer a ``/__pyweb/dev/...`` request, or None when it isn't one of ours."""
     from . import RECENT
     bare, _, query = path.partition("?")
     what = bare[len(PREFIX):]
+    if what == "theme.css":
+        try:
+            return theme_preview(app, query)
+        except (ValueError, TypeError) as exc:
+            return 400, [("Content-Type", "text/plain")], str(exc).encode()
+    if what == "theme" and method == "GET":
+        from pyweb.ui import theme as T
+        from pyweb.ui.source_edit import theme_code
+        fields = _theme_fields(app, "")
+        return _json({"theme": fields, "code": theme_code(fields), "presets": T.PRESETS,
+                      "densities": list(T.DENSITY), "fonts": ["system", "inter", "serif", "mono"],
+                      "can_save": bool(app_path)})
+    if what == "theme" and method == "POST":
+        if not _same_origin(headers):
+            return _json({"error": "POST from this page only"}, 403)
+        if not app_path:
+            return _json({"error": "this app has no file to save to"}, 409)
+        try:
+            fields = json.loads(body or b"{}")
+            from pyweb.ui.source_edit import FIELDS, save_theme
+            code = save_theme(app_path, {k: fields.get(k) for k in FIELDS})
+        except (ValueError, TypeError, SyntaxError) as exc:
+            return _json({"error": str(exc)}, 400)
+        return _json({"ok": True, "code": code})
     if what == "requests":
         since = dict(p.partition("=")[::2] for p in query.split("&") if p).get("since", "")
         items = list(RECENT)
@@ -98,11 +151,20 @@ code{white-space:pre-wrap;word-break:break-word;color:#e5e7eb}
 h4{margin:10px 0 4px;color:#a5b4fc;font-weight:600}
 a,button.link{color:#93c5fd;background:none;border:0;cursor:pointer;padding:0}
 pre{margin:4px 0;white-space:pre-wrap;color:#fca5a5}
+.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 16px;margin:6px 0 10px}
+.form label{display:flex;flex-direction:column;gap:3px;color:#9ca3af}
+.form input,.form select{background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:3px 6px}
+.form input[type=color]{height:28px;padding:1px}
+.btn{background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:4px 10px;cursor:pointer;margin-right:6px}
+.btn.on{background:#4338ca;border-color:#6366f1}
+.code{display:block;background:#111827;border-radius:6px;padding:6px 8px;margin:6px 0}
+.ok{color:#86efac}
 </style>
 <div class="pill" part="pill"></div>
 <div class="panel"><nav>
  <button data-tab="req" class="on">This page</button><button data-tab="all">Requests</button>
  <button data-tab="jobs">Jobs</button><button data-tab="mail">Emails</button>
+ <button data-tab="theme">Theme</button><button data-tab="motion">Motion</button>
  <button class="x" title="close">✕</button></nav><main></main></div>`;
 const pill = root.querySelector(".pill"), panel = root.querySelector(".panel"), main = root.querySelector("main");
 const page = window.__PYWEB_REQ__ || {};
@@ -166,12 +228,117 @@ async function render() {
       `</table>` + ((d.jobs || []).length ? "" : `<p class="muted">No jobs yet.</p>`);
     return;
   }
+  if (tab === "theme") { await themeTab(); return; }
+  if (tab === "motion") { motionTab(); return; }
   if (tab === "mail") {
     const d = await get("/__pyweb/dev/mail");
     main.innerHTML = (d.mail || []).map(m => `<h4>${esc(m.subject)}</h4><div class="muted">to ${esc(m.to.join(", "))}</div>` +
       `<code>${esc(m.text)}</code>`).join("") || `<p class="muted">No emails yet. In development they're captured here instead of sent.</p>`;
   }
 }
+// ---------------------------------------------------------------- Theme: live preview, copy, save
+let theme = null, themeInfo = null, themeMsg = "";
+const DEFAULTS = {accent: "#6366f1", gray: null, radius: 10, font: "system", density: "comfortable", dark: "auto"};
+function themeCode() {
+  const parts = Object.keys(DEFAULTS).filter(k => theme[k] != null && theme[k] !== "" && String(theme[k]) !== String(DEFAULTS[k]))
+    .map(k => `${k}=${typeof DEFAULTS[k] === "number" ? Number(theme[k]) : JSON.stringify(theme[k])}`);
+  return `Theme(${parts.join(", ")})`;
+}
+function preview() {
+  const q = new URLSearchParams();
+  for (const k of Object.keys(DEFAULTS)) if (theme[k] != null) q.set(k, theme[k]);
+  let link = document.querySelector('link[href*="/__pyweb/theme.css"], link[data-pw-dev-theme]');
+  if (!link) { link = document.createElement("link"); link.rel = "stylesheet"; document.head.appendChild(link); }
+  link.dataset.pwDevTheme = "";
+  link.href = "/__pyweb/dev/theme.css?" + q;
+  const code = root.querySelector("#theme-code");
+  if (code) code.textContent = themeCode();
+}
+async function themeTab() {
+  if (!themeInfo) { themeInfo = await get("/__pyweb/dev/theme"); theme = {...themeInfo.theme}; }
+  const opt = (list, cur) => list.map(v => `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(v)}</option>`).join("");
+  main.innerHTML = `<div class="form">
+    <label>Accent <input type="color" data-f="accent" value="${esc(theme.accent)}"></label>
+    <label>Gray <input type="color" data-f="gray" value="${esc(theme.gray || theme.accent)}"></label>
+    <label>Radius <span><input type="range" min="0" max="24" step="1" data-f="radius" value="${esc(theme.radius)}"> ${esc(theme.radius)}px</span></label>
+    <label>Font <select data-f="font">${opt([...new Set([...themeInfo.fonts, theme.font])], theme.font)}</select></label>
+    <label>Density <select data-f="density">${opt(themeInfo.densities, theme.density)}</select></label>
+    <label>Dark mode <select data-f="dark">${opt(["auto", "light", "dark"], theme.dark)}</select></label>
+  </div><div>${Object.keys(themeInfo.presets).map(p => `<button class="btn" data-preset="${esc(p)}">${esc(p)}</button>`).join("")}</div>
+  <code class="code" id="theme-code">${esc(themeCode())}</code>
+  <button class="btn" data-copy-theme>Copy as code</button>` +
+  (themeInfo.can_save ? `<button class="btn on" data-save-theme>Save to app.pyweb</button>` : "") +
+  ` <span class="${themeMsg.startsWith("Saved") ? "ok" : "bad"}">${esc(themeMsg)}</span>`;
+}
+root.addEventListener("input", ev => {
+  const f = ev.target.dataset && ev.target.dataset.f;
+  if (!f || !theme) return;
+  theme[f] = ev.target.value;
+  if (f === "radius") ev.target.parentNode.lastChild.textContent = " " + ev.target.value + "px";
+  preview();
+});
+// ---------------------------------------------------------------- Motion: pick an element, tune, replay
+let picked = null, picking = false;
+const specOf = el => { try { return JSON.parse(el.getAttribute("data-pw-motion") || "{}"); } catch (e) { return {}; } };
+const pyLit = v => JSON.stringify(v).replace(/\btrue\b/g, "True").replace(/\bfalse\b/g, "False").replace(/\bnull\b/g, "None");
+function motionTab() {
+  if (!picked) {
+    main.innerHTML = `<p><button class="btn ${picking ? "on" : ""}" data-pick>${picking ? "Click an animated element…" : "Pick an element"}</button>` +
+      ` <span class="muted">${document.querySelectorAll("[data-pw-motion]").length} animated elements on this page</span></p>`;
+    return;
+  }
+  const spec = specOf(picked), t = spec.transition || {};
+  const type = t.type || "spring";
+  const num = (k, lo, hi, step, def) => `<label>${k} <span><input type="range" min="${lo}" max="${hi}" step="${step}" data-m="${k}" value="${t[k] ?? def}"> ${t[k] ?? def}</span></label>`;
+  main.innerHTML = `<p><span class="tag">&lt;${esc(picked.localName)}&gt;</span> <code>${esc(pyLit({animate: spec.animate, initial: spec.initial}))}</code></p>
+    <div class="form"><label>type <select data-m="type">${["spring", "tween"].map(v => `<option ${v === type ? "selected" : ""}>${v}</option>`).join("")}</select></label>` +
+    (type === "spring" ? num("stiffness", 20, 1000, 10, 500) + num("damping", 1, 80, 1, 32) + num("mass", 0.1, 5, 0.1, 1)
+     : num("duration", 0.05, 2, 0.05, 0.3) + `<label>ease <select data-m="ease">${["ease-out", "ease-in-out", "ease-in", "linear", "back-out"].map(v => `<option ${v === (t.ease || "ease-out") ? "selected" : ""}>${v}</option>`).join("")}</select></label>`) +
+    `</div><button class="btn on" data-replay>Replay</button><button class="btn" data-pick>Pick another</button>
+    <code class="code" id="motion-code">transition={${esc(pyLit(t))}}</code><button class="btn" data-copy-motion>Copy as code</button>`;
+}
+root.addEventListener("change", ev => {
+  const k = ev.target.dataset && ev.target.dataset.m;
+  if (!k || !picked) return;
+  const spec = specOf(picked);
+  const t = {...(spec.transition || {})};
+  t[k] = k === "type" || k === "ease" ? ev.target.value : Number(ev.target.value);
+  if (k === "type") { for (const x of ["stiffness", "damping", "mass", "duration", "ease"]) delete t[x]; }
+  spec.transition = t;
+  picked.setAttribute("data-pw-motion", JSON.stringify(spec));
+  motionTab();
+  if (window.pywebMotion) window.pywebMotion.replay(picked);
+});
+function pickOne(ev) {
+  if (ev.composedPath().includes(host)) return;
+  const el = ev.target instanceof Element && ev.target.closest("[data-pw-motion]");
+  if (!el) return;
+  ev.preventDefault(); ev.stopPropagation();
+  document.removeEventListener("click", pickOne, true);
+  picking = false;
+  if (picked) picked.style.outline = "";
+  picked = el;
+  el.style.outline = "2px dashed #a5b4fc";
+  tab = "motion"; panel.classList.add("open"); render();
+}
+root.addEventListener("click", async ev => {
+  const t = ev.target.closest("[data-preset],[data-copy-theme],[data-save-theme],[data-pick],[data-replay],[data-copy-motion]");
+  if (!t) return;
+  if (t.dataset.preset !== undefined) { theme = {...theme, ...themeInfo.presets[t.dataset.preset]}; preview(); themeTab(); }
+  else if (t.hasAttribute("data-copy-theme")) { navigator.clipboard && navigator.clipboard.writeText(themeCode()); themeMsg = ""; }
+  else if (t.hasAttribute("data-save-theme")) {
+    const r = await fetch("/__pyweb/dev/theme", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(theme)});
+    const d = await r.json();
+    themeMsg = r.ok ? "Saved: " + d.code : (d.error || "could not save");
+    themeTab();
+  }
+  else if (t.hasAttribute("data-pick")) {
+    if (picked) { picked.style.outline = ""; picked = null; }
+    picking = true; document.addEventListener("click", pickOne, true); motionTab();
+  }
+  else if (t.hasAttribute("data-replay") && picked && window.pywebMotion) window.pywebMotion.replay(picked);
+  else if (t.hasAttribute("data-copy-motion") && picked && navigator.clipboard) navigator.clipboard.writeText("transition={" + pyLit(specOf(picked).transition || {}) + "}");
+});
 root.addEventListener("click", async ev => {
   const t = ev.target.closest("[data-tab],[data-id],[data-retry],.x,.pill");
   if (!t) return;

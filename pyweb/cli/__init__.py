@@ -48,6 +48,8 @@ def cmd_check(args):
     src = _load(args.file)
     findings = check_source(src, args.file)
     findings += scan_app(args.file)
+    from pyweb import a11y
+    findings += a11y.check(src, args.file)
     try:
         out = compile_source(src, filename=args.file)
         n_sig = sum(len(p["signals"]) for p in out["pages"].values())
@@ -305,7 +307,9 @@ class _DevSite:
             return 500, [("Content-Type", "text/html; charset=utf-8")], _error_overlay(state.error, state.path).encode()
         from pyweb.telemetry import RECENT, devtools
         if path.startswith(devtools.PREFIX):
-            answer = devtools.handle(method, path, headers)
+            loaded = getattr(state.site, "app", None)
+            answer = devtools.handle(method, path, headers, body, app=getattr(loaded, "app", None),
+                                     app_path=getattr(loaded, "path", None) or state.path)
             if answer is not None:
                 return answer
         # No gzip on localhost: pages stay plain, so the reload script and the toolbar can be added.

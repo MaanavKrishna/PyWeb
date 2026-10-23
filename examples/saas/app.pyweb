@@ -159,7 +159,7 @@ def ProjectPage(project_id: int):
         <ul id="tasks">
             for t in tasks:
                 <li class={{"done": t["done"]}}>
-                    <input type="checkbox" checked={t["done"]} onchange={lambda: toggle(t["id"])} />
+                    <input type="checkbox" checked={t["done"]} onchange={lambda: toggle(t["id"])} aria-label={"Done: " + t["title"]} />
                     <span>{t["title"]}</span>
                     <button class="remove" onclick={lambda: remove(t["id"])} aria-label="Remove">×</button>
                 </li>

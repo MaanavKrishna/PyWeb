@@ -185,8 +185,13 @@ class Theme:
     font: str = "system"
     density: str = "comfortable"
     dark: str = "auto"
+    #: Your own variants for kit components: {"Button": {"variant": {"brand": {...css}}}} (see pyweb.ui.extend).
+    extend: dict | None = dataclasses.field(default=None, hash=False)
 
     def __post_init__(self):
+        if self.extend is not None:
+            from .extending import css_for
+            css_for(self.extend)
         hex_to_rgb(self.accent)
         if self.gray is not None:
             hex_to_rgb(self.gray)

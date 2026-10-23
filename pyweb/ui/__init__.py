@@ -15,9 +15,10 @@ it into your app to change it freely). ``App(theme=Theme(accent=...))`` sets the
 
 from __future__ import annotations
 
+from .extending import extend
 from .theme import PRESETS, Theme
 
-__all__ = ["Theme", "PRESETS", "toast"]
+__all__ = ["Theme", "PRESETS", "toast", "extend"]
 
 TONES = ("success", "danger", "warning", "info")
 
@@ -62,10 +63,33 @@ class KitComponent:
 def components():
     """``{name: path}`` of every component in the kit."""
     from pyweb.compiler.pipeline import kit_index
-    return dict(kit_index())
+    return {k: v for k, v in kit_index().items() if k[:1].isupper()}
+
+
+_HELPERS = {}
+
+
+def _helpers():
+    """cx, variants and style as plain Python (the same file the browser code is compiled from)."""
+    if not _HELPERS:
+        import os
+        from pyweb.compiler.parser import split_sources
+        path = os.path.join(os.path.dirname(__file__), "kit", "style.pyweb")
+        with open(path, encoding="utf-8") as fh:
+            py, _ui = split_sources(fh.read())
+        ns = {"__name__": "pyweb.ui.kit.style"}
+        exec(compile(py, path, "exec"), ns)  # noqa: S102 - PyWeb's own file
+        _HELPERS.update({k: ns[k] for k in KIT_HELPERS})
+    return _HELPERS
+
+
+#: Plain functions in the kit (from pyweb.ui import cx, variants, style).
+KIT_HELPERS = ("cx", "variants", "style")
 
 
 def __getattr__(name):
+    if name in KIT_HELPERS:
+        return _helpers()[name]
     index = components()
     if name in index:
         return KitComponent(name, index[name])

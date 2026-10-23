@@ -6,10 +6,11 @@ pyweb new NAME [--template T]        create NAME/ with app.pyweb, test_app.py, A
                                      (apps with a database also get migrations/0001_initial.py and a README)
 pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
                                      development server: recompile on save, live reload, error overlay,
-                                     the dev toolbar, and background jobs in the same process
+                                     the dev toolbar (requests, SQL, jobs, emails, theme and motion
+                                     editors), and background jobs in the same process
 pyweb check FILE [--production] [--strict]
-                                     compile + security checks; --production also checks the environment;
-                                     --strict fails on warnings too
+                                     compile, security and accessibility checks; --production also checks
+                                     the environment; --strict fails on warnings too
 pyweb upgrade [FILE] [--fix]         what to change for this PyWeb version (file and line); --fix applies
                                      the safe rewrites
 pyweb inspect FILE [--security]      where every name runs and why; RPC table; findings

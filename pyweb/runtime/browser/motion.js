@@ -485,4 +485,14 @@ scan(document.documentElement);
 
 const API = { animateTo, set, current, state, refresh, stop, reduced, CFG, now, normAll };
 
-globalThis.pywebMotion = { animateTo, set, stop, presets, state, current, now };
+/** Play an element's animation again from its initial pose (the dev toolbar's motion panel). */
+function replay(el) {
+  const s = state(el);
+  const spec = s.spec;
+  const init = spec.initial !== undefined ? spec.initial : typeof spec.animate === "string" ? spec.animate : undefined;
+  const [t] = init === false ? [null] : resolve(s, init, "initial");
+  if (t) set(el, t);
+  return refresh(el, s);
+}
+
+globalThis.pywebMotion = { replay, animateTo, set, stop, presets, state, current, now };

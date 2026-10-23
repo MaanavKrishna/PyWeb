@@ -623,3 +623,14 @@ def test_data_table_and_charts(page, tmp_path):
         expect(page.locator("#line path[data-part=area]")).to_have_count(1)
         expect(page.locator("#pie path[data-part=slice]")).to_have_count(2)
         assert page.locator("#bars svg").get_attribute("aria-label") == "Sales"
+
+
+def test_class_helpers_rerun_in_the_browser(page, tmp_path):
+    from tests.test_customise import SPEC_APP
+    with _open(page, tmp_path, SPEC_APP) as url:
+        page.goto(url)
+        ready(page)
+        expect(page.locator("#c")).to_have_attribute("class", "rounded bg-white p-2")
+        page.click("text=flip")
+        expect(page.locator("#c")).to_have_attribute("class", "rounded bg-black text-white p-2")   # same as Python's
+        expect(page.locator("p")).to_have_attribute("class", "px-6")

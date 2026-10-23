@@ -244,11 +244,64 @@ def _import_library(ctx, lib, node, filename):
             spec, export, _line = lib.ctx.npm_bindings[name]
             ctx.npm_bindings[local] = (spec, export, node.lineno)
             ctx.browser_globals[local] = npm_alias(spec, export)
+        elif name in lib.ctx.helpers:
+            if local != name:
+                raise CompileError(f"import function {name!r} from {where} without `as`", node.lineno, filename)
+            _import_helper(ctx, lib, name, node.lineno, filename)
         elif name in lib.defined:
             ctx.server_only[local] = (f"imported from {where}; browser code can use components, "
-                                      "@server functions and constants from other .pyweb files")
+                                      "functions, @server functions and constants from other .pyweb files")
         else:
             raise CompileError(f"{where} has no {name!r}", node.lineno, filename)
+
+
+def _helper_constant(ctx, value, filename):
+    """``card = variants(base=..., ...)``: a call to a plain function of this app (or the kit) with
+    constant arguments is worked out now, so browser code gets the result as a constant.
+    Returns ``(value,)``, or None when it isn't that (or doesn't give plain data)."""
+    if not (isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in ctx.helpers):
+        return None
+    try:
+        args = [ast.literal_eval(a) for a in value.args]
+        kwargs = {k.arg: ast.literal_eval(k.value) for k in value.keywords if k.arg}
+        if len(kwargs) != len(value.keywords):
+            return None
+        env = {"__builtins__": __builtins__}
+        mod = ast.Module(body=list(ctx.helpers.values()), type_ignores=[])
+        env.update(ctx.modconsts)
+        exec(compile(ast.fix_missing_locations(mod), filename, "exec"), env)  # noqa: S102 - the app's own functions
+        result = env[value.func.id](*args, **kwargs)
+        json.dumps(result)
+    except Exception:  # noqa: BLE001 - anything unusual: it stays a server-side object
+        return None
+    return (result,)
+
+
+def _import_helper(ctx, lib, name, lineno, filename, seen=None):
+    """A plain function from another .pyweb file, for browser code too: it comes with the
+    functions and constants it uses (by the same names)."""
+    seen = set() if seen is None else seen
+    if name in seen:
+        return
+    seen.add(name)
+    fn = lib.ctx.helpers[name]
+    where = os.path.basename(lib.path)
+    taken = ctx.helpers.get(name)
+    if taken is not None and taken is not fn:
+        raise CompileError(f"{name!r} from {where} clashes with a function of the same name here",
+                           lineno, filename)
+    ctx.helpers[name] = fn
+    for n in ast.walk(fn):
+        if not (isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)) or n.id == name:
+            continue
+        if n.id in lib.ctx.helpers:
+            _import_helper(ctx, lib, n.id, lineno, filename, seen)
+        elif n.id in lib.ctx.modconsts and n.id not in ctx.modconsts:
+            ctx.modconsts[n.id] = lib.ctx.modconsts[n.id]
+        elif n.id in lib.ctx.browser_globals and n.id not in ctx.browser_globals:
+            ctx.browser_globals[n.id] = lib.ctx.browser_globals[n.id]
+            if n.id in lib.ctx.math_names:
+                ctx.math_names.add(n.id)
 
 
 def scan_module(tree, ui_all, filename, resolve=None):
@@ -364,6 +417,10 @@ def scan_module(tree, ui_all, filename, resolve=None):
                             raise ValueError
                         ctx.modconsts[name] = ast.literal_eval(value)
                     except (ValueError, SyntaxError, TypeError):
+                        found = _helper_constant(ctx, value, filename)
+                        if found is not None:
+                            ctx.modconsts[name] = found[0]
+                            continue
                         ctx.server_only[name] = "a module-level object created on the server"
                         ctx.modconsts.pop(name, None)
     for name in _mutated_globals(tree) & set(ctx.modconsts):

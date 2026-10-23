@@ -88,6 +88,25 @@ project uses [semantic versioning](https://semver.org).
   reduced=))` changes every animation at once, the UI kit's included, and
   reduced-motion settings are followed. The server renders the first
   pose; pages without motion don't load the engine (7.5 KB gzipped).
+- **Customising the kit, every level.**
+  - The dev toolbar gets a **Theme** tab: a live preview on the running
+    app, copy as code, and "Save to app.pyweb", which rewrites only the
+    `App(theme=...)` argument.
+  - It also gets a **Motion** tab: pick an animated element, tune its
+    spring or duration, and replay it.
+  - `ui.extend("Button", variant={"brand": {...}})` adds your own
+    variants to kit components.
+  - `variants()`, `style()` and `cx()` (cva and tailwind-merge style)
+    are for your own components, on the server and in the browser.
+  - The editor completes variant, size and tone values, presets,
+    `Theme(...)`/`Motion(...)` settings and transition keys, and warns
+    about unknown ones or out-of-range springs.
+- **Accessibility checks** in `pyweb check` and the editor: images
+  without alt, clicks keyboards can't reach, unlabelled fields, unnamed
+  buttons and links, positive tabindex, an empty page language. The
+  examples and templates were fixed where they fell short.
+- **Plain functions from other `.pyweb` files work in browser code**,
+  along with the functions and constants they use.
 - **`math` in browser code.** `import math` (and `from math import pi`)
   works in browser code, translated to JavaScript's `Math`.
 - **Components pass attributes through.** A `**attrs` parameter takes any

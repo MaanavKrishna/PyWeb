@@ -78,7 +78,7 @@ jobs:
         env:
           PYWEB_PYTHON: python
       - run: npx vsce package
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pyweb-vscode
           path: editors/vscode/*.vsix
@@ -131,7 +131,7 @@ jobs:
           PYWEB_SSR_VERIFY: "1"   # browser tests also check compiled rendering against the interpreter
       - name: Screenshots that changed (actual and diff)
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshot-diffs
           path: test-results/

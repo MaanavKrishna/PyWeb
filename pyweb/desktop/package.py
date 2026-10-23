@@ -153,7 +153,7 @@ from pyweb.desktop import shell
 
 def main():
     smoke = "--smoke" in sys.argv[1:] or os.environ.get("PYWEB_DESKTOP_SMOKE") == "1"
-    shell.run(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", APP_FILE), smoke=smoke)
+    shell.main(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", APP_FILE), smoke=smoke)
 
 
 APP_FILE = {app_file!r}

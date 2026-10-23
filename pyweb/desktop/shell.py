@@ -103,6 +103,26 @@ def build_site(app_path, *, dev=False):
     return DesktopSite(inner, start_url=cfg.start_url), cfg, app
 
 
+def main(app_path, *, dev=False, smoke=False, gui=None):
+    """The desktop app's process (``pyweb desktop`` and packaged apps): open the window, and end the
+    process when it closes. The server and jobs are stopped by then; a GUI toolkit's leftover threads
+    (Qt WebEngine's, for one) must not keep an invisible app running."""
+    code = 0
+    try:
+        run(app_path, dev=dev, smoke=smoke, gui=gui)
+    except SystemExit as exc:
+        if exc.code not in (None, 0):
+            print(exc.code if isinstance(exc.code, str) else f"exit {exc.code}", file=sys.stderr)
+            code = exc.code if isinstance(exc.code, int) else 1
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        code = 1
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 def run(app_path, *, dev=False, smoke=False, gui=None):
     """Open the app in its own window; returns when the window closes."""
     app_path = os.path.abspath(app_path)

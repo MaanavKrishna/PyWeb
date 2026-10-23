@@ -406,7 +406,7 @@ def cmd_files(args):
 
 def cmd_desktop(args):
     from pyweb.desktop import shell
-    shell.run(args.file, dev=args.dev, smoke=args.smoke, gui=args.gui)
+    shell.main(args.file, dev=args.dev, smoke=args.smoke, gui=args.gui)
 
 
 def cmd_push(args):

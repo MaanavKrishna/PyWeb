@@ -436,7 +436,7 @@ def test_briefcase_project(app_file, tmp_path):
     assert os.path.isfile(os.path.join(src, "app", "static", "style.css"))
     assert not os.path.exists(os.path.join(src, "app", "local.db"))                # the developer's data stays home
     main = open(os.path.join(src, "__main__.py"), encoding="utf-8").read()
-    assert "shell.run(" in main and "'app.pyweb'" in main
+    assert "shell.main(" in main and "'app.pyweb'" in main
     compile(main, "__main__.py", "exec")
     assert open(os.path.join(out, "CHANGELOG"), encoding="utf-8").read().startswith("1.2.0")
     for f in ("field_notes-16.png", "field_notes-1024.png", "field_notes.ico", "field_notes.icns"):
@@ -446,3 +446,22 @@ def test_briefcase_project(app_file, tmp_path):
     with pytest.raises(ValueError, match="version"):
         package.make_project(app_file, str(tmp_path / "x"), version="one")
     assert not list(tmp_path.glob("x/src"))
+
+
+def test_main_ends_the_process_when_the_window_closes(monkeypatch, capsys):
+    codes = []
+
+    def fake_exit(code):
+        codes.append(code)
+        raise KeyboardInterrupt        # stand-in: stop here, as os._exit would
+
+    monkeypatch.setattr(shell.os, "_exit", fake_exit)
+    for outcome, expected in ((None, 0), (SystemExit("pyweb desktop smoke: failed: no page"), 1), (RuntimeError("x"), 1)):
+        def fake_run(*a, outcome=outcome, **k):
+            if outcome is not None:
+                raise outcome
+        monkeypatch.setattr(shell, "run", fake_run)
+        with pytest.raises(KeyboardInterrupt):
+            shell.main("app.pyweb")
+        assert codes[-1] == expected
+    assert "smoke: failed: no page" in capsys.readouterr().err

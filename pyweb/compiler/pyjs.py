@@ -65,6 +65,19 @@ BOOL_METHODS = frozenset({
     "isspace", "isupper", "islower", "includes",
 })
 
+#: Python's math module in browser code: the same names on JavaScript's Math (no runtime code).
+MATH = {
+    "pi": "Math.PI", "e": "Math.E", "tau": "(2 * Math.PI)", "inf": "Infinity", "nan": "NaN",
+    "sqrt": "Math.sqrt", "floor": "Math.floor", "ceil": "Math.ceil", "trunc": "Math.trunc", "fabs": "Math.abs",
+    "exp": "Math.exp", "log10": "Math.log10", "log2": "Math.log2", "log1p": "Math.log1p", "pow": "Math.pow",
+    "log": "((x, b) => (b === undefined ? Math.log(x) : Math.log(x) / Math.log(b)))",
+    "sin": "Math.sin", "cos": "Math.cos", "tan": "Math.tan", "asin": "Math.asin", "acos": "Math.acos",
+    "atan": "Math.atan", "atan2": "Math.atan2", "sinh": "Math.sinh", "cosh": "Math.cosh", "tanh": "Math.tanh",
+    "hypot": "Math.hypot", "copysign": "((a, b) => Math.sign(b) * Math.abs(a))",
+    "degrees": "((x) => x * 180 / Math.PI)", "radians": "((x) => x * Math.PI / 180)",
+    "isfinite": "Number.isFinite", "isnan": "Number.isNaN", "isinf": "((x) => x === Infinity || x === -Infinity)",
+}
+
 JS_RESERVED = frozenset({
     "arguments", "await", "case", "catch", "const", "debugger", "default",
     "delete", "do", "enum", "eval", "export", "extends", "function",
@@ -132,6 +145,7 @@ class ModuleContext:
         self.npm_aliases = {}      # JS alias -> (specifier, export), including imported files
         self.server_only = {}      # name -> reason
         self.browser_globals = {}  # name -> js expression (pyweb.browser imports)
+        self.math_names = set()    # local names of `import math`
         # results of on-demand helper compilation
         self.helper_js = {}        # name -> js source
         self.helper_async = {}     # name -> bool
@@ -304,6 +318,12 @@ class Translator:
         return "{" + ", ".join(items) + "}"
 
     def x_Attribute(self, node, scope):
+        v = node.value
+        if isinstance(v, ast.Name) and v.id in self.ctx.math_names and scope.lookup(v.id) == "browser_global":
+            if node.attr not in MATH:
+                raise self.error(node, f"math.{node.attr} isn't available in browser code "
+                                       f"(available: {', '.join(sorted(MATH))})")
+            return MATH[node.attr]
         return f"{self.expr(node.value, scope)}.{node.attr}"
 
     def x_Subscript(self, node, scope):
@@ -428,14 +448,34 @@ class Translator:
         return js if self.is_bool(node, scope) else f"$py.truth({js})"
 
     def x_Lambda(self, node, scope):
-        params, inner = self.params(node.args, scope)
+        args = node.args
+        # `lambda n=n: go(n)` captures the value now (the usual Python idiom in loops). As a
+        # parameter it would be replaced by the event an event handler is called with, so the
+        # value is bound around the function instead.
+        first = len(args.args) - len(args.defaults)
+        captured = [a for i, a in enumerate(args.args) if i >= first
+                    and isinstance(args.defaults[i - first], ast.Name) and args.defaults[i - first].id == a.arg]
+        outer = []
+        if captured:
+            outer = [self.expr(args.defaults[args.args.index(a) - first], scope) for a in captured]
+            kept = [(a, args.defaults[i - first] if i >= first else None)
+                    for i, a in enumerate(args.args) if a not in captured]
+            args = ast.arguments(posonlyargs=[], args=[a for a, _d in kept], vararg=args.vararg,
+                                 kwonlyargs=args.kwonlyargs, kw_defaults=args.kw_defaults, kwarg=args.kwarg,
+                                 defaults=[d for _a, d in kept if d is not None])
+            scope = scope.child({a.arg: VALUE for a in captured}, kind="function")
+        params, inner = self.params(args, scope)
         self.fn_stack.append(_Fn("<lambda>"))
         try:
             body = self.expr(node.body, inner)
         finally:
             fn = self.fn_stack.pop()
         prefix = "async " if fn.is_async else ""
-        return f"({prefix}({', '.join(params)}) => ({body}))"
+        js = f"({prefix}({', '.join(params)}) => ({body}))"
+        if captured:
+            names = ", ".join(jsname(a.arg) for a in captured)
+            js = f"(({names}) => {js})({', '.join(outer)})"
+        return js
 
     def params(self, args, scope):
         if args.vararg or args.kwarg or args.kwonlyargs or getattr(args, "posonlyargs", []):

@@ -1,0 +1,35 @@
+"""Calendar and date picker.
+
+    <Calendar name="due" value="2026-11-02" />
+    <DatePicker name="due" value={due} onvaluechange={changed} />
+    <DatePicker name="trip" mode="range" placeholder="Pick dates" />
+
+Values are ISO dates ("2026-11-02"; a range is "start/end"). Weeks start on the locale's first
+day (week_start=0 for Sunday, 1 for Monday). Without scripts a Calendar is a native date field.
+"""
+
+
+def Calendar(value=None, name=None, mode="single", min=None, max=None, week_start=None, locale=None,
+             label="Date", picker=False, **attrs):
+    <div class="pw-calendar" data-pw-ui="calendar" data-part="calendar" data-value={value} data-mode={mode}
+         data-min={min} data-max={max} data-week-start={week_start} data-locale={locale}
+         data-picker={"" if picker else None} {**attrs}>
+        <input class="pw-control" data-part="input" type={"date" if mode == "single" else "text"} name={name}
+               value={value or ""} min={min} max={max} aria-label={label} />
+    </div>
+
+
+def DatePicker(value=None, name=None, mode="single", placeholder="Pick a date", min=None, max=None,
+               week_start=None, locale=None, align="start", **attrs):
+    <div class="pw-popover-root pw-date-picker" data-pw-ui="popover" data-part="root" data-state="closed"
+         data-side="bottom" data-align={align} data-focus="none" {**attrs}>
+        <button type="button" class="pw-button pw-date-trigger" data-part="trigger" data-variant="outline"
+                data-empty={None if value else ""}>
+            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><rect x="1.5" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor"/><path d="M1.5 6h12M5 1v3M10 1v3" stroke="currentColor"/></svg>
+            <span data-part="value">{value or placeholder}</span>
+        </button>
+        <div class="pw-popover pw-date-popover" data-part="content" data-state="closed" tabindex="-1" hidden>
+            <Calendar value={value} name={name} mode={mode} min={min} max={max} week_start={week_start}
+                      locale={locale} picker={True} />
+        </div>
+    </div>

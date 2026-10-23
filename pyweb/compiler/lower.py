@@ -265,7 +265,10 @@ def scan_module(tree, ui_all, filename, resolve=None):
             if isinstance(node, ast.ImportFrom) and mod == "pyweb.ui" and resolve is not None \
                     and hasattr(resolve, "kit"):
                 # The UI kit: each component comes from its own packaged .pyweb file.
-                for alias in node.names:
+                names = node.names
+                if any(a.name == "*" for a in names) and hasattr(resolve, "kit_names"):
+                    names = [ast.alias(name=n, asname=None) for n in resolve.kit_names()]
+                for alias in names:
                     kit_lib = resolve.kit(alias.name, node.lineno)
                     if kit_lib is not None:
                         _import_library(ctx, kit_lib, ast.ImportFrom(module=kit_lib.name, names=[alias], level=0,
@@ -290,6 +293,11 @@ def scan_module(tree, ui_all, filename, resolve=None):
                     ctx.browser_globals[local] = browser_bindings[alias.name]
                 elif mod == "pyweb.browser" and alias.name in pyjs.JS_GLOBALS:
                     ctx.browser_globals[local] = alias.name
+                elif isinstance(node, ast.Import) and alias.name == "math":
+                    ctx.browser_globals[local] = "Math"
+                    ctx.math_names.add(local)
+                elif mod == "math" and alias.name in pyjs.MATH:
+                    ctx.browser_globals[local] = pyjs.MATH[alias.name]
                 else:
                     where = f"from {mod} import" if isinstance(node, ast.ImportFrom) else "import"
                     ctx.server_only[local] = f"imported with `{where} {alias.name}`"

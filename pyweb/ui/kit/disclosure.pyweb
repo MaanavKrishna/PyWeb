@@ -1,0 +1,85 @@
+"""Tabs, accordions and collapsible sections.
+
+    <Tabs default="account">
+        <TabsList>
+            <TabsTrigger value="account">Account</TabsTrigger>
+            <TabsTrigger value="password">Password</TabsTrigger>
+        </TabsList>
+        <TabsContent value="account">...</TabsContent>
+        <TabsContent value="password">...</TabsContent>
+    </Tabs>
+
+    <Accordion type="single" default="a">
+        <AccordionItem value="a">
+            <AccordionTrigger>Is it accessible?</AccordionTrigger>
+            <AccordionContent>Yes. It follows the WAI-ARIA pattern.</AccordionContent>
+        </AccordionItem>
+    </Accordion>
+
+Accordions and collapsibles are native <details>: they work without scripts, and the browser's
+find-in-page opens a closed section that has a match.
+"""
+
+
+def _csv(value):
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(v) for v in value)
+    return str(value)
+
+
+def Tabs(default=None, value=None, orientation="horizontal", activation="auto", children=None, **attrs):
+    <div class="pw-tabs" data-pw-ui="tabs" data-part="root" data-default={default} data-value={value}
+         data-controlled={None if value is None else ""} data-orientation={orientation}
+         data-activation={activation} {**attrs}>{children}</div>
+
+
+def TabsList(children=None, **attrs):
+    <div class="pw-tabs-list" data-part="list" role="tablist" {**attrs}>{children}</div>
+
+
+def TabsTrigger(value, disabled=False, children=None, **attrs):
+    <button type="button" class="pw-tabs-trigger" data-part="trigger" role="tab" data-value={value}
+            disabled={disabled} {**attrs}>{children}</button>
+
+
+def TabsContent(value, children=None, **attrs):
+    <div class="pw-tabs-content" data-part="content" role="tabpanel" data-value={value} {**attrs}>{children}</div>
+
+
+def Accordion(type="single", default=None, value=None, collapsible=True, children=None, **attrs):
+    <div class="pw-accordion" data-pw-ui="accordion" data-part="root" data-type={type}
+         data-default={_csv(default)} data-value={_csv(value)}
+         data-collapsible={None if collapsible else "false"} {**attrs}>{children}</div>
+
+
+def AccordionItem(value, open=False, disabled=False, children=None, **attrs):
+    <details class="pw-accordion-item" data-part="item" data-value={value} open={open}
+             data-state={"open" if open else "closed"} data-disabled={"" if disabled else None} {**attrs}>{children}</details>
+
+
+def AccordionTrigger(children=None, **attrs):
+    <summary class="pw-accordion-trigger" data-part="trigger" {**attrs}>
+        <span>{children}</span>
+        <svg class="pw-chevron" width="14" height="14" viewBox="0 0 15 15" aria-hidden="true"><path d="M4 6l3.5 3.5L11 6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </summary>
+
+
+def AccordionContent(children=None, **attrs):
+    <div class="pw-accordion-content" data-part="content" {**attrs}>
+        <div data-part="body">{children}</div>
+    </div>
+
+
+def Collapsible(open=False, children=None, **attrs):
+    <details class="pw-collapsible" data-pw-ui="collapsible" data-part="root" open={open}
+             data-state={"open" if open else "closed"} {**attrs}>{children}</details>
+
+
+def CollapsibleTrigger(children=None, **attrs):
+    <summary class="pw-collapsible-trigger" data-part="trigger" {**attrs}>{children}</summary>
+
+
+def CollapsibleContent(children=None, **attrs):
+    <div class="pw-collapsible-content" data-part="content" {**attrs}>{children}</div>

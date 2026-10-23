@@ -1,0 +1,131 @@
+"""Form controls: checkbox, switch, radio group, toggle, toggle group, slider, one-time code.
+
+They're native inputs underneath (forms, validation, keyboard and screen readers come from the
+browser), styled by the kit; put `name=` on them and they're sent with any form.
+
+    <Switch name="emails" label="Email me about new comments" checked={True} />
+    <RadioGroup name="plan" value="pro" options={[("free", "Free"), ("pro", "Pro")]} />
+    <ToggleGroup type="single" value={align} onvaluechange={set_align}>
+        <ToggleGroupItem value="left" label="Align left">⇤</ToggleGroupItem>
+        <ToggleGroupItem value="center" label="Center">↔</ToggleGroupItem>
+    </ToggleGroup>
+    <Slider name="volume" value={40} label="Volume" />
+    <InputOTP name="code" length={6} />
+"""
+
+
+def _csv(value):
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(v) for v in value)
+    return str(value)
+
+
+def _num(x):
+    return str(int(x)) if x == int(x) else str(round(x, 2))
+
+
+def _options(options):
+    out = []
+    for o in options or []:
+        if isinstance(o, (list, tuple)):
+            out.append([str(o[0]), str(o[1])])
+        else:
+            out.append([str(o), str(o)])
+    return out
+
+
+def Checkbox(label=None, checked=False, indeterminate=False, name=None, value=None, disabled=False,
+             children=None, **attrs):
+    <label class="pw-check" data-part="root" data-disabled={"" if disabled else None}>
+        <input type="checkbox" class="pw-checkbox" data-pw-ui="checkbox" data-part="checkbox" name={name}
+               value={value} checked={checked} disabled={disabled}
+               data-indeterminate={"true" if indeterminate else None} {**attrs} />
+        if label:
+            <span data-part="label">{label}</span>
+        {children}
+    </label>
+
+
+def Switch(label=None, checked=False, name=None, value=None, disabled=False, size="md", children=None, **attrs):
+    <label class="pw-check" data-part="root" data-disabled={"" if disabled else None}>
+        <input type="checkbox" role="switch" class="pw-switch" data-part="switch" data-size={size} name={name}
+               value={value} checked={checked} disabled={disabled} {**attrs} />
+        if label:
+            <span data-part="label">{label}</span>
+        {children}
+    </label>
+
+
+def RadioGroup(name=None, value=None, options=None, orientation="vertical", label=None, children=None, **attrs):
+    <div class="pw-radio-group" data-pw-ui="radio-group" data-part="root" role="radiogroup" data-name={name}
+         data-value={value} data-orientation={orientation} aria-label={label} {**attrs}>
+        for o in _options(options):
+            <label class="pw-check" data-part="item">
+                <input type="radio" class="pw-radio" name={name} value={o[0]} checked={o[0] == str(value)} />
+                <span data-part="label">{o[1]}</span>
+            </label>
+        {children}
+    </div>
+
+
+def RadioGroupItem(value, label=None, name=None, checked=False, disabled=False, children=None, **attrs):
+    <label class="pw-check" data-part="item" data-disabled={"" if disabled else None}>
+        <input type="radio" class="pw-radio" name={name} value={value} checked={checked} disabled={disabled}
+               {**attrs} />
+        if label:
+            <span data-part="label">{label}</span>
+        {children}
+    </label>
+
+
+def Toggle(pressed=None, default=False, variant="default", size="md", label=None, children=None, **attrs):
+    on = default if pressed is None else pressed
+    <button type="button" class="pw-toggle" data-pw-ui="toggle" data-part="toggle"
+            aria-pressed={"true" if on else "false"} data-state={"on" if on else "off"}
+            data-controlled={None if pressed is None else ""} data-variant={variant} data-size={size}
+            aria-label={label} {**attrs}>{children}</button>
+
+
+def ToggleGroup(type="single", value=None, default=None, name=None, variant="default", size="md",
+                orientation="horizontal", label=None, children=None, **attrs):
+    <div class="pw-toggle-group" data-pw-ui="toggle-group" data-part="root" data-type={type}
+         data-value={_csv(default if value is None else value)} data-controlled={None if value is None else ""}
+         data-variant={variant} data-size={size} data-orientation={orientation} aria-label={label} {**attrs}>
+        if name:
+            <input type="hidden" name={name} value={_csv(default if value is None else value) or ""} />
+        {children}
+    </div>
+
+
+def ToggleGroupItem(value, label=None, disabled=False, children=None, **attrs):
+    <button type="button" class="pw-toggle" data-part="item" data-value={value} aria-label={label}
+            disabled={disabled} {**attrs}>{children}</button>
+
+
+def Slider(value=50, min=0, max=100, step=1, name=None, label=None, disabled=False, show_value=False, **attrs):
+    fill = (value - min) / (max - min) * 100 if max > min else 0
+    <div class="pw-slider" data-pw-ui="slider" data-part="root" style={{"--pw-fill": _num(fill) + "%"}}>
+        <input type="range" data-part="input" min={min} max={max} step={step} value={value} name={name}
+               aria-label={label} disabled={disabled} {**attrs} />
+        if show_value:
+            <output data-part="value">{value}</output>
+    </div>
+
+
+def InputOTP(length=6, name=None, value="", pattern="digits", group=None, label="One-time code",
+             disabled=False, **attrs):
+    digits = pattern == "digits"
+    <div class="pw-otp" data-pw-ui="otp" data-part="root" data-pattern={pattern}>
+        <input class="pw-control" data-part="input" name={name} value={value} maxlength={length}
+               autocomplete="one-time-code" inputmode={"numeric" if digits else "text"}
+               pattern={"[0-9]*" if digits else None} aria-label={label} disabled={disabled}
+               spellcheck="false" {**attrs} />
+        <div data-part="slots" aria-hidden="true">
+            for i in range(length):
+                if group and i and i % group == 0:
+                    <span data-part="separator">–</span>
+                <span data-part="slot" data-state="empty"></span>
+        </div>
+    </div>

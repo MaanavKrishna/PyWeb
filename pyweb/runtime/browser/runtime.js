@@ -327,12 +327,15 @@ export function bind(el, s) {
   });
 }
 
+// While hydrating, the server's HTML already has every attribute: only later changes are applied,
+// so nothing set in between (a UI kit script, the user typing) is overwritten.
 function setProp(el, k, v) {
   if (k.length > 2 && k[0] === "o" && k[1] === "n") {
     listen(el, k.slice(2).toLowerCase(), v);
   } else if (typeof v === "function") {
-    effect(() => applyAttr(el, k, v()));
-  } else {
+    let skip = !!H;
+    effect(() => { const x = v(); if (skip) skip = false; else applyAttr(el, k, x); });
+  } else if (!H) {
     applyAttr(el, k, v);
   }
 }
@@ -352,7 +355,7 @@ function spread(el, props, keys) {
   const own = props.class !== undefined ? props.class : props.class_ !== undefined ? props.class_ : props.className;
   const handlers = {};
   const listening = new Set();
-  let shown = new Set();
+  let shown = new Set(), skip = !!H;
   effect(() => {
     const classes = [typeof own === "function" ? own() : own];
     const now = new Set();
@@ -373,7 +376,7 @@ function spread(el, props, keys) {
           now.add(key);
           continue;
         }
-        applyAttr(el, key, v);
+        if (!skip) applyAttr(el, key, v);
         now.add(key);
       }
     }
@@ -382,7 +385,8 @@ function spread(el, props, keys) {
       if (listening.has(key)) handlers[key] = null; else applyAttr(el, key, null);
     }
     shown = now;
-    applyAttr(el, "class", classes);
+    if (!skip) applyAttr(el, "class", classes);
+    skip = false;
   });
 }
 

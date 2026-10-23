@@ -147,7 +147,11 @@ def test_mail_goes_through_the_outbox(shop, monkeypatch):
         assert sent == []                                    # queued, not sent inline
         w = jobs.Worker(schedule=False)
         end = time.time() + 5
-        while time.time() < end and not sent:
+
+        def finished():
+            # The message is sent before the worker records the job as done (on another thread).
+            return sent and jobs.backend().list(name="pyweb.mail.deliver")[0]["state"] == "done"
+        while time.time() < end and not finished():
             w.tick()
             time.sleep(0.01)
         assert [m.subject for m in sent] == ["Hello"]

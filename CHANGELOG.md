@@ -67,8 +67,16 @@ project uses [semantic versioning](https://semver.org).
   Dialog, AlertDialog, Sheet, Popover, Tooltip, HoverCard, DropdownMenu,
   ContextMenu, Menubar (with checkbox/radio items and submenus),
   SelectMenu, Combobox, a Command palette (⌘K) and sonner-style toasts
-  (`pyweb.ui.toast()` from server code). Each behaviour module loads only
-  on pages that use it.
+  (`pyweb.ui.toast()` from server code). Also Tabs, Accordion and
+  Collapsible (native `<details>`), Checkbox, Switch, RadioGroup, Toggle,
+  ToggleGroup, Slider, InputOTP, a Sidebar layout, NavigationMenu,
+  Breadcrumb, Pagination, Resizable panels, ScrollArea, Calendar and
+  DatePicker, Carousel, DataTable (search, sort, pages, row selection) and
+  SVG charts (bar, line, area, pie, sparkline) drawn on the server. Each
+  behaviour module loads only on pages that use it; `from pyweb.ui import *`
+  imports them all.
+- **`math` in browser code.** `import math` (and `from math import pi`)
+  works in browser code, translated to JavaScript's `Math`.
 - **Components pass attributes through.** A `**attrs` parameter takes any
   other attribute, and `{**attrs}` spreads a dict onto an element
   (explicit attributes win, classes merge).
@@ -135,6 +143,10 @@ project uses [semantic versioning](https://semver.org).
   were placeholders); `pyweb upgrade` points at them.
 
 ### Fixed
+- `lambda n=n: go(n)` in an event handler kept the event instead of `n`.
+- Hydrating a page no longer rewrites attributes the server already
+  rendered, so it can't undo what a UI kit script (or the user, typing
+  early) changed in the meantime.
 - Markup right after an `if`/`for` block inside an element (a
   `{children}` or text line at the block's indent) was put inside the
   block; it now follows it.

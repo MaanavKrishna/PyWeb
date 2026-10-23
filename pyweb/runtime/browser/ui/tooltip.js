@@ -1,14 +1,14 @@
 // Tooltip (WAI-ARIA APG "Tooltip"): shows on hover (after a short delay) and on keyboard focus,
 // hides on Escape, blur or leaving; the pointer can move onto it without it closing (WCAG 1.4.13).
 // Once one tooltip has shown, the next one opens without the delay.
-import { place, uid } from "./core.js";
+import { part, place, uid } from "./core.js";
 import { floating } from "./popover.js";
 
 let warm = 0;
 
 export default function setup(root) {
-  const trigger = root.querySelector('[data-part="trigger"]') || root.firstElementChild;
-  const content = root.querySelector('[data-part="content"]');
+  const trigger = part(root, "trigger") || root.firstElementChild;
+  const content = part(root, "content");
   if (!trigger || !content) return null;
   const layer = floating(root, content);
   content.id ||= uid("pw-tooltip");

@@ -1,11 +1,11 @@
 // HoverCard: a preview card for sighted pointer users, opened by hovering (or focusing) a link.
 // The link itself stays the way to the content, so nothing is lost without a pointer.
-import { autoPlace, uid } from "./core.js";
+import { autoPlace, part, uid } from "./core.js";
 import { floating } from "./popover.js";
 
 export default function setup(root) {
-  const trigger = root.querySelector('[data-part="trigger"]');
-  const content = root.querySelector('[data-part="content"]');
+  const trigger = part(root, "trigger");
+  const content = part(root, "content");
   if (!trigger || !content) return null;
   const layer = floating(root, content);
   content.id ||= uid("pw-hovercard");

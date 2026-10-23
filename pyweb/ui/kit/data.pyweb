@@ -1,0 +1,202 @@
+"""Tables: styled table parts, and DataTable (search, sort, pages and row selection, all in the
+browser once loaded; the first page is rendered on the server).
+
+    <DataTable rows={tasks} columns={[
+        {"key": "title", "label": "Task"},
+        {"key": "points", "label": "Points", "align": "end"},
+        {"key": "done", "label": "Done", "format": lambda v: "✓" if v else ""},
+    ]} page_size={10} selectable={True} onselect={picked} />
+
+`rows` is a list of dicts (a live query works: the table follows it). Columns are dicts with
+"key", and optionally "label", "sortable" (default True), "align" ("start", "end", "center"),
+"format" (a function of the value) and "width"; a plain string is a key.
+"""
+
+
+def _columns(columns):
+    out = []
+    for c in columns or []:
+        if isinstance(c, str):
+            c = {"key": c}
+        key = c["key"]
+        out.append({"key": key, "label": c.get("label") or str(key).replace("_", " ").capitalize(),
+                    "sortable": c.get("sortable", True), "align": c.get("align") or "start",
+                    "format": c.get("format"), "width": c.get("width")})
+    return out
+
+
+def _text(value):
+    return "" if value is None else str(value)
+
+
+def _cell(row, col):
+    value = row.get(col["key"])
+    f = col["format"]
+    return _text(f(value) if f else value)
+
+
+def _matches(row, cols, needle):
+    for c in cols:
+        if needle in _cell(row, c).lower():
+            return True
+    return False
+
+
+def _sort_value(row, key):
+    value = row.get(key)
+    return [value is None, 0 if value is None else value]
+
+
+def Table(caption=None, children=None, **attrs):
+    <div class="pw-table-wrap" data-part="table-wrap">
+        <table class="pw-table" data-part="table" {**attrs}>
+            if caption:
+                <caption>{caption}</caption>
+            {children}
+        </table>
+    </div>
+
+
+def TableHeader(children=None, **attrs):
+    <thead data-part="header" {**attrs}>{children}</thead>
+
+
+def TableBody(children=None, **attrs):
+    <tbody data-part="body" {**attrs}>{children}</tbody>
+
+
+def TableFooter(children=None, **attrs):
+    <tfoot data-part="footer" {**attrs}>{children}</tfoot>
+
+
+def TableRow(selected=False, children=None, **attrs):
+    <tr data-part="row" data-state={"selected" if selected else None} {**attrs}>{children}</tr>
+
+
+def TableHead(align=None, children=None, **attrs):
+    <th scope="col" data-part="head" data-align={align} {**attrs}>{children}</th>
+
+
+def TableCell(align=None, children=None, **attrs):
+    <td data-part="cell" data-align={align} {**attrs}>{children}</td>
+
+
+def DataTable(rows=None, columns=None, key="id", page_size=10, search=True, placeholder="Search…",
+              selectable=False, onselect=None, empty="No results.", caption=None, label="Table", **attrs):
+    query = ""
+    sort_key = None
+    descending = False
+    page = 1
+    picked = []
+
+    def sort_by(k):
+        if sort_key == k:
+            if descending:
+                sort_key = None
+                descending = False
+            else:
+                descending = True
+        else:
+            sort_key = k
+            descending = False
+        page = 1
+
+    def search_for(e):
+        query = e.target.value
+        page = 1
+
+    def go(n):
+        page = n
+
+    def choose(keys):
+        picked = keys
+        if onselect:
+            onselect(keys)
+
+    def toggle(k):
+        choose([x for x in picked if x != k] if k in picked else picked + [k])
+
+    def toggle_page():
+        keys = [r.get(key) for r in visible]
+        if all(k in picked for k in keys):
+            choose([x for x in picked if x not in keys])
+        else:
+            choose(picked + [k for k in keys if k not in picked])
+
+    cols = _columns(columns)
+    needle = query.strip().lower()
+    shown = [r for r in rows or [] if _matches(r, cols, needle)] if needle else list(rows or [])
+    ordered = sorted(shown, key=lambda r: _sort_value(r, sort_key), reverse=descending) if sort_key else shown
+    pages = max(1, (len(ordered) + page_size - 1) // page_size)
+    current = min(page, pages)
+    visible = ordered[(current - 1) * page_size:current * page_size]
+    page_keys = [r.get(key) for r in visible]
+    on_page = len([k for k in page_keys if k in picked])
+    first = (current - 1) * page_size + 1 if ordered else 0
+    last = min(current * page_size, len(ordered))
+    <div class="pw-data-table" data-part="data-table" {**attrs}>
+        if search:
+            <div data-part="toolbar">
+                <input class="pw-control" data-part="search" type="search" placeholder={placeholder}
+                       aria-label={placeholder} value={query} oninput={search_for} />
+                if selectable and picked:
+                    <span class="pw-muted" data-part="selection">{len(picked)} selected</span>
+            </div>
+        <div class="pw-table-wrap" data-part="table-wrap">
+            <table class="pw-table" data-part="table" aria-label={None if caption else label}>
+                if caption:
+                    <caption>{caption}</caption>
+                <thead data-part="header">
+                    <tr data-part="row">
+                        if selectable:
+                            <th scope="col" data-part="select" class="pw-table-select">
+                                <input type="checkbox" class="pw-checkbox" aria-label="Select this page"
+                                       checked={bool(page_keys) and on_page == len(page_keys)}
+                                       data-indeterminate={"true" if 0 < on_page < len(page_keys) else "false"}
+                                       data-pw-ui="checkbox" onclick={toggle_page} />
+                            </th>
+                        for c in cols:
+                            <th scope="col" data-part="head" data-align={c["align"]} style={{"width": c["width"]} if c["width"] else None}
+                                aria-sort={("descending" if descending else "ascending") if sort_key == c["key"] else None}>
+                                if c["sortable"]:
+                                    <button type="button" class="pw-table-sort" data-part="sort"
+                                            onclick={lambda c=c: sort_by(c["key"])}>
+                                        {c["label"]}
+                                        <span data-part="sort-icon" aria-hidden="true">{("↓" if descending else "↑") if sort_key == c["key"] else "↕"}</span>
+                                    </button>
+                                else:
+                                    {c["label"]}
+                            </th>
+                    </tr>
+                </thead>
+                <tbody data-part="body">
+                    for r in visible:
+                        <tr data-part="row" data-state={"selected" if r.get(key) in picked else None}>
+                            if selectable:
+                                <td data-part="select" class="pw-table-select">
+                                    <input type="checkbox" class="pw-checkbox" aria-label="Select row"
+                                           checked={r.get(key) in picked} onclick={lambda r=r: toggle(r.get(key))} />
+                                </td>
+                            for c in cols:
+                                <td data-part="cell" data-align={c["align"]}>{_cell(r, c)}</td>
+                        </tr>
+                    if not visible:
+                        <tr data-part="empty">
+                            <td colspan={len(cols) + (1 if selectable else 0)}>{empty}</td>
+                        </tr>
+                </tbody>
+            </table>
+        </div>
+        if pages > 1 or search:
+            <div data-part="footer">
+                <span class="pw-muted" aria-live="polite">{first}–{last} of {len(ordered)}</span>
+                if pages > 1:
+                    <div data-part="pages">
+                        <button type="button" class="pw-button" data-variant="outline" data-size="sm"
+                                disabled={current <= 1} onclick={lambda: go(current - 1)}>Previous</button>
+                        <span class="pw-muted">Page {current} of {pages}</span>
+                        <button type="button" class="pw-button" data-variant="outline" data-size="sm"
+                                disabled={current >= pages} onclick={lambda: go(current + 1)}>Next</button>
+                    </div>
+            </div>
+    </div>

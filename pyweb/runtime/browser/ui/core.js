@@ -252,19 +252,28 @@ export function autoPlace(anchor, floating, opts) {
 
 // ------------------------------------------------------------------ helpers for the primitives
 
-/** The parts of a component: `parts(root, "trigger")` finds data-part="trigger" that belongs to `root`. */
-export function part(root, name) {
-  const kind = root.dataset.pwUi;
-  for (const el of root.querySelectorAll(`[data-part="${name}"]`)) {
-    const owner = el.closest(`[data-pw-ui="${kind}"]`);
-    if (owner === root) return el;
+// Tooltips and hover cards only wrap their trigger, so they don't hide it from the component
+// around them (a <Tooltip> around a <DialogTrigger> still opens the dialog).
+const WRAPPERS = new Set(["tooltip", "hover-card"]);
+
+/** The component an element belongs to: the nearest one around it (looking through wrappers). */
+export function owner(el, kind) {
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const k = n.dataset && n.dataset.pwUi;
+    if (k && (k === kind || !WRAPPERS.has(k))) return n;
   }
   return null;
 }
 
+/** A part of a component: `part(root, "trigger")` is its data-part="trigger", not one of a
+ * component nested inside it (a menu in a dialog keeps its own trigger). */
+export function part(root, name) {
+  for (const el of root.querySelectorAll(`[data-part="${name}"]`)) if (owner(el, root.dataset.pwUi) === root) return el;
+  return null;
+}
+
 export function partsAll(root, name) {
-  const kind = root.dataset.pwUi;
-  return Array.from(root.querySelectorAll(`[data-part="${name}"]`)).filter((el) => el.closest(`[data-pw-ui="${kind}"]`) === root);
+  return Array.from(root.querySelectorAll(`[data-part="${name}"]`)).filter((el) => owner(el, root.dataset.pwUi) === root);
 }
 
 /** Call `cb(value)` when attribute `name` of `el` changes (controlled components: open={...}). */

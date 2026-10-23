@@ -1,0 +1,41 @@
+"""Carousel: slides on a scroll-snap track (swipe, trackpad, arrow keys, buttons, dots).
+
+    <Carousel loop={True} label="Featured">
+        <CarouselContent>
+            for p in products:
+                <CarouselItem basis="33%"><Card>...</Card></CarouselItem>
+        </CarouselContent>
+        <CarouselPrevious />
+        <CarouselNext />
+        <CarouselDots />
+    </Carousel>
+"""
+
+
+def Carousel(orientation="horizontal", loop=False, autoplay=None, label="Carousel", children=None, **attrs):
+    <div class="pw-carousel" data-pw-ui="carousel" data-part="root" data-orientation={orientation}
+         data-loop={"" if loop else None} data-autoplay={autoplay} aria-label={label} tabindex="0"
+         {**attrs}>{children}</div>
+
+
+def CarouselContent(children=None, **attrs):
+    <div class="pw-carousel-track" data-part="content" {**attrs}>{children}</div>
+
+
+def CarouselItem(basis=None, children=None, **attrs):
+    style = {"flex-basis": basis} if basis else None
+    <div class="pw-carousel-item" data-part="item" style={style} {**attrs}>{children}</div>
+
+
+def CarouselPrevious(label="Previous slide", **attrs):
+    <button type="button" class="pw-button pw-carousel-button" data-part="previous" data-variant="outline"
+            data-size="icon" aria-label={label} {**attrs}>‹</button>
+
+
+def CarouselNext(label="Next slide", **attrs):
+    <button type="button" class="pw-button pw-carousel-button" data-part="next" data-variant="outline"
+            data-size="icon" aria-label={label} {**attrs}>›</button>
+
+
+def CarouselDots(**attrs):
+    <div class="pw-carousel-dots" data-part="dots" {**attrs}></div>

@@ -28,7 +28,7 @@ def Billing():
 ```
 
 Pages that use the kit get its stylesheet (`/__pyweb/ui.css`, about
-3 KB gzipped) and the theme (`/__pyweb/theme.css`); pages that don't
+9 KB gzipped) and the theme (`/__pyweb/theme.css`); pages that don't
 use it get neither.
 
 ## The theme
@@ -179,8 +179,159 @@ out on hover, pause while hovered or focused, can be swiped away, and
 are announced to screen readers (danger ones at once). Browser code can
 call `pywebUI.toast({"title": "Copied"})`.
 
-Each component's behaviour is a small module (1-2.5 KB gzipped) that
+Each component's behaviour is a small module (0.3-3 KB gzipped) that
 loads only on pages that use that component.
+
+### Tabs, accordions and collapsibles
+
+```html
+<Tabs default="account">
+    <TabsList>
+        <TabsTrigger value="account">Account</TabsTrigger>
+        <TabsTrigger value="password">Password</TabsTrigger>
+    </TabsList>
+    <TabsContent value="account">...</TabsContent>
+    <TabsContent value="password">...</TabsContent>
+</Tabs>
+
+<Accordion type="single" default="shipping">
+    <AccordionItem value="shipping">
+        <AccordionTrigger>How long does shipping take?</AccordionTrigger>
+        <AccordionContent>Two to four days.</AccordionContent>
+    </AccordionItem>
+</Accordion>
+```
+
+| Component | |
+|---|---|
+| `Tabs` (`default`, `value`, `orientation`, `activation`) + `TabsList`, `TabsTrigger` (`value`, `disabled`), `TabsContent` (`value`) | arrow keys move between tabs and show them (`activation="manual"`: Enter shows), Home/End jump; the underline slides to the chosen tab. Put the default tab first: it shows until scripts load |
+| `Accordion` (`type`: single or multiple, `default`, `value`, `collapsible`) + `AccordionItem` (`value`, `open`, `disabled`), `AccordionTrigger`, `AccordionContent` | native `<details>`: works without scripts, and find-in-page opens a closed section. Height animates; arrows move between headers |
+| `Collapsible` (`open`) + `CollapsibleTrigger`, `CollapsibleContent` | one section that opens and closes |
+
+`value=` makes `Tabs` and `Accordion` controlled: they fire
+`valuechange` and show what your state says.
+
+### Form controls
+
+Native inputs underneath (forms, validation, keyboard and screen
+readers come from the browser), styled by the kit. With `name=` they're
+sent with any form.
+
+| Component | |
+|---|---|
+| `Checkbox` (`label`, `checked`, `indeterminate`, `name`, `value`) | `indeterminate=` shows the mixed state |
+| `Switch` (`label`, `checked`, `name`, `size`) | a checkbox with `role="switch"` |
+| `RadioGroup` (`name`, `value`, `options`, `orientation`) | `options=[("free", "Free"), ...]`, or `RadioGroupItem` (`value`, `label`) children |
+| `Toggle` (`pressed`, `default`, `variant`, `label`) | a button that stays pressed; fires `pressedchange` |
+| `ToggleGroup` (`type`: single or multiple, `value`, `default`, `name`) + `ToggleGroupItem` (`value`, `label`) | single works like radio buttons; fires `valuechange` |
+| `Slider` (`value`, `min`, `max`, `step`, `name`, `label`, `show_value`) | a range input with a filled track |
+| `InputOTP` (`length`, `name`, `pattern`: digits or alphanumeric, `group`) | one real `autocomplete="one-time-code"` input drawn as boxes (paste and SMS autofill work); fires `complete` |
+
+### Layout and navigation
+
+```html
+<SidebarProvider>
+    <Sidebar>
+        <SidebarHeader>Acme</SidebarHeader>
+        <SidebarContent>
+            <SidebarGroup label="Workspace">
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton href="/" active={True} icon="⌂">Home</SidebarMenuButton>
+                    </SidebarMenuItem>
+                </SidebarMenu>
+            </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>...</SidebarFooter>
+    </Sidebar>
+    <SidebarInset>
+        <SidebarTrigger />
+        ...the page...
+    </SidebarInset>
+</SidebarProvider>
+```
+
+| Component | |
+|---|---|
+| `SidebarProvider` (`collapsed`, `collapsible`: icon, offcanvas or none, `side`, `variant`: sidebar or floating, `shortcut`) + `Sidebar`, `SidebarHeader`, `SidebarContent`, `SidebarFooter`, `SidebarGroup` (`label`), `SidebarMenu`, `SidebarMenuItem`, `SidebarMenuButton` (`href`, `active`, `icon`, `badge`), `SidebarSeparator`, `SidebarTrigger`, `SidebarRail`, `SidebarInset` | `SidebarTrigger` or Ctrl/⌘+B collapses it to icons (remembered in the browser). On small screens it opens over the page instead |
+| `NavigationMenu` + `NavigationMenuList`, `NavigationMenuItem`, `NavigationMenuTrigger`, `NavigationMenuContent`, `NavigationMenuLink` (`href`, `description`, `active`) | a site menu: panels open on hover or click, arrows move along the bar, ArrowDown enters a panel, Escape closes |
+| `Breadcrumb` + `BreadcrumbItem`, `BreadcrumbLink`, `BreadcrumbPage`, `BreadcrumbSeparator`, `BreadcrumbEllipsis` | |
+| `Pagination` (`page`, `pages`, `href` or `onchange`, `siblings`) | links (`href="?page="` gets the number added) or buttons that call `onchange(n)`, with ellipses for long ranges |
+| `ResizablePanelGroup` (`direction`, `save`) + `ResizablePanel` (`size`, `min`, `max`, `collapsible`), `ResizableHandle` (`grip`) | drag or use the arrow keys on a handle (sizes are percentages); `save="name"` remembers them |
+| `ScrollArea` (`height`, `max_height`, `orientation`) | a scrolling region with thin scrollbars, reachable by keyboard |
+
+### Dates
+
+```html
+<Calendar name="due" value="2026-11-02" />
+<DatePicker name="trip" mode="range" placeholder="Pick dates" onvaluechange={changed} />
+```
+
+`Calendar` and `DatePicker` take `value` (an ISO date; a range is
+`"start/end"`), `name`, `mode` (single or range), `min`, `max`,
+`week_start` (0 Sunday, 1 Monday; the locale decides otherwise) and
+`locale`. Arrow keys move a day or a week, Home/End go to the week's
+ends, PageUp/PageDown change the month (with Shift, the year), and
+Enter picks. Without scripts a `Calendar` is a native date field.
+
+### Carousel
+
+```html
+<Carousel loop={True} label="Featured">
+    <CarouselContent>
+        for p in products:
+            <CarouselItem basis="33%"><ProductCard product={p} /></CarouselItem>
+    </CarouselContent>
+    <CarouselPrevious />
+    <CarouselNext />
+    <CarouselDots />
+</Carousel>
+```
+
+Slides sit on a scroll-snap track, so swipes and trackpads work as
+they do anywhere else. Buttons, dots and the arrow keys move one slide;
+`autoplay=5000` advances on a timer, paused while hovered or focused and
+never with reduced motion. It fires `slidechange`.
+
+### Data tables
+
+```html
+<DataTable rows={tasks} page_size={10} selectable={True} onselect={picked} columns={[
+    {"key": "title", "label": "Task"},
+    {"key": "points", "label": "Points", "align": "end"},
+    {"key": "done", "label": "Done", "format": lambda v: "✓" if v else "", "sortable": False},
+]} />
+```
+
+Search, sorting (click a header: ascending, descending, off), pages
+and row selection all run in the browser; the first page is rendered on
+the server. `rows` is a list of dicts. A live query works: the table
+follows it. `onselect(keys)` gets the `key` (default `"id"`) of every
+selected row. For a plain styled table there are `Table` (`caption`),
+`TableHeader`, `TableBody`, `TableFooter`, `TableRow` (`selected`),
+`TableHead` and `TableCell` (`align`).
+
+### Charts
+
+```html
+<BarChart data={sales} x="month" y={["online", "store"]} label="Sales by month" />
+<LineChart data={visits} x="day" y="visits" />
+<AreaChart data={visits} x="day" y="visits" />
+<PieChart data={plans} name="plan" value="users" donut={True} center="1,204" />
+<Sparkline values={[3, 5, 2, 8, 6]} />
+```
+
+Charts are SVG drawn on the server: no chart library and nothing to
+load. They redraw when their data changes (state or a live query).
+`BarChart` takes `stacked=`, `LineChart` takes `area=` and `dots=`,
+and each takes `height`, `colors`, `format` (a function for the
+numbers on the axis and in tooltips) and `legend`. Colours come from
+`--pw-chart-1` ... `--pw-chart-5` (accent, info, success, warning,
+danger). Each chart has a label and a hidden table of its numbers for
+screen readers, and every bar, point and slice has a tooltip.
+
+`from pyweb.ui import *` imports every component; pages still only get
+the components they use.
 
 ## Customising
 

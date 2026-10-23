@@ -1,0 +1,292 @@
+"""Charts, drawn as SVG on the server (no chart library, nothing to load): bar, line, area, pie
+and donut charts and sparklines. They follow their data: pass a live query or state and they
+redraw. Colours come from the theme (--pw-chart-1 … --pw-chart-5); pass colors=[...] to choose.
+
+    <BarChart data={sales} x="month" y={["online", "store"]} label="Sales by month" />
+    <LineChart data={visits} x="day" y="visits" area={True} />
+    <PieChart data={plans} name="plan" value="users" donut={True} />
+    <Sparkline values={[3, 5, 2, 8, 6]} />
+
+Every chart has a label for screen readers and a hidden table of its numbers.
+"""
+import math
+
+
+def _n(x):
+    r = round(x, 2)
+    return str(int(r)) if r == int(r) else str(r)
+
+
+def _pct(x):
+    return _n(x) + "%"
+
+
+def _nice(top):
+    """A round number at or above `top`, for the top of the axis."""
+    if top <= 0:
+        return 1
+    mag = 10 ** math.floor(math.log10(top))
+    for m in [1, 2, 2.5, 5, 10]:
+        if top <= m * mag:
+            return m * mag
+    return 10 * mag
+
+
+def _keys(y):
+    return [y] if isinstance(y, str) else list(y)
+
+
+def _num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+
+
+def _color(i, colors):
+    if colors:
+        return colors[i % len(colors)]
+    return "var(--pw-chart-" + str(i % 5 + 1) + ")"
+
+
+def _label(v, fmt):
+    return str(fmt(v)) if fmt else _n(v)
+
+
+def _top(rows, keys, stacked):
+    best = 0
+    for r in rows:
+        if stacked:
+            best = max(best, sum(max(0, _num(r.get(k))) for k in keys))
+        else:
+            for k in keys:
+                best = max(best, _num(r.get(k)))
+    return _nice(best)
+
+
+def _ticks(top, fmt, count=4):
+    return [{"pos": _n(100 - i * 100 / count), "y": _pct(100 - i * 100 / count), "text": _label(top * i / count, fmt)}
+            for i in range(count + 1)]
+
+
+def _x_labels(rows, x, edge):
+    n = len(rows)
+    every = max(1, math.ceil(n / 10))
+    out = []
+    for i in range(n):
+        if i % every == 0:
+            pos = (i / (n - 1) * 100 if n > 1 else 50) if edge else (i + 0.5) * 100 / n
+            out.append({"x": _pct(pos), "text": str(rows[i].get(x, ""))})
+    return out
+
+
+def _bars(rows, x, keys, top, stacked, colors, fmt):
+    n = max(1, len(rows))
+    band = 100 / n
+    width = band * 0.7 if stacked else band * 0.7 / len(keys)
+    out = []
+    for i in range(len(rows)):
+        r = rows[i]
+        base = 0
+        for j in range(len(keys)):
+            v = max(0, _num(r.get(keys[j])))
+            h = v / top * 100
+            left = i * band + band * 0.15 + (0 if stacked else j * width)
+            y = 100 - base - h
+            out.append({"x": _n(left), "y": _n(y), "w": _n(width), "h": _n(h), "color": _color(j, colors),
+                        "title": str(r.get(x, "")) + " · " + str(keys[j]) + ": " + _label(v, fmt)})
+            if stacked:
+                base += h
+    return out
+
+
+def _lines(rows, x, keys, top, area, colors, fmt):
+    n = len(rows)
+    out = []
+    for j in range(len(keys)):
+        pts = []
+        for i in range(n):
+            v = _num(rows[i].get(keys[j]))
+            pts.append([i / (n - 1) * 100 if n > 1 else 50, 100 - v / top * 100,
+                        str(rows[i].get(x, "")) + " · " + str(keys[j]) + ": " + _label(v, fmt)])
+        d = " ".join(("M" if i == 0 else "L") + _n(p[0]) + " " + _n(p[1]) for i, p in enumerate(pts))
+        fill = (d + " L" + _n(pts[-1][0]) + " 100 L" + _n(pts[0][0]) + " 100 Z") if area and pts else None
+        dots = [{"d": "M" + _n(p[0]) + " " + _n(p[1]) + " h0", "title": p[2]} for p in pts]
+        out.append({"d": d, "fill": fill, "dots": dots, "color": _color(j, colors)})
+    return out
+
+
+def _slices(rows, name, value, donut, colors, fmt):
+    total = sum(max(0, _num(r.get(value))) for r in rows) or 1
+    out = []
+    start = -math.pi / 2
+    inner = 26 if donut else 0
+    for i in range(len(rows)):
+        v = max(0, _num(rows[i].get(value)))
+        sweep = v / total * math.pi * 2
+        end = start + sweep
+        if sweep >= math.pi * 2 - 0.0001:
+            end = start + math.pi * 2 - 0.0001
+        big = 1 if end - start > math.pi else 0
+        x0, y0 = 50 + 44 * math.cos(start), 50 + 44 * math.sin(start)
+        x1, y1 = 50 + 44 * math.cos(end), 50 + 44 * math.sin(end)
+        d = "M" + _n(x0) + " " + _n(y0) + " A44 44 0 " + str(big) + " 1 " + _n(x1) + " " + _n(y1)
+        if inner:
+            ix0, iy0 = 50 + inner * math.cos(end), 50 + inner * math.sin(end)
+            ix1, iy1 = 50 + inner * math.cos(start), 50 + inner * math.sin(start)
+            d += " L" + _n(ix0) + " " + _n(iy0) + " A" + str(inner) + " " + str(inner) + " 0 " + str(big) + " 0 " \
+                + _n(ix1) + " " + _n(iy1) + " Z"
+        else:
+            d += " L50 50 Z"
+        if v > 0:
+            out.append({"d": d, "color": _color(i, colors), "name": str(rows[i].get(name, "")),
+                        "value": _label(v, fmt), "share": str(round(v / total * 100)) + "%"})
+        start = end
+    return out
+
+
+def BarChart(data=None, x="x", y="y", height=240, stacked=False, colors=None, label=None, format=None,
+             legend=None, **attrs):
+    rows = list(data or [])
+    keys = _keys(y)
+    top = _top(rows, keys, stacked)
+    show_legend = len(keys) > 1 if legend is None else legend
+    <figure class="pw-chart" data-part="chart" data-kind="bar" style={{"--pw-chart-height": str(height) + "px"}} {**attrs}>
+        <div data-part="plot">
+            <div data-part="y-axis" aria-hidden="true">
+                for t in _ticks(top, format):
+                    <span style={{"top": t["y"]}}>{t["text"]}</span>
+            </div>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={label or "Bar chart"}>
+                for t in _ticks(top, format):
+                    <line data-part="grid" x1="0" x2="100" y1={t["pos"]} y2={t["pos"]} />
+                for b in _bars(rows, x, keys, top, stacked, colors, format):
+                    <rect data-part="bar" x={b["x"]} y={b["y"]} width={b["w"]} height={b["h"]} fill={b["color"]}>
+                        <title>{b["title"]}</title>
+                    </rect>
+            </svg>
+            <div data-part="x-axis" aria-hidden="true">
+                for t in _x_labels(rows, x, False):
+                    <span style={{"left": t["x"]}}>{t["text"]}</span>
+            </div>
+        </div>
+        if show_legend:
+            <ul class="pw-chart-legend" data-part="legend">
+                for i in range(len(keys)):
+                    <li><span data-part="swatch" style={{"background": _color(i, colors)}}></span>{keys[i]}</li>
+            </ul>
+        <table class="pw-sr-only">
+            <caption>{label or "Bar chart"}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{x}</th>
+                    for k in keys:
+                        <th scope="col">{k}</th>
+                </tr>
+            </thead>
+            <tbody>
+                for r in rows:
+                    <tr>
+                        <th scope="row">{r.get(x, "")}</th>
+                        for k in keys:
+                            <td>{_label(_num(r.get(k)), format)}</td>
+                    </tr>
+            </tbody>
+        </table>
+    </figure>
+
+
+def LineChart(data=None, x="x", y="y", height=240, area=False, dots=True, colors=None, label=None, format=None,
+              legend=None, **attrs):
+    rows = list(data or [])
+    keys = _keys(y)
+    top = _top(rows, keys, False)
+    show_legend = len(keys) > 1 if legend is None else legend
+    <figure class="pw-chart" data-part="chart" data-kind={"area" if area else "line"}
+            style={{"--pw-chart-height": str(height) + "px"}} {**attrs}>
+        <div data-part="plot">
+            <div data-part="y-axis" aria-hidden="true">
+                for t in _ticks(top, format):
+                    <span style={{"top": t["y"]}}>{t["text"]}</span>
+            </div>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={label or "Line chart"}>
+                for t in _ticks(top, format):
+                    <line data-part="grid" x1="0" x2="100" y1={t["pos"]} y2={t["pos"]} />
+                for s in _lines(rows, x, keys, top, area, colors, format):
+                    if s["fill"]:
+                        <path data-part="area" d={s["fill"]} fill={s["color"]} />
+                    <path data-part="line" d={s["d"]} stroke={s["color"]} pathLength="1" />
+                    if dots:
+                        for p in s["dots"]:
+                            <path data-part="dot" d={p["d"]} stroke={s["color"]}><title>{p["title"]}</title></path>
+            </svg>
+            <div data-part="x-axis" aria-hidden="true">
+                for t in _x_labels(rows, x, True):
+                    <span style={{"left": t["x"]}}>{t["text"]}</span>
+            </div>
+        </div>
+        if show_legend:
+            <ul class="pw-chart-legend" data-part="legend">
+                for i in range(len(keys)):
+                    <li><span data-part="swatch" style={{"background": _color(i, colors)}}></span>{keys[i]}</li>
+            </ul>
+        <table class="pw-sr-only">
+            <caption>{label or "Line chart"}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{x}</th>
+                    for k in keys:
+                        <th scope="col">{k}</th>
+                </tr>
+            </thead>
+            <tbody>
+                for r in rows:
+                    <tr>
+                        <th scope="row">{r.get(x, "")}</th>
+                        for k in keys:
+                            <td>{_label(_num(r.get(k)), format)}</td>
+                    </tr>
+            </tbody>
+        </table>
+    </figure>
+
+
+def AreaChart(data=None, x="x", y="y", **attrs):
+    <LineChart data={data} x={x} y={y} area={True} data-part="chart" {**attrs} />
+
+
+def PieChart(data=None, name="name", value="value", donut=False, size=200, colors=None, label=None, format=None,
+             center=None, **attrs):
+    rows = list(data or [])
+    <figure class="pw-chart pw-pie" data-part="chart" data-kind={"donut" if donut else "pie"} {**attrs}>
+        <div data-part="pie" style={{"width": str(size) + "px", "height": str(size) + "px"}}>
+            <svg viewBox="0 0 100 100" role="img" aria-label={label or "Pie chart"}>
+                for s in _slices(rows, name, value, donut, colors, format):
+                    <path data-part="slice" d={s["d"]} fill={s["color"]}><title>{s["name"]}: {s["value"]} ({s["share"]})</title></path>
+            </svg>
+            if center is not None and donut:
+                <div data-part="center">{center}</div>
+        </div>
+        <ul class="pw-chart-legend" data-part="legend">
+            for s in _slices(rows, name, value, donut, colors, format):
+                <li>
+                    <span data-part="swatch" style={{"background": s["color"]}}></span>
+                    <span>{s["name"]}</span>
+                    <span class="pw-muted">{s["value"]} · {s["share"]}</span>
+                </li>
+        </ul>
+    </figure>
+
+
+def Sparkline(values=None, width=120, height=32, area=False, color=None, label=None, **attrs):
+    vals = [_num(v) for v in values or []]
+    lo = min(vals) if vals else 0
+    hi = max(vals) if vals else 1
+    span = (hi - lo) or 1
+    n = len(vals)
+    d = " ".join(("M" if i == 0 else "L") + _n(i / (n - 1) * 100 if n > 1 else 50) + " "
+                 + _n(92 - (vals[i] - lo) / span * 84) for i in range(n))
+    <svg class="pw-sparkline" data-part="sparkline" width={width} height={height} viewBox="0 0 100 100"
+         preserveAspectRatio="none" role="img" aria-label={label or ("Trend: " + ", ".join(_n(v) for v in vals))}
+         style={{"color": color} if color else None} {**attrs}>
+        if area and n > 1:
+            <path data-part="area" d={d + " L100 100 L0 100 Z"} />
+        <path data-part="line" d={d} />
+    </svg>

@@ -143,6 +143,7 @@ def _resolver(filename, libs, stack):
         return load(f"pyweb.ui.kit.{stem}", path, lineno)
 
     resolve.kit = kit
+    resolve.kit_names = lambda: sorted(kit_index())
     return resolve
 
 

@@ -89,6 +89,9 @@ export function setup(el, s, api) {
     release(x1, y1, axis === "y" ? 0 : vx, axis === "x" ? 0 : vy, d.b);
     fire("dragend", { x: x1, y: y1, velocity: { x: vx, y: vy } });
   }
+  // The browser's own drag-and-drop (WebKit starts one for selected text under the pointer) would
+  // take the pointer away mid-drag.
+  el.addEventListener("dragstart", (e) => { if (e instanceof DragEvent) e.preventDefault(); });
   el.addEventListener("keydown", (e) => {
     const step = e.shiftKey ? 50 : 10;
     const dx = { ArrowLeft: -step, ArrowRight: step }[e.key] || 0, dy = { ArrowUp: -step, ArrowDown: step }[e.key] || 0;

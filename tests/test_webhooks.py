@@ -135,6 +135,8 @@ def test_sending_signs_retries_and_logs(hook_app, endpoint, monkeypatch):
 
 def test_endpoints_cant_point_at_the_internal_network(hook_app, monkeypatch):
     monkeypatch.delenv("PYWEB_FETCH_ALLOW", raising=False)
+    # Retries use "full jitter" (0 to 4 s for the first): pin it, so drain() can't also run the retry.
+    monkeypatch.setattr(jobs.core, "backoff_delay", lambda *a, **k: 60.0)
     from pyweb.models import system
     row = webhooks.send("http://169.254.169.254/latest", "x", {}, secret="whsec_" + "A" * 44)
     jobs.Worker(concurrency=1, schedule=False).drain(timeout=10)

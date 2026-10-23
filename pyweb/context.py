@@ -94,6 +94,7 @@ class RequestContext:
         self.auth_secret = auth_secret
         self.secure_cookies = secure_cookies
         self.set_cookies = []      # raw Set-Cookie header values
+        self.toasts = []           # pyweb.ui.toast(...): shown by the page that gets this answer
         self._session = None
         self._session_loaded = False
 

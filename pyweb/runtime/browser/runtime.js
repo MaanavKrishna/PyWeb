@@ -429,7 +429,7 @@ function toNodes(v, out) {
 }
 
 /** Static text: a string, or while hydrating the server's text node. */
-export function t(s) { return H ? claimText(s) : s; }
+export function t(s) { return H ? claimText(s) : document.createTextNode(s); }
 
 function hasNode(v) {
   if (typeof Node !== "undefined" && v instanceof Node) return true;

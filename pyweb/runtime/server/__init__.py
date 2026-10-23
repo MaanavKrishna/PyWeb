@@ -678,6 +678,13 @@ class Server:
                 tel = _telemetry_now()
                 if tel is not None:
                     tel.user = str(rc._session.get("sub", "")) or None
+        if resp is not None and rc.toasts:
+            from urllib.parse import quote as _quote
+            packed = _quote(json.dumps(rc.toasts[:5], separators=(",", ":")))
+            if req.path.startswith("/__pyweb/rpc/"):
+                resp.headers["X-PyWeb-Toast"] = packed
+            else:     # a form post or a page: the next page shows it (after a redirect too)
+                rc.set_cookies.append(f"pyweb_toast={packed}; Path=/; Max-Age=60; SameSite=Lax")
         if resp is not None and rc.set_cookies:
             existing = resp.headers.get("Set-Cookie")
             cookies = ([existing] if isinstance(existing, str) else list(existing or [])) + rc.set_cookies
@@ -721,7 +728,7 @@ class Server:
             if answer is not None:
                 tel.route = "pwa"
                 return answer
-        if path in ("/__pyweb/ui.css", "/__pyweb/theme.css"):
+        if path in ("/__pyweb/ui.css", "/__pyweb/theme.css") or path.startswith("/__pyweb/ui/"):
             from pyweb.ui import serve as _ui_serve
             answer = _ui_serve.handle(self, req)
             if answer is not None:

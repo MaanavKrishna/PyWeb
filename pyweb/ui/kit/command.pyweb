@@ -1,0 +1,113 @@
+"""Pickers: a select menu, a combobox, a command palette, and the toast region.
+
+    <SelectMenu name="size" value="m" placeholder="Size" onvaluechange={changed}>
+        <SelectOption value="s">Small</SelectOption>
+        <SelectOption value="m">Medium</SelectOption>
+    </SelectMenu>
+
+    <CommandDialog shortcut="k">
+        <CommandInput placeholder="Type a command…" />
+        <CommandList>
+            <CommandEmpty>Nothing found.</CommandEmpty>
+            <CommandGroup heading="Pages">
+                <CommandItem onclick={go_home} keywords="start dashboard">Home</CommandItem>
+            </CommandGroup>
+        </CommandList>
+    </CommandDialog>
+"""
+
+
+def SelectMenu(name=None, value=None, placeholder="Select…", children=None, **attrs):
+    <div class="pw-select" data-pw-ui="select" data-part="root" data-state="closed" data-value={value} {**attrs}>
+        <button type="button" class="pw-select-trigger" data-part="trigger">
+            <span data-part="value">{placeholder}</span>
+            <svg width="12" height="12" viewBox="0 0 15 15" aria-hidden="true"><path d="M4 6l3.5 3.5L11 6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
+        if name:
+            <input type="hidden" data-part="input" name={name} value={value or ""} />
+        <div class="pw-menu pw-listbox" data-part="content" data-state="closed" hidden>{children}</div>
+    </div>
+
+
+def SelectOption(value, label=None, disabled=False, children=None, **attrs):
+    <div class="pw-option" data-part="option" data-value={value} data-label={label}
+         aria-disabled={"true" if disabled else None} {**attrs}>
+        <span class="pw-menu-indicator" aria-hidden="true">✓</span>
+        {children}
+    </div>
+
+
+def Combobox(name=None, value=None, placeholder="Search…", filter="client", children=None, **attrs):
+    <div class="pw-combobox" data-pw-ui="combobox" data-part="root" data-state="closed" data-value={value}
+         data-filter={filter} {**attrs}>
+        <input class="pw-control" data-part="input" placeholder={placeholder} />
+        if name:
+            <input type="hidden" data-part="value-input" name={name} value={value or ""} />
+        <div class="pw-menu pw-listbox" data-part="content" data-state="closed" hidden>{children}</div>
+    </div>
+
+
+def ComboboxOption(value, label=None, disabled=False, children=None, **attrs):
+    <div class="pw-option" data-part="option" data-value={value} data-label={label}
+         aria-disabled={"true" if disabled else None} {**attrs}>{children}</div>
+
+
+def ComboboxEmpty(children=None, **attrs):
+    <div class="pw-command-empty" data-part="empty" hidden {**attrs}>{children}</div>
+
+
+def Command(children=None, **attrs):
+    <div class="pw-command" data-pw-ui="command" data-part="root" {**attrs}>{children}</div>
+
+
+def CommandDialog(shortcut="k", open=None, children=None, **attrs):
+    state = None if open is None else ("true" if open else "false")
+    <div class="pw-dialog-root" data-pw-ui="dialog" data-part="root" data-state="closed" data-open={state}
+         data-shortcut={shortcut} {**attrs}>
+        <dialog class="pw-dialog pw-command-dialog" data-part="content" data-state="closed">
+            <div class="pw-command" data-pw-ui="command" data-part="command">{children}</div>
+        </dialog>
+    </div>
+
+
+def CommandInput(placeholder="Type a command or search…", **attrs):
+    <div class="pw-command-search" data-part="search">
+        <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 10l3 3" stroke="currentColor" stroke-width="1.5"/></svg>
+        <input data-part="input" placeholder={placeholder} aria-label={placeholder} {**attrs} />
+    </div>
+
+
+def CommandList(children=None, **attrs):
+    <div class="pw-command-list" data-part="list" {**attrs}>{children}</div>
+
+
+def CommandEmpty(children=None, **attrs):
+    <div class="pw-command-empty" data-part="empty" hidden {**attrs}>{children}</div>
+
+
+def CommandGroup(heading=None, children=None, **attrs):
+    <div class="pw-command-group" data-part="group" role="group" aria-label={heading} {**attrs}>
+        if heading:
+            <div class="pw-menu-label" data-part="heading" aria-hidden="true">{heading}</div>
+        {children}
+    </div>
+
+
+def CommandItem(value=None, keywords=None, shortcut=None, disabled=False, keep_open=False, onclick=None,
+                children=None, **attrs):
+    <div class="pw-option" data-part="item" data-value={value} data-keywords={keywords}
+         aria-disabled={"true" if disabled else None} data-keep-open={"" if keep_open else None}
+         onclick={onclick} {**attrs}>
+        {children}
+        if shortcut:
+            <span class="pw-menu-shortcut" data-part="shortcut">{shortcut}</span>
+    </div>
+
+
+def CommandSeparator(**attrs):
+    <div class="pw-menu-separator" data-part="separator" role="separator" {**attrs}></div>
+
+
+def Toaster(position="bottom-right", **attrs):
+    <section class="pw-toaster" data-pw-ui="toaster" data-part="toaster" data-position={position}
+             aria-label="Notifications" {**attrs}></section>

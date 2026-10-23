@@ -1,0 +1,137 @@
+"""Dialogs, alert dialogs and sheets.
+
+    <Dialog>
+        <DialogTrigger>Edit profile</DialogTrigger>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Edit profile</DialogTitle>
+                <DialogDescription>Changes are saved when you close this.</DialogDescription>
+            </DialogHeader>
+            ...
+            <DialogFooter><DialogClose>Done</DialogClose></DialogFooter>
+        </DialogContent>
+    </Dialog>
+
+open={flag} makes it controlled (it opens and closes when flag changes); the root fires
+"openchange" (onopenchange={...}) with event.detail.open. AlertDialog can't be dismissed by
+clicking outside, and focuses its Cancel button. Sheet slides in from a side.
+"""
+
+
+def Dialog(open=None, children=None, **attrs):
+    state = None if open is None else ("true" if open else "false")
+    <div class="pw-dialog-root" data-pw-ui="dialog" data-part="root" data-state="closed" data-open={state}
+         {**attrs}>{children}</div>
+
+
+def DialogTrigger(variant="default", size="md", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="trigger" data-variant={variant} data-size={size}
+            {**attrs}>{children}</button>
+
+
+def DialogContent(close_button=True, size="md", children=None, **attrs):
+    <dialog class="pw-dialog" data-part="content" data-state="closed" data-size={size} {**attrs}>
+        {children}
+        if close_button:
+            <button type="button" class="pw-dialog-x" data-part="close" aria-label="Close">
+                <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M11.8 3.2 3.2 11.8M3.2 3.2l8.6 8.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+    </dialog>
+
+
+def DialogHeader(children=None, **attrs):
+    <div data-part="header" {**attrs}>{children}</div>
+
+
+def DialogFooter(children=None, **attrs):
+    <div data-part="footer" {**attrs}>{children}</div>
+
+
+def DialogTitle(children=None, **attrs):
+    <h2 data-part="title" {**attrs}>{children}</h2>
+
+
+def DialogDescription(children=None, **attrs):
+    <p data-part="description" {**attrs}>{children}</p>
+
+
+def DialogClose(variant="outline", size="md", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="close" data-variant={variant} data-size={size}
+            {**attrs}>{children}</button>
+
+
+def AlertDialog(open=None, children=None, **attrs):
+    state = None if open is None else ("true" if open else "false")
+    <div class="pw-dialog-root" data-pw-ui="dialog" data-role="alertdialog" data-part="root" data-state="closed"
+         data-open={state} {**attrs}>{children}</div>
+
+
+def AlertDialogTrigger(variant="default", size="md", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="trigger" data-variant={variant} data-size={size}
+            {**attrs}>{children}</button>
+
+
+def AlertDialogContent(size="sm", children=None, **attrs):
+    <dialog class="pw-dialog" data-part="content" data-state="closed" data-size={size} {**attrs}>{children}</dialog>
+
+
+def AlertDialogTitle(children=None, **attrs):
+    <h2 data-part="title" {**attrs}>{children}</h2>
+
+
+def AlertDialogDescription(children=None, **attrs):
+    <p data-part="description" {**attrs}>{children}</p>
+
+
+def AlertDialogFooter(children=None, **attrs):
+    <div data-part="footer" {**attrs}>{children}</div>
+
+
+def AlertDialogCancel(variant="outline", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="cancel" data-variant={variant} {**attrs}>{children}</button>
+
+
+def AlertDialogAction(variant="default", onclick=None, children=None, **attrs):
+    <button type="button" class="pw-button" data-part="action" data-variant={variant} onclick={onclick}
+            {**attrs}>{children}</button>
+
+
+def Sheet(open=None, children=None, **attrs):
+    state = None if open is None else ("true" if open else "false")
+    <div class="pw-dialog-root" data-pw-ui="dialog" data-part="root" data-state="closed" data-open={state}
+         {**attrs}>{children}</div>
+
+
+def SheetTrigger(variant="outline", size="md", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="trigger" data-variant={variant} data-size={size}
+            {**attrs}>{children}</button>
+
+
+def SheetContent(side="right", close_button=True, children=None, **attrs):
+    <dialog class="pw-dialog pw-sheet" data-part="content" data-state="closed" data-side={side} {**attrs}>
+        {children}
+        if close_button:
+            <button type="button" class="pw-dialog-x" data-part="close" aria-label="Close">
+                <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M11.8 3.2 3.2 11.8M3.2 3.2l8.6 8.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+    </dialog>
+
+
+def SheetHeader(children=None, **attrs):
+    <div data-part="header" {**attrs}>{children}</div>
+
+
+def SheetTitle(children=None, **attrs):
+    <h2 data-part="title" {**attrs}>{children}</h2>
+
+
+def SheetDescription(children=None, **attrs):
+    <p data-part="description" {**attrs}>{children}</p>
+
+
+def SheetFooter(children=None, **attrs):
+    <div data-part="footer" {**attrs}>{children}</div>
+
+
+def SheetClose(variant="outline", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="close" data-variant={variant} {**attrs}>{children}</button>

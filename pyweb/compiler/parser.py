@@ -335,6 +335,9 @@ def split_sources(source):
     # an indentation level Python will accept there.
     def block_indent(i):
         m = _indent(lines[i])
+        prev = next((j for j in range(i - 1, -1, -1) if kind[j] == "py"), None)
+        if prev is not None and _opens_block(stripped[prev]) and _indent(lines[prev]) >= m:
+            return m      # a statement spread over lines (`def f(a,\n      b):`) ends just above
         for j in range(i - 1, -1, -1):
             if kind[j] != "py":
                 continue

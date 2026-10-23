@@ -11,6 +11,7 @@
   body { margin: 0; background: var(--pw-bg); color: var(--pw-fg); font-family: var(--pw-font);
          font-size: var(--pw-text-sm); line-height: var(--pw-leading-sm); -webkit-font-smoothing: antialiased; }
   *, *::before, *::after { box-sizing: border-box; }
+  [hidden]:not([hidden="until-found"]) { display: none !important; }   /* even on display: flex parts */
   :focus-visible { outline: none; box-shadow: var(--pw-focus); }
   ::selection { background: var(--pw-accent-5); }
   @media (prefers-reduced-motion: reduce) {
@@ -146,6 +147,168 @@
     color: var(--pw-accent-contrast); font: inherit; font-weight: 500; cursor: pointer;
   }
   :where(form) button[data-pw-submit]:not(.pw-button):hover { background: var(--pw-accent-hover); }
+}
+
+@layer pyweb.components {
+  /* -------------------------------------------------------------- dialog, alert dialog, sheet */
+  .pw-dialog-root { display: contents; }
+  .pw-dialog { position: fixed; inset: 0; margin: auto; width: min(calc(100vw - 32px), 512px); max-height: calc(100dvh - 32px);
+               overflow: auto; padding: var(--pw-space-9); border: 1px solid var(--pw-border); border-radius: var(--pw-radius-lg);
+               background: var(--pw-surface); color: var(--pw-fg); box-shadow: var(--pw-shadow-3); }
+  .pw-dialog[data-size="sm"] { width: min(calc(100vw - 32px), 420px); }
+  .pw-dialog[data-size="lg"] { width: min(calc(100vw - 32px), 720px); }
+  .pw-dialog[data-size="full"] { width: calc(100vw - 32px); height: calc(100dvh - 32px); }
+  .pw-dialog::backdrop { background: var(--pw-overlay); backdrop-filter: blur(2px); }
+  .pw-dialog[data-state="open"] { animation: pw-dialog-in 200ms var(--pw-ease); }
+  .pw-dialog[data-state="open"]::backdrop { animation: pw-fade-in 200ms var(--pw-ease); }
+  .pw-dialog[data-state="closed"][open] { animation: pw-dialog-out 140ms ease-in forwards; }
+  .pw-dialog[data-state="closed"][open]::backdrop { animation: pw-fade-out 140ms ease-in forwards; }
+  .pw-dialog [data-part="header"] { display: grid; gap: var(--pw-space-2); margin-bottom: var(--pw-space-7); }
+  .pw-dialog [data-part="title"] { margin: 0; font-size: var(--pw-text-lg); line-height: var(--pw-leading-lg); font-weight: 600; }
+  .pw-dialog [data-part="description"] { margin: 0; color: var(--pw-fg-muted); }
+  .pw-dialog [data-part="footer"] { display: flex; justify-content: flex-end; gap: var(--pw-space-4); margin-top: var(--pw-space-8);
+                                    flex-wrap: wrap; }
+  .pw-dialog-x { position: absolute; top: var(--pw-space-6); right: var(--pw-space-6); display: inline-flex; align-items: center;
+                 justify-content: center; width: 28px; height: 28px; border: 0; border-radius: var(--pw-radius-sm);
+                 background: transparent; color: var(--pw-fg-muted); cursor: pointer; }
+  .pw-dialog-x:hover { background: var(--pw-gray-3); color: var(--pw-fg); }
+  .pw-sheet { margin: 0; width: min(100vw, 400px); max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; inset: 0 0 0 auto; }
+  .pw-sheet[data-side="left"] { inset: 0 auto 0 0; }
+  .pw-sheet[data-side="top"], .pw-sheet[data-side="bottom"] { width: 100vw; height: auto; max-height: 85dvh; inset: auto 0 0 0; }
+  .pw-sheet[data-side="top"] { inset: 0 0 auto 0; }
+  .pw-sheet[data-side="bottom"] { border-radius: var(--pw-radius-lg) var(--pw-radius-lg) 0 0; }
+  .pw-sheet[data-state="open"] { animation: pw-sheet-in-right 260ms var(--pw-ease); }
+  .pw-sheet[data-state="closed"][open] { animation: pw-sheet-out-right 180ms ease-in forwards; }
+  .pw-sheet[data-side="left"][data-state="open"] { animation-name: pw-sheet-in-left; }
+  .pw-sheet[data-side="left"][data-state="closed"][open] { animation-name: pw-sheet-out-left; }
+  .pw-sheet[data-side="bottom"][data-state="open"] { animation-name: pw-sheet-in-bottom; }
+  .pw-sheet[data-side="bottom"][data-state="closed"][open] { animation-name: pw-sheet-out-bottom; }
+  .pw-sheet[data-side="top"][data-state="open"] { animation-name: pw-sheet-in-top; }
+  .pw-sheet[data-side="top"][data-state="closed"][open] { animation-name: pw-sheet-out-top; }
+  @keyframes pw-fade-in { from { opacity: 0; } }
+  @keyframes pw-fade-out { to { opacity: 0; } }
+  @keyframes pw-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+  @keyframes pw-dialog-out { to { opacity: 0; transform: translateY(4px) scale(.98); } }
+  @keyframes pw-sheet-in-right { from { transform: translateX(100%); } }
+  @keyframes pw-sheet-out-right { to { transform: translateX(100%); } }
+  @keyframes pw-sheet-in-left { from { transform: translateX(-100%); } }
+  @keyframes pw-sheet-out-left { to { transform: translateX(-100%); } }
+  @keyframes pw-sheet-in-bottom { from { transform: translateY(100%); } }
+  @keyframes pw-sheet-out-bottom { to { transform: translateY(100%); } }
+  @keyframes pw-sheet-in-top { from { transform: translateY(-100%); } }
+  @keyframes pw-sheet-out-top { to { transform: translateY(-100%); } }
+}
+
+@layer pyweb.components {
+  /* -------------------------------------------------------------- popover, tooltip, hover card */
+  .pw-popover-root, .pw-tooltip-root, .pw-hovercard-root { display: contents; }
+  .pw-popover { z-index: 50; margin: 0; inset: auto; width: max-content; max-width: min(360px, calc(100vw - 16px));
+                max-height: var(--pw-available-height, 80vh); overflow: auto; padding: var(--pw-space-6);
+                border: 1px solid var(--pw-border); border-radius: var(--pw-radius); background: var(--pw-surface);
+                color: var(--pw-fg); box-shadow: var(--pw-shadow-2); transform-origin: var(--pw-transform-origin); }
+  .pw-popover:focus-visible { box-shadow: var(--pw-shadow-2); }
+  .pw-popover[data-state="open"], .pw-tooltip[data-state="open"] { animation: pw-pop-in 150ms var(--pw-ease); }
+  .pw-popover[data-state="closed"]:popover-open { animation: pw-pop-out 100ms ease-in forwards; }
+  .pw-tooltip { z-index: 60; margin: 0; inset: auto; padding: var(--pw-space-2) var(--pw-space-4); border: 0;
+                border-radius: var(--pw-radius-sm); background: var(--pw-gray-12); color: var(--pw-gray-1);
+                font-size: var(--pw-text-xs); line-height: var(--pw-leading-xs); max-width: 280px; pointer-events: auto;
+                transform-origin: var(--pw-transform-origin); }
+  .pw-arrow { position: absolute; width: 10px; height: 10px; background: inherit; border: inherit;
+              transform: rotate(45deg); }
+  [data-side="bottom"] > .pw-arrow { top: -6px; border-right: 0; border-bottom: 0; }
+  [data-side="top"] > .pw-arrow { bottom: -6px; border-left: 0; border-top: 0; }
+  [data-side="left"] > .pw-arrow { right: -6px; border-left: 0; border-bottom: 0; }
+  [data-side="right"] > .pw-arrow { left: -6px; border-right: 0; border-top: 0; }
+  .pw-link { color: var(--pw-accent-fg); text-underline-offset: 3px; }
+  .pw-hovercard { width: 320px; }
+  @keyframes pw-pop-in { from { opacity: 0; transform: scale(.96); } }
+  @keyframes pw-pop-out { to { opacity: 0; transform: scale(.96); } }
+}
+
+@layer pyweb.components {
+  /* -------------------------------------------------------------- menus */
+  .pw-menu-root, .pw-menu-sub { display: contents; }
+  .pw-menu { z-index: 55; margin: 0; inset: auto; min-width: 180px; max-height: var(--pw-available-height, 70vh); overflow: auto;
+             padding: var(--pw-space-2); border: 1px solid var(--pw-border); border-radius: var(--pw-radius);
+             background: var(--pw-surface); color: var(--pw-fg); box-shadow: var(--pw-shadow-2);
+             transform-origin: var(--pw-transform-origin); outline: none; }
+  .pw-menu[data-state="open"] { animation: pw-pop-in 120ms var(--pw-ease); }
+  .pw-menu[data-state="closed"]:popover-open { animation: pw-pop-out 90ms ease-in forwards; }
+  .pw-menu-item { position: relative; display: flex; align-items: center; gap: var(--pw-space-3);
+                  padding: var(--pw-space-3) var(--pw-space-4); border-radius: var(--pw-radius-sm); cursor: default;
+                  user-select: none; outline: none; }
+  .pw-menu-item:focus, .pw-menu-item[aria-expanded="true"] { background: var(--pw-accent-4); color: var(--pw-accent-12); }
+  .pw-menu-item[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+  .pw-menu-item[data-part="checkbox-item"], .pw-menu-item[data-part="radio-item"] { padding-left: var(--pw-space-9); }
+  .pw-menu-indicator { position: absolute; left: var(--pw-space-4); visibility: hidden; font-size: 11px; }
+  [aria-checked="true"] > .pw-menu-indicator { visibility: visible; }
+  .pw-menu-shortcut { margin-left: auto; padding-left: var(--pw-space-6); font-size: var(--pw-text-xs); color: var(--pw-fg-muted);
+                      letter-spacing: .05em; }
+  .pw-menu-label { padding: var(--pw-space-3) var(--pw-space-4); font-size: var(--pw-text-xs); font-weight: 600;
+                   color: var(--pw-fg-muted); }
+  .pw-menu-separator { height: 1px; margin: var(--pw-space-2) calc(-1 * var(--pw-space-2)); background: var(--pw-border); }
+  .pw-menubar { display: flex; gap: var(--pw-space-1); padding: var(--pw-space-1); border: 1px solid var(--pw-border);
+                border-radius: var(--pw-radius); background: var(--pw-surface); width: max-content; }
+  .pw-menubar-trigger { padding: var(--pw-space-2) var(--pw-space-5); border: 0; border-radius: var(--pw-radius-sm);
+                        background: transparent; color: inherit; font: inherit; font-weight: 500; cursor: default; }
+  .pw-menubar-trigger:hover, .pw-menubar-trigger[aria-expanded="true"], .pw-menubar-trigger:focus-visible
+    { background: var(--pw-gray-3); }
+  .pw-context-area { outline-offset: 2px; }
+}
+
+@layer pyweb.components {
+  /* -------------------------------------------------------------- select, combobox, command */
+  .pw-select, .pw-combobox { position: relative; display: inline-block; min-width: 180px; }
+  .pw-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: var(--pw-space-4); width: 100%;
+                       height: calc(36px * var(--pw-density)); padding: 0 var(--pw-space-5); border: 1px solid var(--pw-border);
+                       border-radius: var(--pw-radius); background: var(--pw-surface); color: var(--pw-fg); font: inherit;
+                       cursor: pointer; text-align: left; }
+  .pw-select-trigger:hover { border-color: var(--pw-border-strong); }
+  .pw-select-trigger [data-placeholder="true"] { color: var(--pw-gray-10); }
+  .pw-listbox { min-width: var(--pw-anchor-width, 180px); }
+  .pw-option { position: relative; display: flex; align-items: center; gap: var(--pw-space-3);
+               padding: var(--pw-space-3) var(--pw-space-4); border-radius: var(--pw-radius-sm); cursor: default; user-select: none; }
+  .pw-listbox .pw-option { padding-left: var(--pw-space-9); }
+  .pw-option[data-highlighted] { background: var(--pw-accent-4); color: var(--pw-accent-12); }
+  .pw-option[aria-selected="true"] > .pw-menu-indicator { visibility: visible; }
+  .pw-option[aria-disabled="true"] { opacity: .5; }
+  .pw-command { display: flex; flex-direction: column; overflow: hidden; border-radius: inherit; background: var(--pw-surface); }
+  .pw-command-dialog { padding: 0; width: min(calc(100vw - 32px), 560px); }
+  .pw-command-search { display: flex; align-items: center; gap: var(--pw-space-4); padding: 0 var(--pw-space-6);
+                       border-bottom: 1px solid var(--pw-border); color: var(--pw-fg-muted); }
+  .pw-command-search input { flex: 1; height: 48px; border: 0; outline: none; background: transparent; color: var(--pw-fg);
+                             font: inherit; font-size: var(--pw-text-md); }
+  .pw-command-search input:focus-visible { box-shadow: none; }
+  .pw-command-list { max-height: min(360px, 60vh); overflow: auto; padding: var(--pw-space-3); }
+  .pw-command-empty { padding: var(--pw-space-9) 0; text-align: center; color: var(--pw-fg-muted); }
+
+  /* -------------------------------------------------------------- toasts */
+  .pw-toaster { position: fixed; z-index: 70; inset: auto var(--pw-space-8) var(--pw-space-8) auto; width: min(360px, calc(100vw - 32px)); }
+  .pw-toaster[data-position="bottom-left"] { inset: auto auto var(--pw-space-8) var(--pw-space-8); }
+  .pw-toaster[data-position="top-right"] { inset: var(--pw-space-8) var(--pw-space-8) auto auto; }
+  .pw-toaster[data-position="top-left"] { inset: var(--pw-space-8) auto auto var(--pw-space-8); }
+  .pw-toaster[data-position="bottom-center"] { inset: auto 0 var(--pw-space-8) 0; margin: 0 auto; }
+  .pw-toaster[data-position="top-center"] { inset: var(--pw-space-8) 0 auto 0; margin: 0 auto; }
+  .pw-toast-list { position: relative; margin: 0; padding: 0; list-style: none; }
+  .pw-toast { position: absolute; bottom: 0; left: 0; right: 0; display: flex; align-items: flex-start; gap: var(--pw-space-5);
+              padding: var(--pw-space-6) var(--pw-space-7); border: 1px solid var(--pw-border); border-radius: var(--pw-radius);
+              background: var(--pw-surface); color: var(--pw-fg); box-shadow: var(--pw-shadow-2); touch-action: none;
+              transform: translate(var(--pw-toast-x, 0px), var(--pw-toast-y, 0px)) scale(var(--pw-toast-scale, 1));
+              transform-origin: bottom center; z-index: calc(100 - var(--pw-toast-index, 0));
+              transition: transform 350ms var(--pw-ease), opacity 250ms var(--pw-ease); animation: pw-toast-in 350ms var(--pw-ease); }
+  [data-position^="top"] .pw-toast { bottom: auto; top: 0; transform-origin: top center; }
+  .pw-toast[data-swiping] { transition: none; }
+  .pw-toast[data-hidden="true"] { opacity: 0; pointer-events: none; }
+  .pw-toast[data-state="closed"] { opacity: 0; }
+  .pw-toast [data-part="body"] { flex: 1; min-width: 0; }
+  .pw-toast [data-part="title"] { font-weight: 600; }
+  .pw-toast [data-part="description"] { color: var(--pw-fg-muted); margin-top: var(--pw-space-1); }
+  .pw-toast[data-tone="success"] { border-color: var(--pw-success-6); }
+  .pw-toast[data-tone="danger"] { border-color: var(--pw-danger-6); background: var(--pw-danger-2); }
+  .pw-toast[data-tone="danger"] [data-part="title"] { color: var(--pw-danger-11); }
+  .pw-toast[data-tone="warning"] { border-color: var(--pw-warning-6); }
+  .pw-toast-x { border: 0; background: transparent; color: var(--pw-fg-muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+  @keyframes pw-toast-in { from { opacity: 0; transform: translateY(16px) scale(.96); } }
 }
 
 @layer pyweb.utilities {

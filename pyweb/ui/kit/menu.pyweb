@@ -1,0 +1,120 @@
+"""Menus: dropdown menus, context menus and menu bars, sharing their item components.
+
+    <DropdownMenu>
+        <DropdownMenuTrigger>Options</DropdownMenuTrigger>
+        <DropdownMenuContent>
+            <MenuLabel>My account</MenuLabel>
+            <MenuItem onclick={profile} shortcut="⌘P">Profile</MenuItem>
+            <MenuCheckboxItem checked={compact} oncheckedchange={toggle_compact}>Compact</MenuCheckboxItem>
+            <MenuSeparator />
+            <MenuSub>
+                <MenuSubTrigger>Share</MenuSubTrigger>
+                <MenuSubContent><MenuItem>Email</MenuItem></MenuSubContent>
+            </MenuSub>
+        </DropdownMenuContent>
+    </DropdownMenu>
+
+Choosing an item runs its onclick and closes the menu (keep_open=True keeps it open).
+"""
+
+
+def DropdownMenu(side="bottom", align="start", children=None, **attrs):
+    <div class="pw-menu-root" data-pw-ui="menu" data-part="root" data-state="closed" data-side={side}
+         data-align={align} {**attrs}>{children}</div>
+
+
+def DropdownMenuTrigger(variant="outline", size="md", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="trigger" data-variant={variant} data-size={size}
+            {**attrs}>{children}</button>
+
+
+def DropdownMenuContent(children=None, **attrs):
+    <div class="pw-menu" data-part="content" data-state="closed" hidden {**attrs}>{children}</div>
+
+
+def ContextMenu(children=None, **attrs):
+    <div class="pw-menu-root" data-pw-ui="context-menu" data-part="root" data-state="closed" {**attrs}>{children}</div>
+
+
+def ContextMenuTrigger(children=None, **attrs):
+    <div class="pw-context-area" data-part="trigger" tabindex="0" {**attrs}>{children}</div>
+
+
+def ContextMenuContent(children=None, **attrs):
+    <div class="pw-menu" data-part="content" data-state="closed" hidden {**attrs}>{children}</div>
+
+
+def Menubar(children=None, **attrs):
+    <div class="pw-menubar" data-pw-ui="menubar" data-part="menubar" {**attrs}>{children}</div>
+
+
+def MenubarMenu(children=None, **attrs):
+    <div class="pw-menu-root" data-part="menu" data-state="closed" data-align="start" {**attrs}>{children}</div>
+
+
+def MenubarTrigger(children=None, **attrs):
+    <button type="button" class="pw-menubar-trigger" data-part="trigger" {**attrs}>{children}</button>
+
+
+def MenubarContent(children=None, **attrs):
+    <div class="pw-menu" data-part="content" data-state="closed" hidden {**attrs}>{children}</div>
+
+
+def MenuItem(shortcut=None, disabled=False, keep_open=False, onclick=None, children=None, **attrs):
+    <div class="pw-menu-item" data-part="item" aria-disabled={"true" if disabled else None}
+         data-keep-open={"" if keep_open else None} onclick={onclick} {**attrs}>
+        {children}
+        if shortcut:
+            <span class="pw-menu-shortcut" data-part="shortcut">{shortcut}</span>
+    </div>
+
+
+def MenuCheckboxItem(checked=False, shortcut=None, disabled=False, keep_open=False, children=None, **attrs):
+    <div class="pw-menu-item" data-part="checkbox-item" data-checked={"true" if checked else "false"}
+         data-state={"checked" if checked else "unchecked"} aria-disabled={"true" if disabled else None}
+         data-keep-open={"" if keep_open else None} {**attrs}>
+        <span class="pw-menu-indicator" aria-hidden="true">✓</span>
+        {children}
+        if shortcut:
+            <span class="pw-menu-shortcut" data-part="shortcut">{shortcut}</span>
+    </div>
+
+
+def MenuRadioGroup(value=None, children=None, **attrs):
+    <div role="group" data-part="radio-group" data-value={value} {**attrs}>{children}</div>
+
+
+def MenuRadioItem(value, checked=False, disabled=False, keep_open=False, children=None, **attrs):
+    <div class="pw-menu-item" data-part="radio-item" data-value={value} data-checked={"true" if checked else "false"}
+         data-state={"checked" if checked else "unchecked"} aria-disabled={"true" if disabled else None}
+         data-keep-open={"" if keep_open else None} {**attrs}>
+        <span class="pw-menu-indicator" aria-hidden="true">●</span>
+        {children}
+    </div>
+
+
+def MenuLabel(children=None, **attrs):
+    <div class="pw-menu-label" data-part="label" role="presentation" {**attrs}>{children}</div>
+
+
+def MenuSeparator(**attrs):
+    <div class="pw-menu-separator" data-part="separator" role="separator" {**attrs}></div>
+
+
+def MenuShortcut(children=None, **attrs):
+    <span class="pw-menu-shortcut" data-part="shortcut" {**attrs}>{children}</span>
+
+
+def MenuSub(children=None, **attrs):
+    <div class="pw-menu-sub" data-part="sub" {**attrs}>{children}</div>
+
+
+def MenuSubTrigger(children=None, **attrs):
+    <div class="pw-menu-item" data-part="sub-trigger" aria-haspopup="menu" aria-expanded="false" {**attrs}>
+        {children}
+        <span class="pw-menu-shortcut" aria-hidden="true">›</span>
+    </div>
+
+
+def MenuSubContent(children=None, **attrs):
+    <div class="pw-menu" data-part="sub-content" data-state="closed" hidden {**attrs}>{children}</div>

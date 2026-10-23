@@ -63,7 +63,12 @@ project uses [semantic versioning](https://semver.org).
   contrast checked to 4.5:1. The kit's CSS sits in a cascade layer so
   app CSS always wins, and every part carries `data-part`/`data-state`
   attributes. `pyweb ui add|diff|list` copies a component's source into
-  the app. More components and motion are on the way in this release.
+  the app. Overlays and pickers follow the WAI-ARIA Authoring Practices:
+  Dialog, AlertDialog, Sheet, Popover, Tooltip, HoverCard, DropdownMenu,
+  ContextMenu, Menubar (with checkbox/radio items and submenus),
+  SelectMenu, Combobox, a Command palette (⌘K) and sonner-style toasts
+  (`pyweb.ui.toast()` from server code). Each behaviour module loads only
+  on pages that use it.
 - **Components pass attributes through.** A `**attrs` parameter takes any
   other attribute, and `{**attrs}` spreads a dict onto an element
   (explicit attributes win, classes merge).
@@ -135,6 +140,9 @@ project uses [semantic versioning](https://semver.org).
   block; it now follows it.
 - An optional callback prop that wasn't passed no longer throws when its
   event fires.
+- Markup right after a `def` whose signature spans several lines failed to
+  compile.
+- Text children re-rendered in the browser showed as a list (`['Medium']`).
 - `get_or_404()` inside a server function answered 500; it now answers 404.
 - `Post.id` (and other columns added automatically) failed before the Model
   had been used once.

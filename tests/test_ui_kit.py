@@ -1,6 +1,7 @@
 """The UI kit's foundations: attribute pass-through ({**attrs}, **attrs), the theme engine, kit
 imports, serving, and `pyweb ui`. Components' behaviour in a browser: tests/e2e/test_ui_browser.py."""
 
+import json
 import os
 import re
 
@@ -241,3 +242,89 @@ def test_ui_cli(tmp_path, capsys):
     assert 'data-size="lg"' in TestClient(str(app)).get("/").text
     with pytest.raises(SystemExit, match="no kit component"):
         main(["ui", "add", "Nope", "--dir", str(tmp_path)])
+
+
+# ------------------------------------------------------------------ overlays, pickers, toasts (7.2)
+
+OVERLAYS = '''
+from pyweb import App, server
+from pyweb.ui import (Dialog, DialogTrigger, DialogContent, DialogTitle, Popover, PopoverTrigger, PopoverContent,
+                      Tooltip, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, MenuItem, SelectMenu,
+                      SelectOption, toast)
+app = App()
+
+
+@server
+def save() -> bool:
+    toast("Saved", "All good", tone="success")
+    return True
+
+
+@app.page("/")
+def Home():
+    <main>
+        <Dialog open={False}><DialogTrigger>Open</DialogTrigger><DialogContent><DialogTitle>T</DialogTitle></DialogContent></Dialog>
+        <Popover side="top"><PopoverTrigger>P</PopoverTrigger><PopoverContent>c</PopoverContent></Popover>
+        <Tooltip text="Copy"><button>c</button></Tooltip>
+        <DropdownMenu><DropdownMenuTrigger>M</DropdownMenuTrigger><DropdownMenuContent><MenuItem shortcut="K">One</MenuItem></DropdownMenuContent></DropdownMenu>
+        <SelectMenu name="size" value="m"><SelectOption value="m">Medium</SelectOption></SelectMenu>
+    </main>
+'''
+
+
+def test_overlays_render_closed_with_their_behaviour_marked():
+    c = TestClient(source=OVERLAYS)
+    html = c.get("/").text
+    assert '<script type="module" src="/__pyweb/ui/index.js"></script>' in html
+    b = body(html)
+    # Every interactive root names its behaviour; panels start closed and hidden (fine without JS).
+    for kind in ("dialog", "popover", "tooltip", "menu", "select"):
+        assert f'data-pw-ui="{kind}"' in b
+    assert 'data-open="false"' in b                                      # open={False}: controlled
+    assert re.search(r'<dialog data-part="content" data-state="closed"[^>]*class="pw-dialog"', b)
+    assert 'data-side="top"' in b
+    assert re.search(r'<div data-part="content" data-state="closed" tabindex="-1" hidden[^>]*class="pw-popover"', b)
+    assert '<span class="pw-menu-shortcut" data-part="shortcut">K</span>' in b
+    assert '<input type="hidden" data-part="input" name="size" value="m">' in b
+    js = c.get("/__pyweb/ui/dialog.js")
+    assert js.status == 200 and js.header("Content-Type").startswith("text/javascript")
+    assert c.request("GET", "/__pyweb/ui/dialog.js", headers={"If-None-Match": js.header("ETag")}).status == 304
+    assert c.get("/__pyweb/ui/../ui/dialog.js").status == 404
+    assert c.get("/__pyweb/ui/nope.js").status == 404
+
+
+def test_toasts_from_the_server():
+    from urllib.parse import unquote
+    c = TestClient(source=OVERLAYS)
+    r = c.post("/__pyweb/rpc/save", {"args": {}})
+    assert r.status == 200
+    assert json.loads(unquote(r.header("X-PyWeb-Toast"))) == [{"title": "Saved", "description": "All good",
+                                                                "tone": "success"}]
+    from pyweb import context
+    from pyweb.runtime.server import Request
+    from pyweb.ui import toast
+    ctx = context.RequestContext(Request("GET", "/", {}, b""))
+    token = context.activate(ctx)
+    try:
+        toast("Undo?", duration=0, action={"label": "Undo", "href": "/undo/1"})
+        with pytest.raises(ValueError, match="tone"):
+            toast("x", tone="loud")
+        with pytest.raises(ValueError, match="href"):
+            toast("x", action={"label": "Go", "href": "javascript:alert(1)"})
+    finally:
+        context.deactivate(token)
+    assert ctx.toasts == [{"title": "Undo?", "duration": 0, "action": {"label": "Undo", "href": "/undo/1"}}]
+
+
+def test_behaviour_modules_stay_small():
+    import gzip
+    from pyweb.ui import serve
+    for name in os.listdir(serve.BEHAVIOUR):
+        size = len(gzip.compress(open(os.path.join(serve.BEHAVIOUR, name), "rb").read(), 9))
+        assert size <= (5 * 1024 if name == "core.js" else 3 * 1024), (name, size)
+
+
+def test_wrapped_signatures_parse():
+    src = HEAD + 'def X(a=None,\n      children=None, **attrs):\n    <div {**attrs}>{a}{children}</div>\n\n\n' \
+          '@app.page("/")\ndef Home():\n    <X a="1" id="x">k</X>\n'
+    assert '<div id="x">1k</div>' in compile_source(src)["pages"]["Home"]["html_body"]

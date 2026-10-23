@@ -86,6 +86,102 @@ Everything is a CSS variable, so plain CSS can change any of it:
 The form tags (`<Form>`, `<Input>`, `<Textarea>`, `<Select>`,
 `<Checkbox>`, `<Submit>`, from `pyweb`) are styled by the kit too.
 
+### Overlays
+
+```pyweb
+from pyweb import App
+from pyweb.ui import (Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter,
+                      DialogHeader, DialogTitle, DialogTrigger)
+
+app = App(title="Profile")
+
+
+@app.page("/")
+def Profile():
+    <Dialog>
+        <DialogTrigger>Edit profile</DialogTrigger>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Edit profile</DialogTitle>
+                <DialogDescription>Changes are saved when you press Done.</DialogDescription>
+            </DialogHeader>
+            <input value="Ada" aria-label="Name" />
+            <DialogFooter><DialogClose>Done</DialogClose></DialogFooter>
+        </DialogContent>
+    </Dialog>
+```
+
+| Component | Parts |
+|---|---|
+| `Dialog` | `DialogTrigger`, `DialogContent` (`size`: sm, md, lg, full), `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogFooter`, `DialogClose` |
+| `AlertDialog` | `AlertDialogTrigger`, `AlertDialogContent`, `AlertDialogTitle`, `AlertDialogDescription`, `AlertDialogFooter`, `AlertDialogCancel`, `AlertDialogAction` |
+| `Sheet` | `SheetTrigger`, `SheetContent` (`side`: right, left, top, bottom), `SheetHeader`, `SheetTitle`, `SheetDescription`, `SheetFooter`, `SheetClose` |
+| `Popover` (`side`, `align`, `offset`) | `PopoverTrigger`, `PopoverContent` (`arrow`), `PopoverClose` |
+| `Tooltip` (`text`, `side`, `delay`) | wraps the element it describes; or `TooltipTrigger`, `TooltipContent` |
+| `HoverCard` | `HoverCardTrigger` (a link), `HoverCardContent` |
+| `DropdownMenu` (`side`, `align`) | `DropdownMenuTrigger`, `DropdownMenuContent` |
+| `ContextMenu` | `ContextMenuTrigger` (the area to right-click), `ContextMenuContent` |
+| `Menubar` | `MenubarMenu`, `MenubarTrigger`, `MenubarContent` |
+| menu items (all three menus) | `MenuItem` (`shortcut`, `disabled`, `keep_open`), `MenuCheckboxItem` (`checked`), `MenuRadioGroup`, `MenuRadioItem` (`value`), `MenuLabel`, `MenuSeparator`, `MenuSub`, `MenuSubTrigger`, `MenuSubContent` |
+
+They follow the WAI-ARIA Authoring Practices for each pattern:
+- Dialogs keep focus inside, close on Escape or a click outside
+  (alert dialogs don't: they focus Cancel), and give focus back to what
+  opened them. They're built on the native `<dialog>`, so the rest of
+  the page is inert while one is open.
+- Menus open with Enter, Space or the arrow keys. Arrows, Home/End and
+  typing the first letters move. Enter chooses, ArrowRight and
+  ArrowLeft open and close submenus, and Escape or Tab close.
+- Popovers, menus and tooltips flip to the other side when there isn't
+  room, stay inside the window, and size themselves to the space
+  available.
+
+Every `*Trigger` is a button that takes `variant`/`size`; any element
+with `data-part="trigger"` inside the root works too (`<Button
+data-part="trigger">`).
+
+**Controlled and events.** `open={flag}` on `Dialog`, `AlertDialog`,
+`Sheet` and `Popover` opens and closes them when `flag` changes. Every
+root fires `openchange` (`onopenchange={handler}`, with
+`event.detail.open`). Checkbox items fire `checkedchange`
+(`event.detail.checked`); radio groups and pickers fire `valuechange`
+(`event.detail.value`).
+
+### Pickers
+
+| Component | |
+|---|---|
+| `SelectMenu` (`name`, `value`, `placeholder`) + `SelectOption` (`value`, `label`, `disabled`) | a styled select. Typing picks options, and it works in forms through `name` |
+| `Combobox` (`name`, `value`, `placeholder`, `filter`) + `ComboboxOption`, `ComboboxEmpty` | type to filter (`filter="server"` when your `oninput` renders new options) |
+| `Command` / `CommandDialog` (`shortcut`, default ⌘K / Ctrl+K) + `CommandInput`, `CommandList`, `CommandEmpty`, `CommandGroup` (`heading`), `CommandItem` (`keywords`, `shortcut`, `onclick`), `CommandSeparator` | a command palette: results are ranked as you type (fuzzy, with `keywords`), and Enter or a click runs one |
+
+### Toasts
+
+```python
+from pyweb import server
+from pyweb.ui import toast
+
+
+@server
+def save(text: str) -> None:
+    ...
+    toast("Saved", "Your changes are live.", tone="success")
+```
+
+`toast(title, description=None, tone=None, duration=5000, action=None)`
+works in server functions, form actions and pages; the page that gets
+the answer shows it (after a form's redirect too). `tone` is success,
+danger, warning or info; `duration=0` keeps it until dismissed;
+`action={"label": "Undo", "href": "/undo/42"}` adds a button. Put a
+`<Toaster position="bottom-right" />` in your layout to choose where
+toasts appear (it's added for you otherwise). Toasts stack and spread
+out on hover, pause while hovered or focused, can be swiped away, and
+are announced to screen readers (danger ones at once). Browser code can
+call `pywebUI.toast({"title": "Copied"})`.
+
+Each component's behaviour is a small module (1-2.5 KB gzipped) that
+loads only on pages that use that component.
+
 ## Customising
 
 Each level is optional; most apps stop at the first.

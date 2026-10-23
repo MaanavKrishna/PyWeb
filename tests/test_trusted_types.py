@@ -17,11 +17,12 @@ SINKS = re.compile(r"\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.wr
 
 def test_the_runtime_only_reaches_html_sinks_through_its_policies():
     found = []
-    for name in sorted(os.listdir(RUNTIME)):
-        if name.endswith(".js"):
-            for n, line in enumerate(open(os.path.join(RUNTIME, name), encoding="utf-8"), 1):
-                if SINKS.search(line) and not line.lstrip().startswith("//"):
-                    found.append((name, n, "Policy.createHTML(" in line))
+    for folder, _dirs, files in os.walk(RUNTIME):        # the runtime and the UI kit's modules
+        for name in sorted(files):
+            if name.endswith(".js"):
+                for n, line in enumerate(open(os.path.join(folder, name), encoding="utf-8"), 1):
+                    if SINKS.search(line) and not line.lstrip().startswith("//"):
+                        found.append((name, n, "Policy.createHTML(" in line))
     assert found and all(ok for _, _, ok in found), found
 
 

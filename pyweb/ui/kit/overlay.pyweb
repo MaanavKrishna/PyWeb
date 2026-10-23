@@ -1,0 +1,65 @@
+"""Floating panels: popovers, tooltips and hover cards.
+
+    <Popover>
+        <PopoverTrigger>Dimensions</PopoverTrigger>
+        <PopoverContent side="bottom" align="start">...</PopoverContent>
+    </Popover>
+
+    <Tooltip text="Copy to clipboard"><Button size="icon" aria-label="Copy">⧉</Button></Tooltip>
+
+side: top, right, bottom, left (it flips when there isn't room); align: start, center, end.
+"""
+
+
+def Popover(open=None, side="bottom", align="center", offset=6, children=None, **attrs):
+    state = None if open is None else ("true" if open else "false")
+    <div class="pw-popover-root" data-pw-ui="popover" data-part="root" data-state="closed" data-open={state}
+         data-side={side} data-align={align} data-offset={offset} {**attrs}>{children}</div>
+
+
+def PopoverTrigger(variant="outline", size="md", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="trigger" data-variant={variant} data-size={size}
+            {**attrs}>{children}</button>
+
+
+def PopoverContent(arrow=False, children=None, **attrs):
+    <div class="pw-popover" data-part="content" data-state="closed" tabindex="-1" hidden {**attrs}>
+        {children}
+        if arrow:
+            <span class="pw-arrow" data-part="arrow" aria-hidden="true"></span>
+    </div>
+
+
+def PopoverClose(variant="ghost", size="sm", children=None, **attrs):
+    <button type="button" class="pw-button" data-part="close" data-variant={variant} data-size={size}
+            {**attrs}>{children}</button>
+
+
+def Tooltip(text=None, side="top", align="center", delay=500, children=None, **attrs):
+    <span class="pw-tooltip-root" data-pw-ui="tooltip" data-part="root" data-state="closed" data-side={side}
+          data-align={align} data-delay={delay} {**attrs}>
+        {children}
+        if text:
+            <span class="pw-tooltip" data-part="content" data-state="closed" hidden>{text}</span>
+    </span>
+
+
+def TooltipTrigger(children=None, **attrs):
+    <span data-part="trigger" tabindex="0" {**attrs}>{children}</span>
+
+
+def TooltipContent(children=None, **attrs):
+    <span class="pw-tooltip" data-part="content" data-state="closed" hidden {**attrs}>{children}</span>
+
+
+def HoverCard(side="bottom", align="center", open_delay=600, close_delay=250, children=None, **attrs):
+    <span class="pw-hovercard-root" data-pw-ui="hover-card" data-part="root" data-state="closed" data-side={side}
+          data-align={align} data-open-delay={open_delay} data-close-delay={close_delay} {**attrs}>{children}</span>
+
+
+def HoverCardTrigger(href=None, children=None, **attrs):
+    <a class="pw-link" data-part="trigger" href={href} {**attrs}>{children}</a>
+
+
+def HoverCardContent(children=None, **attrs):
+    <div class="pw-popover pw-hovercard" data-part="content" data-state="closed" hidden {**attrs}>{children}</div>

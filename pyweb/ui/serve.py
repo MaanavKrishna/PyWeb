@@ -9,11 +9,12 @@ import os
 from pyweb.runtime.server import Response
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+BEHAVIOUR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "ui")
 _cache: dict = {}
 
 
-def _file(name):
-    path = os.path.join(STATIC, name)
+def _file(name, folder=STATIC):
+    path = os.path.join(folder, name)
     stamp = os.path.getmtime(path)
     hit = _cache.get(path)
     if hit is None or hit[0] != stamp:
@@ -35,6 +36,7 @@ def head_tags(app, *, kit=True):
     out = f'<link rel="stylesheet" href="/__pyweb/theme.css?v={th.version()}">'
     if kit:
         out += f'<link rel="stylesheet" href="/__pyweb/ui.css?v={version()}">'
+        out += '<script type="module" src="/__pyweb/ui/index.js"></script>'
     return out
 
 
@@ -52,8 +54,19 @@ def handle(server, req):
     if path == "/__pyweb/ui.css":
         data, _v = _file("ui.css")
         return Response(200, data, {"Content-Type": "text/css; charset=utf-8", "Cache-Control": cache})
+    if path.startswith("/__pyweb/ui/") and path.endswith(".js"):
+        name = path[len("/__pyweb/ui/"):]
+        if "/" in name or name.startswith(".") or not os.path.isfile(os.path.join(BEHAVIOUR, name)):
+            return None
+        data, etag = _file(name, BEHAVIOUR)
+        etag = f'"{etag}"'
+        inm = next((v for k, v in (req.headers or {}).items() if k.lower() == "if-none-match"), None)
+        headers = {"Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache", "ETag": etag}
+        if inm == etag:
+            return Response(304, b"", headers)
+        return Response(200, data, headers)
     return None
 
 
-def gzip_size(name="ui.css"):
-    return len(gzip.compress(_file(name)[0], 9))
+def gzip_size(name="ui.css", folder=STATIC):
+    return len(gzip.compress(_file(name, folder)[0], 9))

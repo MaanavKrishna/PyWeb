@@ -1,5 +1,6 @@
 """Every example app, driven in a real browser under the production CSP."""
 
+import pytest
 from playwright.sync_api import expect
 
 from pyweb.testing import serve
@@ -183,6 +184,7 @@ def test_showcase_server_search(page):
         expect(page.locator("#inc")).to_have_text("Count: 1")
 
 
+@pytest.mark.chromium_only            # the MCP screenshot tool launches Chromium itself
 def test_mcp_screenshot_sees_the_page_and_runs_steps(tmp_path, monkeypatch):
     import base64
 

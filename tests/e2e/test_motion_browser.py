@@ -314,7 +314,15 @@ def test_drag_and_counting(page, tmp_path):
         page.mouse.down()
         page.mouse.move(h["x"] + 125, h["y"] + 75, steps=5)
         page.mouse.up()
-        until(page, "(parseFloat(getComputedStyle(document.querySelector('#home')).translate) || 0) < 1", timeout=4)
+        try:
+            until(page, "(parseFloat(getComputedStyle(document.querySelector('#home')).translate) || 0) < 1",
+                  timeout=4)                                                   # snaps back home
+        except AssertionError:
+            state = page.evaluate("""() => { const el = document.querySelector('#home');
+                return {translate: getComputedStyle(el).translate, style: el.getAttribute('style'),
+                        animations: el.getAnimations().map((a) => [a.playState, a.currentTime,
+                                                                    JSON.stringify(a.effect.getKeyframes().slice(-1))])}; }""")
+            raise AssertionError(f"#home didn't snap back: {state}") from None
 
 
 PAGES = '''

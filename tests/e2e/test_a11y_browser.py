@@ -26,6 +26,14 @@ def axe():
         pytest.skip(f"axe-core unavailable: {exc}")
 
 
+def _without_csp(route):
+    if route.request.resource_type != "document":
+        return route.continue_()
+    resp = route.fetch(max_redirects=0)            # the browser follows redirects itself
+    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-security-policy"}
+    return route.fulfill(response=resp, headers=headers)
+
+
 @pytest.fixture
 def audit(browser, axe):
     """``audit(page)`` -> serious and critical violations on the page as it is now."""
@@ -33,6 +41,8 @@ def audit(browser, axe):
 
     def page(**kw):
         ctx = browser.new_context(bypass_csp=True, **kw)
+        # WebKit enforces Trusted Types even with bypass_csp, so drop the page's CSP to add axe.
+        ctx.route("**/*", _without_csp)
         contexts.append(ctx)
         return ctx.new_page()
 

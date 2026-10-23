@@ -261,8 +261,11 @@ jobs:
           /tmp/briefcase/bin/briefcase build linux system --no-input
           /tmp/briefcase/bin/briefcase package linux system --no-input
           ls -la dist
-          app=$(find build -path '*usr/bin/*' -type f | head -1)
-          PYWEB_DESKTOP_SMOKE=1 PYWEB_DESKTOP_DATA=/tmp/todo-data xvfb-run -a "$app" | tee /tmp/smoke.txt
+          # Install it as a user would, and open it without setup-python's library path
+          # (the packaged app runs on the system Python).
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q ./dist/*.deb
+          env -u LD_LIBRARY_PATH PYWEB_DESKTOP_SMOKE=1 PYWEB_DESKTOP_DATA=/tmp/todo-data \
+            xvfb-run -a /usr/bin/todos | tee /tmp/smoke.txt
           grep -q "pyweb desktop smoke: ok Todos" /tmp/smoke.txt
   examples:
     name: examples, budgets, package

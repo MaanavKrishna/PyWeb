@@ -60,6 +60,7 @@ pyweb add [PKG[@RANGE] ...] [--app DIR]
 pyweb remove PKG ... [--app DIR]     remove npm packages (see npm packages)
 pyweb dts FILE.d.ts                  Python dataclasses from TypeScript declarations
 pyweb mcp                            MCP server over stdio for AI assistants (see AI assistants & MCP)
+pyweb mcp --http [--port 8765] [--token T]   the same over Streamable HTTP (127.0.0.1 only without a token)
 pyweb lsp                            language server over stdio for editors (see below)
 pyweb test [PATH]                    run pytest
 pyweb fmt [PATH] / pyweb lint [PATH] run ruff format / ruff check (if installed)

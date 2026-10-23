@@ -1,53 +1,51 @@
-"""MCP server for PyWeb: lets AI assistants build, check and run PyWeb apps.
+"""MCP server for PyWeb: lets AI assistants build, check, run, see and debug PyWeb apps.
 
-Run ``pyweb mcp`` (stdio transport). Register it with an AI tool, e.g.::
+Run ``pyweb mcp`` (stdio) or ``pyweb mcp --http`` (Streamable HTTP on 127.0.0.1:8765/mcp).
+Register it with an AI tool, e.g.::
 
     claude mcp add pyweb -- pyweb mcp                 # Claude Code
     {"mcpServers": {"pyweb": {"command": "pyweb", "args": ["mcp"]}}}   # Cursor / Claude Desktop
 
-Tools (all paths are relative to the directory the server was started in):
+Tools (paths are relative to the directory the server was started in): writing (guide, docs, new
+app, check, explain, inspect, compiled, routes, ui, packages), running (render, call, screenshot,
+review, test, profile, webhook_send), data (db_schema, db_query, migrations, jobs, requests, teams),
+shipping (security_check, upgrade, deploy_plan, openapi) and the running ``pyweb dev`` (dev, logs).
+Tools without the ``mcp_tools``/``devlink`` prefix live here; see ``TOOLS``.
 
-* ``pyweb_guide``        the rules for writing `.pyweb` apps (read this first)
-* ``pyweb_new_app``      scaffold an app from a template (+ AGENTS.md/CLAUDE.md)
-* ``pyweb_check``        compile + security checks; errors with line numbers and fix hints
-* ``pyweb_inspect``      what runs in the browser vs the server, and why
-* ``pyweb_compiled``     the generated JavaScript / server-rendered HTML for a page
-* ``pyweb_render``       request a URL from the app (server-side render, redirects, errors)
-* ``pyweb_call``         call an ``@server`` function like the browser does (cookies persist)
-* ``pyweb_routes``       pages, layouts, error pages, typed parameters, live data and streams
-* ``pyweb_packages``     add, remove or list npm packages for browser code (no Node.js)
-* ``pyweb_screenshot``   open a page in headless Chromium, run steps, get a PNG
-* ``pyweb_test``         run the app's pytest tests
-
-Implemented with the standard library only (JSON-RPC 2.0 over stdin/stdout).
+Protocol 2025-11-25 (and older): tool titles, hints and output schemas, resources and resource
+templates (docs, kit components, templates), prompts, argument completion, logging and progress.
+Standard library only.
 """
 
 from __future__ import annotations
 
 import base64
 import contextlib
+import contextvars
 import gzip
 import json
 import os
 import re
 import sys
+import threading
 import traceback
 
-PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES = ("blank", "counter", "todo", "blog", "saas", "auth", "chat", "ai-chat", "desktop")
 
 INSTRUCTIONS = (
-    "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). "
-    "Before writing PyWeb code, call pyweb_guide. After every edit, call pyweb_check and fix "
-    "errors by line number using the hints. Use pyweb_inspect to see what runs in the browser "
-    "vs the server, pyweb_routes for the map of pages and layouts, pyweb_render / pyweb_call to verify "
-    "behaviour, pyweb_screenshot to see the page and try interactions in a real browser, and pyweb_test "
-    "to run the app's tests. Use pyweb_packages to add npm libraries (no Node.js). For data: pyweb_db_schema "
-    "shows the Models and tables, pyweb_db_query runs read-only SQL, pyweb_migrations writes and applies "
-    "migrations after you change a Model, pyweb_jobs inspects and runs background jobs, and pyweb_requests "
-    "shows each request's SQL (fix 'N+1' warnings with include()). For pages that must follow the database "
-    "use .live(); for AI replies use a @server function that yields."
+    "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). Before writing PyWeb code, "
+    "call pyweb_guide; for any feature question call pyweb_docs (teams, forms, jobs, live data, deploys, "
+    "installable and desktop apps, security). Build UIs from the kit (pyweb_ui lists components and makes "
+    "themes). After every edit call pyweb_check and fix errors by line number using the hints; pyweb_explain "
+    "answers 'where does this run / what can go here' for a line. Verify with pyweb_render and pyweb_call "
+    "(as_user/org to act as a signed-in member), look with pyweb_screenshot or pyweb_review (light, dark, "
+    "phone, accessibility), and run pyweb_test. Data: pyweb_db_schema, pyweb_db_query (read-only), "
+    "pyweb_migrations after changing a Model, pyweb_jobs, pyweb_requests (SQL and N+1 warnings), "
+    "pyweb_teams. When the user runs `pyweb dev`, pyweb_dev and pyweb_logs show its live errors and logs. "
+    "Before shipping: pyweb_security_check (production=true), pyweb_upgrade, pyweb_deploy_plan. Prompts "
+    "give step-by-step workflows (add_teams, design_pass, security_review, debug_page, ...)."
 )
 
 ERROR_HINTS = [
@@ -183,7 +181,9 @@ def agent_instructions():
         "- `pyweb inspect app.pyweb` shows what runs in the browser vs the server.\n"
         "- `pyweb dev app.pyweb` serves at http://localhost:8000 with live reload.\n"
         "- `pytest` runs `test_app.py`; add a test for each server function and page you change.\n"
-        "- If the `pyweb` MCP server is available, use its tools (pyweb_guide, pyweb_check, ...).\n\n"
+        "- If the `pyweb` MCP server is available, use its tools: pyweb_guide and pyweb_docs to learn,\n"
+        "  pyweb_check after each edit, pyweb_ui for components, pyweb_render/pyweb_call/pyweb_review to\n"
+        "  verify, pyweb_test, and pyweb_dev/pyweb_logs for errors while `pyweb dev` runs.\n\n"
         + _guide_text().split("\n", 2)[2]
     )
 
@@ -363,8 +363,9 @@ def tool_check(args):
     except OSError as exc:
         return {"ok": False, "errors": [{"file": args.get("path"), "line": None, "message": str(exc)}]}
     from .compiler import compile_source
+    from .a11y import check as a11y_check
     findings = [{"line": f["line"], "kind": f["kind"], "message": f["message"]}
-                for f in check_source(source, filename)]
+                for f in check_source(source, filename) + a11y_check(source, filename)]
     try:
         out = compile_source(source, filename=filename)
     except (SyntaxError, ValueError) as exc:
@@ -593,21 +594,25 @@ def tool_screenshot(args):
     # session on the same thread, so the browser gets a thread of its own.
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(_screenshot, args).result()
+        return pool.submit(contextvars.copy_context().run, _screenshot, args).result()
 
 
 def _screenshot(args):
     from playwright.sync_api import sync_playwright
 
-    from .testing import serve
+    from .mcp_tools import _target
     path = args.get("path") or "app.pyweb"
     url = args.get("url") or "/"
     width, height = int(args.get("width") or 1280), int(args.get("height") or 800)
     result = {"steps": []}
-    with serve(path) as base, sync_playwright() as pw:
+    with _target(path, args) as (base, cookies), sync_playwright() as pw:
         browser = pw.chromium.launch()
         try:
-            page = browser.new_page(viewport={"width": width, "height": height})
+            ctx = browser.new_context(viewport={"width": width, "height": height},
+                                      color_scheme=args.get("scheme") or "light")
+            if cookies:
+                ctx.add_cookies([{"name": k, "value": v, "url": base} for k, v in cookies.items()])
+            page = ctx.new_page()
             console = []
             page.on("console", lambda m: console.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") else None)
             page.on("pageerror", lambda e: console.append(f"error: {e}"))
@@ -615,7 +620,9 @@ def _screenshot(args):
             result["status"] = resp.status if resp else None
             if page.query_selector("#pw-state"):
                 page.wait_for_selector("[data-pw-ready]", state="attached", timeout=10000)
-            for i, step in enumerate(args.get("steps") or []):
+            steps = args.get("steps") or []
+            for i, step in enumerate(steps):
+                progress(i, len(steps), f"step {i + 1}: {step.get('action')} {step.get('selector') or ''}".strip())
                 action, sel, value = step.get("action"), step.get("selector"), step.get("value")
                 try:
                     if action == "click":
@@ -646,6 +653,7 @@ def _screenshot(args):
             result.update({
                 "url": page.url[len(base):] or "/",
                 "title": page.title(),
+                "target": "dev" if not cookies and _is_dev(base, path) else "fresh",
                 "hydration": root.get_attribute("data-pw-mode") if root else None,
                 "console": console,
                 "text": page.inner_text("body")[: int(args.get("max_chars") or 4000)],
@@ -654,6 +662,12 @@ def _screenshot(args):
         finally:
             browser.close()
     return result
+
+
+def _is_dev(base, path):
+    from . import devlink
+    dev = devlink.find(path)
+    return bool(dev) and dev["url"].rstrip("/") == base.rstrip("/")
 
 
 def tool_test(args):
@@ -667,8 +681,20 @@ def tool_test(args):
     cmd = [sys.executable, "-m", "pytest", target, "-q", "-rfE", "--no-header", "--color=no", "-p", "no:cacheprovider"]
     if args.get("filter"):
         cmd += ["-k", args["filter"]]
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=int(args.get("timeout") or 300))
-    out = (proc.stdout + proc.stderr).strip()
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    timer = threading.Timer(int(args.get("timeout") or 300), proc.kill)
+    timer.start()
+    lines = []
+    try:
+        for line in proc.stdout:                      # pytest -q prints "....   [ 40%]" as it goes
+            lines.append(line)
+            pct = re.search(r"\[\s*(\d+)%\]\s*$", line)
+            if pct:
+                progress(int(pct.group(1)), 100, "running tests")
+        proc.wait()
+    finally:
+        timer.cancel()
+    out = "".join(lines).strip()
     counts = {k: int(n) for n, k in re.findall(r"(\d+) (passed|failed|errors?|skipped)", out.splitlines()[-1] if out else "")}
     res = {"ok": proc.returncode == 0, "passed": counts.get("passed", 0), "failed": counts.get("failed", 0),
            "errors": counts.get("error", 0) + counts.get("errors", 0), "skipped": counts.get("skipped", 0),
@@ -822,13 +848,21 @@ def tool_jobs(args):
 
 def tool_requests(args):
     """What the last requests (pyweb_render / pyweb_call) did: SQL, N+1 warnings, spans, jobs, errors."""
-    from . import telemetry
-    items = list(telemetry.RECENT)[-int(args.get("limit") or 10):]
+    from . import devlink, telemetry
+    limit = int(args.get("limit") or 10)
+    source = args.get("source") or "auto"
+    items = list(telemetry.RECENT)[-limit:] if source != "dev" else []
+    target = "mcp"
+    if source == "dev" or (source == "auto" and not items):
+        dev = devlink.dev_requests(args.get("path") or "app.pyweb", limit)
+        if dev is not None:
+            items, target = dev, "dev"
     if not args.get("sql", True):
         items = [{k: v for k, v in r.items() if k != "sql"} for r in items]
-    return {"requests": items,
-            "hint": "requests appear here after pyweb_render or pyweb_call; a warning about a repeated "
-                    "query means add .include(...) or move the query out of the loop"}
+    return {"requests": items, "target": target,
+            "hint": "requests appear here after pyweb_render or pyweb_call (or, with source=dev, what the running "
+                    "pyweb dev served); a warning about a repeated query means add .include(...) or move the "
+                    "query out of the loop"}
 
 
 PATH_PROP = {"type": "string", "description": "Path to the .pyweb file (default: app.pyweb)."}
@@ -854,8 +888,8 @@ TOOLS = [
          "title": {"type": "string", "description": "App title."},
          "overwrite": {"type": "boolean", "description": "Replace an existing app.pyweb."}}}},
     {"name": "pyweb_check", "fn": tool_check, "readOnly": True,
-     "description": "Compile a PyWeb app and run security checks. Returns ok, errors (file, line, message, hint), "
-                    "findings, pages (route, signals, computeds, what is sent to the browser, JS size) and server "
+     "description": "Compile a PyWeb app and run the security and accessibility checks. Returns ok, errors "
+                    "(file, line, message, hint), findings, pages (route, signals, computeds, what is sent to the browser, JS size) and server "
                     "functions. Call after every edit.",
      "inputSchema": {"type": "object", "properties": {"path": PATH_PROP, "source": SOURCE_PROP}}},
     {"name": "pyweb_inspect", "fn": tool_inspect, "readOnly": True,
@@ -939,7 +973,13 @@ TOOLS = [
                        "value": {"type": "string", "description": "Text to fill, key to press, option, URL, "
                                                                   "or wait time in ms."}}}},
          "width": {"type": "integer"}, "height": {"type": "integer"},
-         "full_page": {"type": "boolean"}, "max_chars": {"type": "integer"}}}},
+         "scheme": {"type": "string", "enum": ["light", "dark"]},
+         "full_page": {"type": "boolean"}, "max_chars": {"type": "integer"},
+         "as_user": {"type": "string", "description": "Open the page signed in as this email."},
+         "roles": {"type": "array", "items": {"type": "string"}},
+         "org": {"type": "string"}, "org_role": {"type": "string", "enum": ["owner", "admin", "member", "viewer"]},
+         "target": {"type": "string", "enum": ["auto", "fresh"],
+                    "description": "auto (default) uses a running pyweb dev for this app; fresh starts a server."}}}},
     {"name": "pyweb_db_schema", "fn": tool_db_schema, "readOnly": True,
      "description": "The app's data: every Model (fields, types, rules, relations, policies) and the tables "
                     "the database has now, plus drift (what `pyweb db diff` would change). Read this before "
@@ -969,11 +1009,15 @@ TOOLS = [
          "retry": {"type": "array", "items": {"type": "string"}}, "run": {"type": "boolean"},
          "timeout": {"type": "number"}}}},
     {"name": "pyweb_requests", "fn": tool_requests, "readOnly": True,
-     "description": "What the app did for the last requests made with pyweb_render/pyweb_call: time, status, "
-                    "every SQL statement, N+1 warnings, spans, jobs queued, emails and errors (the dev toolbar's "
-                    "data). Use it to find slow or repeated queries.",
+     "description": "What the app did for the last requests made with pyweb_render/pyweb_call, or (source=dev) "
+                    "for the browser's requests to the running `pyweb dev`: time, status, every SQL statement, "
+                    "N+1 warnings, spans, jobs queued, emails and errors (the dev toolbar's data). Use it to find "
+                    "slow or repeated queries.",
      "inputSchema": {"type": "object", "properties": {
-         "limit": {"type": "integer"}, "sql": {"type": "boolean", "description": "Include SQL (default true)."}}}},
+         "path": PATH_PROP, "limit": {"type": "integer"},
+         "source": {"type": "string", "enum": ["auto", "mcp", "dev"],
+                    "description": "auto: this server's requests, or the dev server's when there are none."},
+         "sql": {"type": "boolean", "description": "Include SQL (default true)."}}}},
     {"name": "pyweb_test", "fn": tool_test, "readOnly": False,
      "description": "Run the app's tests with pytest (test_*.py files using pyweb.testing.TestClient) and return "
                     "pass/fail counts, the summary line and the failure output.",
@@ -983,92 +1027,492 @@ TOOLS = [
          "max_chars": {"type": "integer"}, "timeout": {"type": "integer"}}}},
 ]
 
+def _arg(name, description, required=False):
+    return {"name": name, "description": description, "required": required}
+
+
+_PATH_ARG = _arg("path", "The app (default: app.pyweb).")
+
 PROMPTS = [
-    {"name": "build_pyweb_app",
+    {"name": "build_pyweb_app", "title": "Build an app",
      "description": "Build a PyWeb app from a description, verifying it with the PyWeb tools.",
-     "arguments": [{"name": "description", "description": "What the app should do.", "required": True},
-                   {"name": "directory", "description": "Where to create it (default: current directory).",
-                    "required": False}]},
-    {"name": "add_ai_feature",
+     "arguments": [_arg("description", "What the app should do.", True),
+                   _arg("directory", "Where to create it (default: current directory).")]},
+    {"name": "add_ai_feature", "title": "Add a streaming AI feature",
      "description": "Add a streaming AI feature (chat, summarise, generate) to an existing PyWeb app.",
-     "arguments": [{"name": "feature", "description": "What the AI feature should do.", "required": True},
-                   {"name": "path", "description": "The app (default: app.pyweb).", "required": False}]},
-    {"name": "make_data_live",
+     "arguments": [_arg("feature", "What the AI feature should do.", True), _PATH_ARG]},
+    {"name": "make_data_live", "title": "Make pages live",
      "description": "Make pages of an existing PyWeb app update by themselves when the database changes.",
-     "arguments": [{"name": "path", "description": "The app (default: app.pyweb).", "required": False}]},
+     "arguments": [_PATH_ARG]},
+    {"name": "add_teams", "title": "Add teams",
+     "description": "Turn a single-user app into one where teams share data: organizations, invitations, "
+                    "roles, tenant Models and tests that prove teams can't see each other's rows.",
+     "arguments": [_PATH_ARG]},
+    {"name": "make_installable", "title": "Make it installable",
+     "description": "Make the app installable on phones and desktops (a PWA): manifest, icons, offline page, "
+                    "optionally Web Push.",
+     "arguments": [_PATH_ARG, _arg("push", "yes to add push notifications too.")]},
+    {"name": "make_desktop_app", "title": "Make a desktop app",
+     "description": "Run the app in its own desktop window with native file dialogs, then package an installer.",
+     "arguments": [_PATH_ARG]},
+    {"name": "security_review", "title": "Security review",
+     "description": "Review the app against PyWeb's threat model and fix what it finds.",
+     "arguments": [_PATH_ARG]},
+    {"name": "upgrade_pyweb", "title": "Upgrade PyWeb",
+     "description": "Bring an app written for an older PyWeb up to date: findings, safe rewrites, "
+                    "migrations and tests.",
+     "arguments": [_PATH_ARG]},
+    {"name": "design_pass", "title": "Design pass with the UI kit",
+     "description": "Make the app look and feel polished with the UI kit, a theme and motion, checked for "
+                    "accessibility in light and dark mode and on a phone.",
+     "arguments": [_PATH_ARG, _arg("goal", "What should change (e.g. 'calmer, more spacious').")]},
+    {"name": "fix_failing_test", "title": "Fix a failing test",
+     "description": "Find out why a test fails and fix the app (not the test, unless the test is wrong).",
+     "arguments": [_PATH_ARG, _arg("test", "The test's name or a -k expression (default: every test).")]},
+    {"name": "debug_page", "title": "Debug a page",
+     "description": "Find out why a page errors, looks wrong or is slow, using the running dev server when "
+                    "there is one.",
+     "arguments": [_PATH_ARG, _arg("url", "The page's URL path, e.g. /projects/1.", True),
+                   _arg("problem", "What's wrong (optional).")]},
 ]
 
 
+def _steps(intro, *steps):
+    return intro + "\n\nSteps:\n" + "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
+
+
 def _prompt_text(name, args):
+    path = args.get("path") or "app.pyweb"
     if name == "add_ai_feature":
-        path = args.get("path") or "app.pyweb"
-        return (
-            f"Add this AI feature to the PyWeb app at `{path}`: {args.get('feature', '').strip()}\n\n"
-            "Steps:\n"
-            "1. Call pyweb_guide with section 'streaming' and follow it; read the ai-chat template "
-            "(resource pyweb://templates/ai-chat) for a provider-agnostic model call.\n"
-            "2. Write a @server function that yields text as the model produces it. Read API keys from "
-            "os.environ inside server code only; validate and trim what the browser sends.\n"
-            "3. In the page, read it with `async for` in an `async def` handler, show the text with "
-            "<Markdown text={...} />, and add a Stop button that calls `.cancel()` on the stream.\n"
-            "4. Call pyweb_check until it is clean, pyweb_call the function (it returns the streamed chunks) "
-            "and look at the page with pyweb_screenshot.\n"
-            "5. Add a test with TestClient.rpc (it returns the list of chunks) and run pyweb_test."
-        )
+        return _steps(
+            f"Add this AI feature to the PyWeb app at `{path}`: {args.get('feature', '').strip()}",
+            "Call pyweb_guide with section 'streaming' and follow it; read the ai-chat template "
+            "(resource pyweb://templates/ai-chat) for a provider-agnostic model call.",
+            "Write a @server function that yields text as the model produces it. Read API keys from "
+            "os.environ inside server code only; validate and trim what the browser sends; add "
+            "rate=\"20/hour\" so one person can't run up the bill.",
+            "In the page, read it with `async for` in an `async def` handler, show the text with "
+            "<Markdown text={...} />, and add a Stop button that calls `.cancel()` on the stream.",
+            "Call pyweb_check until it is clean, pyweb_call the function (it returns the streamed chunks) "
+            "and look at the page with pyweb_screenshot.",
+            "Add a test with TestClient.rpc (it returns the list of chunks) and run pyweb_test.")
     if name == "make_data_live":
-        path = args.get("path") or "app.pyweb"
-        return (
-            f"Make the PyWeb app at `{path}` live: pages should update by themselves when the data changes.\n\n"
-            "Steps:\n"
-            "1. Call pyweb_guide with section 'live data' and pyweb_routes to see the pages.\n"
-            "2. Replace page variables loaded with db.execute(...).dicts() by live(db, sql, params) "
-            "(from pyweb import live). Keep each query small (LIMIT) and filtered per user in SQL.\n"
-            "3. Remove polling (setInterval) and hand-written publish/subscribe that only refresh data.\n"
-            "4. Make sure writes go through pyweb.db (or call db.notify('table') after other writes).\n"
-            "5. Call pyweb_check, then verify with pyweb_screenshot: change data with pyweb_call and reload."
-        )
+        return _steps(
+            f"Make the PyWeb app at `{path}` live: pages should update by themselves when the data changes.",
+            "Call pyweb_docs with query 'live' (or read pyweb://docs/live-data) and pyweb_routes to see the pages.",
+            "For Models, end the page's query with .live(): `tasks = Task.where(project_id=pid).order(\"id\").live()`. "
+            "For raw SQL, use live(db, sql, params) from pyweb. Keep each query small (limit) and filtered per user.",
+            "Remove polling (setInterval) and hand-written publish/subscribe that only refresh data.",
+            "Make sure writes go through Models or pyweb.db (or call db.notify('table') after other writes).",
+            "Call pyweb_check, then verify with pyweb_screenshot: change data with pyweb_call and look again.")
+    if name == "add_teams":
+        return _steps(
+            f"Add teams to the PyWeb app at `{path}`: people work in organizations and only see their team's data.",
+            "Read pyweb://docs/teams. Call pyweb_db_schema to see the Models.",
+            "Switch to app.use_auth(orgs=True). Add auth.plans({...}) if the product has plans (True/False values "
+            "are features, numbers are limits such as seats).",
+            "Add tenant=True to every Model whose rows belong to a team (class Project(Model, tenant=True)). Drop "
+            "row policies that only compared owner ids; keep ones that restrict within a team.",
+            "Make sure a signed-in person has a team: auth.org(), or auth.create_org(...) then auth.switch_org(...) "
+            "on their first visit (see the saas template, pyweb://templates/saas).",
+            "Guard admin actions with @server(org_role=[\"owner\", \"admin\"]) and pages with "
+            "@app.page(..., org_role=...); paid features with feature=\"name\".",
+            "Link /orgs (members and invitations) and /account/tokens from the navigation.",
+            "Run pyweb_migrations (diff, then upgrade) and pyweb_security_check; fix any tenant-unscoped finding.",
+            "Check isolation with pyweb_render/pyweb_call using as_user and org for two different organizations.",
+            "Add tests: client.login(\"ann@example.com\", org=\"Acme\") and client.login(\"bo@example.com\", "
+            "org=\"Globex\") must not see each other's rows; a teammate (org_role=\"member\") must. Run pyweb_test.")
+    if name == "make_installable":
+        push = str(args.get("push") or "").lower() in ("yes", "true", "1", "y")
+        steps = [
+            "Read pyweb://docs/pwa-push.",
+            "Add pwa=True to App(...), or pwa=PWA(name=..., icon=\"static/icon.png\", theme_color=..., "
+            "cache_pages=True) (from pyweb.pwa import PWA). A square PNG of 512 px or more makes the icons.",
+            "pyweb_render /manifest.webmanifest and check the name, colours and icons; pyweb_screenshot the "
+            "page and confirm the console has no service worker errors.",
+            "Use platform.pwa (from pyweb import platform) only for layout tweaks, never for security."]
+        if push:
+            steps += ["Add Web Push: pip install 'pyweb-stack[push]'; ask permission only from a button "
+                      "(data-pw-push=\"subscribe\"), and send with push.send(user, title, body, url) from server "
+                      "code. Set PYWEB_VAPID_KEY in production (pyweb push key)."]
+        steps += ["Run pyweb_security_check with production=true and pyweb_test."]
+        return _steps(f"Make the PyWeb app at `{path}` installable.", *steps)
+    if name == "make_desktop_app":
+        return _steps(
+            f"Make the PyWeb app at `{path}` a desktop app.",
+            "Read pyweb://docs/desktop (and the desktop template, pyweb://templates/desktop).",
+            "Add desktop=Window(width=..., height=..., min_size=...) to App(...) (from pyweb.desktop import Window). "
+            "Keep the database as sqlite:///name.db: in the desktop app it lives in the user's data folder.",
+            "Desktop-only features (pyweb.desktop.open_file, save_file, notify, reveal) are server-side Python: "
+            "call them from @server functions, and show their buttons only when platform.desktop is true.",
+            "Test with pyweb_call and monkeypatch the dialog functions in tests; run pyweb_test.",
+            "Tell the user to try `pyweb desktop app.pyweb` and to build an installer with "
+            "`pyweb build --desktop app.pyweb --package` (signing is described in the docs).")
+    if name == "security_review":
+        return _steps(
+            f"Review the PyWeb app at `{path}` for security problems, and fix them.",
+            "Read pyweb://threat-model for what PyWeb already defends against; don't re-solve those.",
+            "Call pyweb_security_check with production=true and fix every finding, blocking ones first.",
+            "Call pyweb_db_schema: every Model with people's data needs a row policy or tenant=True; fields "
+            "nobody should read back need private=True; sensitive values encrypted=True.",
+            "Read each @server function (pyweb_routes lists them): it should check who may call it (login=True, "
+            "roles=, org_role=), validate its arguments (types and Field rules), and rate-limit anything "
+            "expensive or abusable (rate=\"10/minute\").",
+            "Look for outbound requests to URLs users choose: they must use pyweb.http.fetch.",
+            "Check isolation with pyweb_call/pyweb_render as two different users (as_user) and organizations.",
+            "Add a test for each fix and run pyweb_test. Summarise what you changed and what's left.")
+    if name == "upgrade_pyweb":
+        return _steps(
+            f"Upgrade the PyWeb app at `{path}` to this version of PyWeb.",
+            "Read pyweb://docs/upgrading.",
+            "Call pyweb_upgrade to list the findings, then pyweb_upgrade with fix=true for the safe rewrites; "
+            "make the remaining changes by hand.",
+            "Call pyweb_migrations with action=status; if it reports drift (e.g. the auth_sessions table), "
+            "action=diff then action=upgrade.",
+            "Call pyweb_check and pyweb_security_check, then pyweb_test. Fix what fails.",
+            "Look at the main pages with pyweb_review: the sign-in and admin pages now follow the app's theme.")
+    if name == "design_pass":
+        goal = (args.get("goal") or "").strip()
+        return _steps(
+            f"Give the PyWeb app at `{path}` a design pass with the UI kit" + (f": {goal}" if goal else "."),
+            "Call pyweb_review on the main pages to see them now (light, dark, phone) and their accessibility.",
+            "Call pyweb_ui with action=list, then action=show for the components you need (Card, Button, Dialog, "
+            "DataTable, Sidebar...). Replace hand-made markup with kit components; keep ids that tests use.",
+            "Pick a theme: pyweb_ui action=theme with accent/radius/font (or a preset) and save it into App(theme=...).",
+            "Add motion where it helps understanding: animate=\"fade-up\" on content, initial/animate/exit and "
+            "layout on list rows, a Dialog for forms. Don't animate everything.",
+            "Call pyweb_check (its a11y findings too) and pyweb_review again; fix contrast, labels and focus problems.",
+            "Run pyweb_test.")
+    if name == "fix_failing_test":
+        test = (args.get("test") or "").strip()
+        return _steps(
+            f"Fix the failing test{f' {test!r}' if test else 's'} of the PyWeb app at `{path}`.",
+            "Run pyweb_test" + (f" with filter={test!r}" if test else "") + " and read the failure output.",
+            "Reproduce it outside the test: pyweb_render the page or pyweb_call the function with the same user "
+            "(as_user, org) and arguments; pyweb_requests shows the SQL and errors of those requests.",
+            "Find the cause in the app (pyweb_explain on the line, pyweb_inspect for where things run). Fix the "
+            "app; change the test only if it asserts something wrong.",
+            "Call pyweb_check, then pyweb_test until everything passes.")
+    if name == "debug_page":
+        url = args.get("url") or "/"
+        problem = (args.get("problem") or "").strip()
+        return _steps(
+            f"Debug {url} in the PyWeb app at `{path}`" + (f": {problem}" if problem else "."),
+            "Call pyweb_dev: if a dev server is running, its errors and logs are the real ones (pyweb_logs).",
+            f"pyweb_render {url} (a 500 includes the traceback) and pyweb_screenshot it (console errors, "
+            "hydration).",
+            "pyweb_requests shows each request's SQL (N+1 warnings), time and errors; pyweb_profile shows where "
+            "a slow page spends its time.",
+            "Fix the cause, pyweb_check, and confirm with pyweb_render/pyweb_screenshot. Add a test (pyweb_test).")
     desc = args.get("description", "").strip()
     directory = args.get("directory") or "."
-    return (
-        f"Build a PyWeb web app in `{directory}`: {desc}\n\n"
-        "Steps:\n"
-        "1. Call pyweb_guide and follow its rules.\n"
-        f"2. Call pyweb_new_app (directory={directory!r}) with the closest template.\n"
-        "3. Edit app.pyweb. Keep database/secret/import work in @server functions; keep handlers to "
-        "browser-safe Python. Use a layout for shared navigation, live() for data that changes, a "
-        "yielding @server function for AI replies, and pyweb_packages for JavaScript libraries.\n"
-        "4. Call pyweb_check after every edit until ok is true with no errors; apply the hints.\n"
-        "5. Verify with pyweb_routes, pyweb_render (each page) and pyweb_call (each server function), and "
-        "look at the result with pyweb_screenshot (use steps to click and type).\n"
-        "6. Add tests to test_app.py and run them with pyweb_test.\n"
-        "7. Tell the user to run `pyweb dev app.pyweb` to try it."
-    )
+    return _steps(
+        f"Build a PyWeb web app in `{directory}`: {desc}",
+        "Call pyweb_guide and follow its rules. pyweb_docs answers questions about any feature.",
+        f"Call pyweb_new_app (directory={directory!r}) with the closest template (saas for products with "
+        "accounts and teams, desktop for a desktop app).",
+        "Edit app.pyweb. Keep database/secret/import work in @server functions; keep handlers to "
+        "browser-safe Python. Build the UI from pyweb.ui components (pyweb_ui lists them). Use a layout for "
+        "shared navigation, .live() for data that changes, a yielding @server function for AI replies, and "
+        "pyweb_packages for JavaScript libraries.",
+        "Call pyweb_check after every edit until ok is true with no errors; apply the hints.",
+        "Verify with pyweb_routes, pyweb_render (each page) and pyweb_call (each server function), and look at "
+        "the result with pyweb_screenshot or pyweb_review (light, dark, phone, accessibility).",
+        "Add tests to test_app.py and run them with pyweb_test; run pyweb_security_check.",
+        "Tell the user to run `pyweb dev app.pyweb` to try it.")
+
+
+# ------------------------------------------------------------------ tool metadata
+
+def _obj(required=(), **props):
+    """A JSON object schema (extra keys allowed) with these properties."""
+    return {"type": "object", "properties": props, **({"required": list(required)} if required else {})}
+
+
+_S, _I, _B, _N = {"type": "string"}, {"type": "integer"}, {"type": "boolean"}, {"type": "number"}
+_A, _O, _ANY = {"type": "array"}, {"type": "object"}, {}
+_S0, _I0 = {"type": ["string", "null"]}, {"type": ["integer", "null"]}
+
+# title, output schema and hints for the tools above (new tools in mcp_tools.py declare their own).
+_META = {
+    "pyweb_guide": {"title": "Read the PyWeb guide"},
+    "pyweb_new_app": {"title": "Create an app from a template", "idempotent": False,
+                      "output": _obj(["created"], created=_A, next_steps=_A)},
+    "pyweb_check": {"title": "Compile and check an app",
+                    "output": _obj(["ok", "errors"], ok=_B, errors=_A, findings=_A, pages=_A,
+                                   server_functions=_A, layouts=_O)},
+    "pyweb_inspect": {"title": "What runs where",
+                      "output": _obj(["pages"], pages=_O, layouts=_O, rpc_endpoints=_A)},
+    "pyweb_compiled": {"title": "Generated JavaScript and HTML",
+                       "output": _obj(page=_S, javascript=_S, server_html=_ANY, error=_S)},
+    "pyweb_render": {"title": "Request a page", "idempotent": False,
+                     "output": _obj(["status"], status=_I, content_type=_S0, redirect_to=_S, error=_S, title=_S,
+                                    head=_O, roots=_A, body=_S)},
+    "pyweb_call": {"title": "Call a server function", "idempotent": False,
+                   "output": _obj(["ok"], ok=_B, result=_ANY, streamed=_B, chunks=_A, cookies=_A, error=_O)},
+    "pyweb_openapi": {"title": "OpenAPI document", "output": _obj(["openapi"], openapi=_S, paths=_O, info=_O)},
+    "pyweb_security_check": {"title": "Security review",
+                             "output": _obj(["ok", "findings"], ok=_B, findings=_A, threat_model=_S,
+                                            production=_A)},
+    "pyweb_routes": {"title": "Map of pages and functions",
+                     "output": _obj(["pages"], pages=_A, layouts=_A, server_functions=_A)},
+    "pyweb_packages": {"title": "npm packages", "idempotent": False, "openWorld": True,
+                       "output": _obj(["ok"], ok=_B, error=_S, hint=_S, app_dir=_S, packages=_O, specifiers=_A,
+                                      usage=_A, next_steps=_A)},
+    "pyweb_screenshot": {"title": "Screenshot in a real browser", "idempotent": False,
+                         "output": _obj(["steps"], steps=_A, status=_I0, url=_S, title=_S, hydration=_S0,
+                                        console=_A, text=_S, target=_S)},
+    "pyweb_db_schema": {"title": "Models and tables",
+                        "output": _obj(["models"], dialect=_S, models=_A, tables=_O, drift=_A, hint=_S)},
+    "pyweb_db_query": {"title": "Read-only SQL",
+                       "output": _obj(["columns", "rows"], columns=_A, rows=_A, truncated=_B)},
+    "pyweb_migrations": {"title": "Migrations", "idempotent": False, "destructive": False,
+                         "output": _obj(folder=_S, migrations=_A, report=_ANY, written=_A, changes=_A, notes=_A,
+                                        next=_S, applied=_ANY)},
+    "pyweb_jobs": {"title": "Background jobs", "idempotent": False,
+                   "output": _obj(store=_S, counts=_ANY, jobs=_A, registered=_A, retried=_O, ran=_ANY, target=_S)},
+    "pyweb_requests": {"title": "Recent requests", "output": _obj(["requests"], requests=_A, hint=_S, target=_S)},
+    "pyweb_test": {"title": "Run the tests", "idempotent": False,
+                   "output": _obj(["ok"], ok=_B, passed=_I, failed=_I, errors=_I, skipped=_I, summary=_S,
+                                  output=_S, hint=_S)},
+}
+for _t in TOOLS:
+    _t.update(_META.get(_t["name"], {}))
+
+from .mcp_tools import TOOLS as _MORE_TOOLS  # noqa: E402 - new tools use the helpers above
+
+TOOLS = TOOLS + _MORE_TOOLS
+
+
+def tool_listing(t):
+    """How ``tools/list`` describes a tool."""
+    read_only = bool(t["readOnly"])
+    out = {"name": t["name"], "title": t.get("title", t["name"]), "description": t["description"],
+           "inputSchema": t["inputSchema"],
+           "annotations": {"title": t.get("title", t["name"]), "readOnlyHint": read_only,
+                           "destructiveHint": bool(t.get("destructive", False)) and not read_only,
+                           "idempotentHint": bool(t.get("idempotent", read_only)),
+                           "openWorldHint": bool(t.get("openWorld", False))}}
+    if t.get("output"):
+        out["outputSchema"] = t["output"]
+    return out
+
+
+_JSON_TYPES = {"string": str, "integer": int, "number": (int, float), "boolean": bool, "array": list,
+               "object": dict}
+
+
+def check_arguments(schema, args):
+    """Problems with ``args`` against a tool's input schema (required keys, types, enums)."""
+    if not isinstance(args, dict):
+        return ["arguments must be an object"]
+    problems = [f"missing required argument {k!r}" for k in schema.get("required", []) if k not in args]
+    props = schema.get("properties", {})
+    for key, value in args.items():
+        spec = props.get(key)
+        if spec is None:
+            problems.append(f"unknown argument {key!r} (known: {', '.join(sorted(props)) or 'none'})")
+            continue
+        want = spec.get("type")
+        types = want if isinstance(want, list) else [want] if want else []
+        if value is None and "null" in types:
+            continue
+        ok = not types or any(t in _JSON_TYPES and isinstance(value, _JSON_TYPES[t])
+                              and not (t in ("integer", "number") and isinstance(value, bool)) for t in types)
+        if not ok:
+            problems.append(f"{key!r} should be {' or '.join(types)}, not {type(value).__name__}")
+        elif "enum" in spec and value not in spec["enum"]:
+            problems.append(f"{key!r} must be one of {', '.join(map(str, spec['enum']))}")
+    return problems
+
+
+# ------------------------------------------------------------------ progress and log notifications
+
+_CALL = contextvars.ContextVar("pyweb_mcp_call", default=None)
+LOG_LEVELS = ("debug", "info", "notice", "warning", "error", "critical", "alert", "emergency")
+
+
+def progress(done, total=None, message=None):
+    """Tell the client how far the running tool call is (when it asked, with a progress token)."""
+    call = _CALL.get()
+    if not call or call.get("token") is None:
+        return
+    params = {"progressToken": call["token"], "progress": done}
+    if total is not None:
+        params["total"] = total
+    if message:
+        params["message"] = message
+    call["server"].send({"jsonrpc": "2.0", "method": "notifications/progress", "params": params})
+
+
+def log(level, message, **data):
+    """A log message to the client (shown at or above the level it set with logging/setLevel)."""
+    call = _CALL.get()
+    if call:
+        call["server"].log(level, message, **data)
+
+
+# ------------------------------------------------------------------ resources
+
+def docs_dir():
+    """The documentation folder: shipped in the package, or ``docs/`` in a source checkout."""
+    for path in (os.path.join(HERE, "ai", "docs"), os.path.join(os.path.dirname(HERE), "docs")):
+        if os.path.isdir(path) and any(f.endswith(".md") for f in os.listdir(path)):
+            return path
+    return None
+
+
+def doc_pages():
+    """``{slug: (path, title)}``: ``docs/30-teams.md`` is ``teams``."""
+    folder = docs_dir()
+    out = {}
+    if folder is None:
+        return out
+    for fn in sorted(os.listdir(folder)):
+        m = re.fullmatch(r"(?:\d+-)?([\w-]+)\.md", fn)
+        if not m or fn == "THREAT_MODEL.md":
+            continue
+        path = os.path.join(folder, fn)
+        with open(path, encoding="utf-8") as fh:
+            first = fh.readline()
+        out[m.group(1)] = (path, first.lstrip("# ").strip() or m.group(1))
+    return out
+
+
+def threat_model_path():
+    for path in (os.path.join(HERE, "ai", "docs", "THREAT_MODEL.md"),
+                 os.path.join(os.path.dirname(HERE), "THREAT_MODEL.md")):
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def resources():
-    out = [{"uri": "pyweb://guide", "name": "PyWeb guide for AI assistants", "mimeType": "text/markdown",
-            "description": "Rules, patterns and error fixes for writing .pyweb apps."}]
+    out = [{"uri": "pyweb://guide", "name": "guide", "title": "PyWeb guide for AI assistants",
+            "mimeType": "text/markdown", "description": "Rules, patterns and error fixes for writing .pyweb apps."},
+           {"uri": "pyweb://docs", "name": "docs", "title": "PyWeb documentation (index)", "mimeType": "text/markdown",
+            "description": "Every documentation page, with its pyweb://docs/<page> address."},
+           {"uri": "pyweb://kit", "name": "kit", "title": "UI kit components (index)", "mimeType": "text/markdown",
+            "description": "Every pyweb.ui component with its variants and sizes."}]
+    if threat_model_path():
+        out.append({"uri": "pyweb://threat-model", "name": "threat-model", "title": "Threat model",
+                    "mimeType": "text/markdown",
+                    "description": "Every threat PyWeb defends against, its mitigation and the test that proves it."})
+    for slug, (_path, title) in doc_pages().items():
+        out.append({"uri": f"pyweb://docs/{slug}", "name": f"docs/{slug}", "title": title, "mimeType": "text/markdown",
+                    "description": f"Documentation: {title}."})
     for t in TEMPLATES:
-        out.append({"uri": f"pyweb://templates/{t}", "name": f"Template: {t}", "mimeType": "text/plain",
-                    "description": f"The {t} starter app (app.pyweb)."})
+        out.append({"uri": f"pyweb://templates/{t}", "name": f"templates/{t}", "title": f"Template: {t}",
+                    "mimeType": "text/plain", "description": f"The {t} starter app (app.pyweb)."})
     return out
+
+
+RESOURCE_TEMPLATES = [
+    {"uriTemplate": "pyweb://docs/{page}", "name": "docs-page", "title": "Documentation page",
+     "mimeType": "text/markdown", "description": "A documentation page by name, e.g. pyweb://docs/teams."},
+    {"uriTemplate": "pyweb://kit/{component}", "name": "kit-component", "title": "UI kit component",
+     "mimeType": "text/markdown",
+     "description": "A pyweb.ui component's source, parameters and allowed values, e.g. pyweb://kit/Dialog."},
+    {"uriTemplate": "pyweb://templates/{name}", "name": "template", "title": "Starter app",
+     "mimeType": "text/plain", "description": "A pyweb new template's app.pyweb, e.g. pyweb://templates/saas."},
+]
 
 
 def read_resource(uri):
     if uri == "pyweb://guide":
         return _guide_text(), "text/markdown"
+    if uri == "pyweb://docs":
+        lines = ["# PyWeb documentation", ""] + [f"- [{title}](pyweb://docs/{slug})"
+                                                 for slug, (_p, title) in doc_pages().items()]
+        return "\n".join(lines) + "\n", "text/markdown"
+    if uri == "pyweb://threat-model" and threat_model_path():
+        with open(threat_model_path(), encoding="utf-8") as fh:
+            return fh.read(), "text/markdown"
+    if uri == "pyweb://kit":
+        from .mcp_tools import kit_index_markdown
+        return kit_index_markdown(), "text/markdown"
+    m = re.fullmatch(r"pyweb://docs/([\w-]+)", uri)
+    if m:
+        pages = doc_pages()
+        slug = m.group(1)
+        slug = slug if slug in pages else next((s for s in pages if s.endswith(slug) or slug.endswith(s)), None)
+        if slug:
+            with open(pages[slug][0], encoding="utf-8") as fh:
+                return fh.read(), "text/markdown"
+    m = re.fullmatch(r"pyweb://kit/(\w+)", uri)
+    if m:
+        from .mcp_tools import kit_component_markdown
+        text = kit_component_markdown(m.group(1))
+        if text:
+            return text, "text/markdown"
     m = re.fullmatch(r"pyweb://templates/([\w-]+)", uri)
     if m and m.group(1) in TEMPLATES:
         return _template_source(m.group(1)), "text/plain"
     raise KeyError(uri)
 
 
+def complete(ref, argument):
+    """Values for ``completion/complete``: prompt arguments and resource template parameters."""
+    name, value = argument.get("name"), str(argument.get("value") or "")
+    options = []
+    if ref.get("type") == "ref/resource":
+        uri = ref.get("uri", "")
+        if uri.startswith("pyweb://docs/"):
+            options = list(doc_pages())
+        elif uri.startswith("pyweb://kit/"):
+            from .compiler.pipeline import kit_index
+            options = sorted(n for n in kit_index() if n[:1].isupper())
+        elif uri.startswith("pyweb://templates/"):
+            options = list(TEMPLATES)
+    elif ref.get("type") == "ref/prompt":
+        if name in ("path", "app"):
+            options = sorted(f for f in _walk_files(".") if f.endswith(".pyweb"))
+        elif name == "directory":
+            options = sorted(d for d in os.listdir(".") if os.path.isdir(d) and not d.startswith("."))
+        elif name == "template":
+            options = list(TEMPLATES)
+        elif name == "target":
+            options = ["docker", "compose", "k8s", "fly", "render", "railway"]
+    low = value.lower()
+    hits = [o for o in options if o.lower().startswith(low)] + [o for o in options
+                                                                if low in o.lower() and not o.lower().startswith(low)]
+    return {"values": hits[:100], "total": len(hits), "hasMore": len(hits) > 100}
+
+
+def _walk_files(root, limit=2000):
+    out = []
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "__pycache__",
+                                                                         "venv", "env", "build")]
+        out += [os.path.relpath(os.path.join(dirpath, f), root) for f in files]
+        if len(out) > limit:
+            break
+    return out
+
+
 # ------------------------------------------------------------------ protocol
 
 class Server:
-    def __init__(self):
+    """The MCP server: one per connection. ``send`` writes a message (a notification) to the client."""
+
+    def __init__(self, send=None):
         from . import __version__
         self.version = __version__
+        self.protocol = PROTOCOL_VERSIONS[0]
+        self.log_level = "info"
+        self._send = send
+        self._lock = threading.Lock()
+
+    def send(self, msg):
+        if self._send is not None:
+            with self._lock:
+                self._send(msg)
+
+    def log(self, level, message, **data):
+        if level not in LOG_LEVELS or LOG_LEVELS.index(level) < LOG_LEVELS.index(self.log_level):
+            return
+        self.send({"jsonrpc": "2.0", "method": "notifications/message",
+                   "params": {"level": level, "logger": "pyweb", "data": {"message": message, **data}}})
 
     def handle(self, msg):
         """Handle one JSON-RPC message; return the response dict or None."""
@@ -1077,7 +1521,7 @@ class Server:
         mid = msg.get("id")
         method = msg.get("method")
         params = msg.get("params") or {}
-        if mid is None:  # notification
+        if mid is None:  # notifications (initialized, cancelled, ...) and responses need no answer
             return None
         try:
             result = self.dispatch(method, params)
@@ -1090,24 +1534,26 @@ class Server:
     def dispatch(self, method, params):
         if method == "initialize":
             requested = params.get("protocolVersion")
-            version = requested if requested in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
-            return {"protocolVersion": version,
+            self.protocol = requested if requested in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
+            return {"protocolVersion": self.protocol,
                     "capabilities": {"tools": {"listChanged": False},
                                      "resources": {"listChanged": False, "subscribe": False},
-                                     "prompts": {"listChanged": False}},
-                    "serverInfo": {"name": "pyweb", "title": "PyWeb", "version": self.version},
+                                     "prompts": {"listChanged": False},
+                                     "completions": {}, "logging": {}},
+                    "serverInfo": {"name": "pyweb", "title": "PyWeb", "version": self.version,
+                                   "websiteUrl": "https://maanavkrishna.github.io/PyWeb/", "icons": [ICON]},
                     "instructions": INSTRUCTIONS}
         if method == "ping":
             return {}
         if method == "tools/list":
-            return {"tools": [{"name": t["name"], "description": t["description"], "inputSchema": t["inputSchema"],
-                               "annotations": {"readOnlyHint": t["readOnly"]}} for t in TOOLS]}
+            return {"tools": [tool_listing(t) for t in TOOLS]}
         if method == "tools/call":
-            return self.call_tool(params.get("name"), params.get("arguments") or {})
+            return self.call_tool(params.get("name"), params.get("arguments") or {},
+                                  (params.get("_meta") or {}).get("progressToken"))
         if method == "resources/list":
             return {"resources": resources()}
         if method == "resources/templates/list":
-            return {"resourceTemplates": []}
+            return {"resourceTemplates": RESOURCE_TEMPLATES}
         if method == "resources/read":
             uri = params.get("uri")
             try:
@@ -1116,34 +1562,64 @@ class Server:
                 raise _RPCFault(-32002, f"resource not found: {uri}") from None
             return {"contents": [{"uri": uri, "mimeType": mime, "text": text}]}
         if method == "prompts/list":
-            return {"prompts": PROMPTS}
+            return {"prompts": [{k: v for k, v in p.items() if k != "text"} for p in PROMPTS]}
         if method == "prompts/get":
             prompt = next((p for p in PROMPTS if p["name"] == params.get("name")), None)
             if prompt is None:
                 raise _RPCFault(-32602, f"unknown prompt {params.get('name')!r}")
-            text = _prompt_text(prompt["name"], params.get("arguments") or {})
+            args = params.get("arguments") or {}
+            missing = [a["name"] for a in prompt.get("arguments", []) if a.get("required") and not args.get(a["name"])]
+            if missing:
+                raise _RPCFault(-32602, f"prompt {prompt['name']!r} needs: {', '.join(missing)}")
+            text = _prompt_text(prompt["name"], args)
             return {"description": prompt["description"],
                     "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
+        if method == "completion/complete":
+            return {"completion": complete(params.get("ref") or {}, params.get("argument") or {})}
+        if method == "logging/setLevel":
+            level = params.get("level")
+            if level not in LOG_LEVELS:
+                raise _RPCFault(-32602, f"level must be one of {', '.join(LOG_LEVELS)}")
+            self.log_level = level
+            return {}
         raise _RPCFault(-32601, f"method not found: {method}")
 
-    def call_tool(self, name, args):
+    def call_tool(self, name, args, token=None):
         tool = next((t for t in TOOLS if t["name"] == name), None)
         if tool is None:
             raise _RPCFault(-32602, f"unknown tool {name!r}")
+        problems = check_arguments(tool["inputSchema"], args)
+        if problems:
+            return {"content": [{"type": "text", "text": "Invalid arguments: " + "; ".join(problems)}],
+                    "isError": True}
+        reset = _CALL.set({"server": self, "token": token})
         try:
             with contextlib.redirect_stdout(sys.stderr):
                 value = tool["fn"](args)
         except Exception as exc:  # noqa: BLE001 - tool errors are results, not protocol errors
             detail = "".join(traceback.format_exception_only(type(exc), exc)).strip()
             return {"content": [{"type": "text", "text": detail}], "isError": True}
+        finally:
+            _CALL.reset(reset)
         if isinstance(value, str):
             return {"content": [{"type": "text", "text": value}], "isError": False}
-        image = value.pop("__image__", None) if isinstance(value, dict) else None
+        images = []
+        if isinstance(value, dict):
+            image = value.pop("__image__", None)
+            images = [image] if image is not None else list(value.pop("__images__", None) or [])
         content = [{"type": "text", "text": json.dumps(value, indent=2, default=str)}]
-        if image is not None:
+        for image in images:
             content.append({"type": "image", "mimeType": "image/png",
                             "data": base64.b64encode(image).decode("ascii")})
-        return {"content": content, "structuredContent": value, "isError": False}
+        structured = json.loads(json.dumps(value, default=str))
+        return {"content": content, "structuredContent": structured, "isError": False}
+
+
+ICON = {"mimeType": "image/svg+xml", "sizes": ["any"],
+        "src": "data:image/svg+xml;base64," + base64.b64encode(
+            b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" '
+            b'fill="#4f46e5"/><path d="M10 23V9h7a5 5 0 0 1 0 10h-7" fill="none" stroke="#fff" stroke-width="3" '
+            b'stroke-linecap="round" stroke-linejoin="round"/></svg>').decode()}
 
 
 class _RPCFault(Exception):
@@ -1161,7 +1637,12 @@ def serve_stdio(stdin=None, stdout=None):
     """Run the server until stdin closes."""
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    server = Server()
+
+    def write(msg):
+        stdout.write(json.dumps(msg, default=str) + "\n")
+        stdout.flush()
+
+    server = Server(send=write)
     for line in stdin:
         line = line.strip()
         if not line:
@@ -1174,8 +1655,7 @@ def serve_stdio(stdin=None, stdout=None):
             msgs = msg if isinstance(msg, list) else [msg]
             responses = [r for r in (server.handle(m) for m in msgs) if r is not None]
         for resp in responses:
-            stdout.write(json.dumps(resp, default=str) + "\n")
-            stdout.flush()
+            server.send(resp)
 
 
 def main():

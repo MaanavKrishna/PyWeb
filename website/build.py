@@ -823,8 +823,8 @@ def landing(bench, demo_gz):
         ("playground.html", "Playground", "Write an app and run it in your browser, server functions included.", "Open it"),
         ("cli.html#editor-support", "VS Code &amp; LSP", "Errors as you type, hover that shows where each line runs, "
          "completion for your Models, and a lens that writes migrations.", "Set up your editor"),
-        ("ai-assistants.html", "AI assistants", "An MCP server to scaffold, check, render, screenshot and test, and to "
-         "read your schema, data and recent requests.", "Connect an assistant"),
+        ("ai-assistants.html", "AI assistants", "An MCP server to scaffold, check, review, profile and test, read your "
+         "data, and see your running dev server's errors.", "Connect an assistant"),
         ("saas-tutorial.html", "A SaaS in an hour", "Teams, data, live updates, a job and an admin, then "
          "<code>pyweb deploy</code>: the tutorial builds and ships one.", "Follow it"),
     ]
@@ -926,11 +926,14 @@ def landing(bench, demo_gz):
   <div class="band-text reveal"><div class="kicker">AI assistants</div>
     <h2>Built for building with AI</h2>
     <p>One file, plain Python, and a compiler that answers mistakes with a line number and a fix. The built-in MCP
-    server lets Claude Code, Cursor and other assistants scaffold apps, check them, see what runs where, render
-    pages, call server functions, look at the result in a real browser and run the tests. Data tools show them
-    your schema, pending migrations, jobs and recent requests, and run read-only queries.</p>
-    <ul class="checks"><li>New projects include <code>AGENTS.md</code>, <code>CLAUDE.md</code> and a starter test</li>
-    <li>The docs ship as <a href="llms-full.txt">llms-full.txt</a></li></ul>
+    server gives Claude Code, Cursor and other assistants 29 tools: scaffold and check apps, search the docs, build
+    with the UI kit, render pages and call server functions as any signed-in member, review pages in light, dark
+    and on a phone with an accessibility audit, profile them, run the tests, read the schema and data, and check
+    security and the deploy plan. While you run <code>pyweb dev</code>, they see its live errors and logs.</p>
+    <ul class="checks"><li>Step-by-step prompts: add teams, a design pass, a security review, debug a page</li>
+    <li>stdio or Streamable HTTP (<code>pyweb mcp --http</code>), MCP 2025-11-25</li>
+    <li>New projects include <code>AGENTS.md</code>, <code>CLAUDE.md</code> and a starter test; the docs ship
+    as <a href="llms-full.txt">llms-full.txt</a></li></ul>
     <a class="more" href="ai-assistants.html">Set it up →</a>
   </div>
   <div class="reveal">{mcp_setup}</div>

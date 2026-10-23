@@ -282,8 +282,9 @@ class _DevSite:
     """What the server serves while developing: the current build of the app, the error
     overlay while it doesn't compile, and a script that reloads pages after a change."""
 
-    def __init__(self, state):
+    def __init__(self, state, link=None):
         self.state = state
+        self.link = link
 
     @property
     def max_body(self):
@@ -303,6 +304,10 @@ class _DevSite:
         state = self.state
         if path == "/__pyweb/dev/version":
             return 200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], str(state.version).encode()
+        if self.link is not None:
+            answer = self.link.handle(method, path, headers, client)
+            if answer is not None:
+                return answer
         if state.error is not None or state.site is None:
             return 500, [("Content-Type", "text/html; charset=utf-8")], _error_overlay(state.error, state.path).encode()
         from pyweb.telemetry import RECENT, devtools
@@ -336,7 +341,9 @@ def cmd_dev(args):
     from pyweb.hosting import Site
     from pyweb.net import server as _net
 
+    from pyweb.devlink import Link
     state = _DevState(args.file)
+    link = Link(state)
     _dev_load(state, Site)
     if state.error is not None:
         print(f"error: {state.error}", file=sys.stderr)
@@ -344,12 +351,14 @@ def cmd_dev(args):
 
     def ready(port):
         print(f"PyWeb dev server: http://{host}:{port}/  ({args.file})", flush=True)
+        local = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+        link.publish(f"http://{local}:{port}/")             # for `pyweb mcp` (.pyweb/dev.json, token only)
         if not getattr(args, "no_reload", False):
             _watch_and_reload(state, Site)
         from pyweb import jobs
         jobs.start_embedded()
 
-    _net.run(lambda: _DevSite(state), host=host, port=args.port, ready=ready)
+    _net.run(lambda: _DevSite(state, link), host=host, port=args.port, ready=ready)
 
 
 def _watch_and_reload(state, Site):
@@ -857,6 +866,10 @@ def cmd_lsp(args):
 
 
 def cmd_mcp(args):
+    if getattr(args, "http", False):
+        from pyweb.mcp_http import serve_http
+        serve_http(args.host, args.port, path=args.path, token=args.token)
+        return
     from pyweb.mcp import serve_stdio
     serve_stdio()
 
@@ -962,7 +975,13 @@ def main(argv=None):
     p.add_argument("--timeout", type=float, default=60, help="run: give up after this many seconds")
     p.set_defaults(fn=cmd_jobs)
     p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=list(__import__("pyweb.mcp", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (saas: teams, accounts, data, jobs, admin; desktop: a notes app in its own window)"); p.set_defaults(fn=cmd_new)
-    p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
+    p = sub.add_parser("mcp", help="run the MCP server for AI assistants (stdio, or --http)")
+    p.add_argument("--http", action="store_true", help="serve Streamable HTTP instead of stdio")
+    p.add_argument("--host", default="127.0.0.1", help="--http: address (default 127.0.0.1; others need --token)")
+    p.add_argument("--port", type=int, default=8765, help="--http: port (default 8765)")
+    p.add_argument("--path", default="/mcp", help="--http: endpoint path (default /mcp)")
+    p.add_argument("--token", default=None, help="--http: require Authorization: Bearer TOKEN (or PYWEB_MCP_TOKEN)")
+    p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
     p = sub.add_parser("check"); p.add_argument("file"); p.add_argument("--strict", action="store_true", help="exit 1 on any finding (security warnings too)")
     p.add_argument("--production", action="store_true", help="also check the environment is ready for production")

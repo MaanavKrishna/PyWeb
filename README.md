@@ -404,11 +404,15 @@ The [architecture overview](ARCHITECTURE.md) goes through each stage.
 
 ## Build it with AI
 
-PyWeb ships an MCP server so AI assistants can scaffold, check, inspect,
-render, screenshot and test your app, add npm packages, map its routes,
-and look at its data: the schema, read-only queries (row-limited, secrets
-redacted), pending migrations, jobs and recent requests. Errors come back
-as line numbers with fix hints:
+PyWeb ships an MCP server with 29 tools, so AI assistants can do what
+you'd do: scaffold an app, search the docs, check each edit (errors come
+back as line numbers with fix hints), build with the UI kit and a theme,
+render pages and call server functions as any signed-in member, look at
+pages in light, dark and on a phone with an accessibility audit, profile
+them, run the tests, test webhooks, read the schema and data, and check
+security, upgrades and the deploy plan. While you run `pyweb dev`, it sees
+the dev server's live errors and logs too. Step-by-step prompts cover
+adding teams, a design pass, a security review and debugging a page:
 
 ```bash
 claude mcp add pyweb -- pyweb mcp                                    # Claude Code

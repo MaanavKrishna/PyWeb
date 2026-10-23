@@ -43,7 +43,9 @@ def test_initialize_and_listing(server):
                      "pyweb_compiled", "pyweb_render", "pyweb_call", "pyweb_openapi", "pyweb_security_check",
                      "pyweb_routes", "pyweb_packages",
                      "pyweb_screenshot", "pyweb_db_schema", "pyweb_db_query", "pyweb_migrations",
-                     "pyweb_jobs", "pyweb_requests", "pyweb_test"]
+                     "pyweb_jobs", "pyweb_requests", "pyweb_test", "pyweb_docs", "pyweb_ui", "pyweb_review",
+                     "pyweb_upgrade", "pyweb_deploy_plan", "pyweb_webhook_send", "pyweb_profile", "pyweb_explain",
+                     "pyweb_teams", "pyweb_dev", "pyweb_logs"]
     uris = [r["uri"] for r in call(server, "resources/list")["resources"]]
     assert "pyweb://guide" in uris and "pyweb://templates/todo" in uris
     assert call(server, "prompts/list")["prompts"][0]["name"] == "build_pyweb_app"
@@ -110,7 +112,7 @@ def test_guide_sections_and_tool_errors(server):
     res = call(server, "tools/call", {"name": "pyweb_check", "arguments": {"path": "missing.pyweb"}})
     assert res["structuredContent"]["ok"] is False
     boom = call(server, "tools/call", {"name": "pyweb_new_app", "arguments": {"template": "nope"}})
-    assert boom["isError"] is True and "unknown template" in boom["content"][0]["text"]
+    assert boom["isError"] is True and "must be one of blank" in boom["content"][0]["text"]
 
 
 def test_every_pyweb_block_in_the_guide_compiles():

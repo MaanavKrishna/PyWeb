@@ -126,8 +126,36 @@ project uses [semantic versioning](https://semver.org).
   `org_role=`, `per=`, `rate=`, plan features, `tenant=True` and webhook
   schemes; warnings for a malformed `rate=`, an unknown role, and a
   `tenant=True` Model read with `.unscoped()` outside `with system():`.
-- **MCP:** `pyweb_render` and `pyweb_call` take `as_user`, `roles`, `org`
-  and `org_role`; new `pyweb_openapi` and `pyweb_security_check` tools.
+- **A much better MCP server** (29 tools, up from 18):
+  - new tools: `pyweb_docs` (search every docs page, the guide and the
+    threat model), `pyweb_ui` (the kit's components, their parameters and
+    source, copying one into your app, making and saving a theme),
+    `pyweb_review` (screenshots in light and dark at desktop and phone
+    widths with axe-core's audit), `pyweb_explain` (what your editor shows
+    for a line: where each name runs, problems, completions),
+    `pyweb_profile`, `pyweb_webhook_send` (a correctly signed test
+    delivery, then the handler's result), `pyweb_teams`, `pyweb_upgrade`,
+    `pyweb_deploy_plan`, `pyweb_openapi` and `pyweb_security_check`;
+  - `pyweb_dev` and `pyweb_logs` see your running `pyweb dev`: whether the
+    app compiles (with the traceback), its logs and the requests your
+    browser made. `pyweb dev` writes `.pyweb/dev.json` (its address and a
+    token readable only by you); `pyweb_screenshot` and `pyweb_review` use
+    it too;
+  - `pyweb_render`, `pyweb_call`, `pyweb_screenshot` and `pyweb_profile`
+    act as a signed-in user and organization member (`as_user`, `roles`,
+    `org`, `org_role`);
+  - MCP 2025-11-25: every tool has a title, read-only/destructive hints
+    and an output schema; arguments are checked before a tool runs; slow
+    tools report progress; logging; completion of resource and prompt
+    arguments; resources for every docs page (`pyweb://docs/<page>`), kit
+    component (`pyweb://kit/<Component>`) and the threat model;
+  - eight new prompts: `add_teams`, `make_installable`, `make_desktop_app`,
+    `security_review`, `upgrade_pyweb`, `design_pass`, `fix_failing_test`
+    and `debug_page`;
+  - `pyweb mcp --http` serves Streamable HTTP on 127.0.0.1 (sessions,
+    event streams for progress; `Origin` and `Host` checked; a token is
+    required to listen anywhere else).
+- The documentation ships inside the package, for the MCP server.
 - **`pyweb upgrade`** points at stylesheets written for the 0.5 sign-in and
   admin pages' classes.
 - **Playground:** apps with teams get a "Team member" visitor next to
@@ -230,6 +258,10 @@ project uses [semantic versioning](https://semver.org).
   were placeholders); `pyweb upgrade` points at them.
 
 ### Fixed
+- A server function argument annotated `date`, `datetime`, `time`,
+  `Decimal` or `UUID` arrived as the text the browser sent, unchecked
+  (`"banana"` for a `date`). It's now parsed (ISO 8601 for dates and
+  times), and anything else is a `validation_error` naming the field.
 - `checked={row["done"]}` with a database's `0` rendered `checked="0"`, so
   the server showed every box ticked. Boolean attributes (`checked`,
   `disabled`, `selected`, ...) now follow truthiness on the server as in

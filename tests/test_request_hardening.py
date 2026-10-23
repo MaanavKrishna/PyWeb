@@ -67,6 +67,32 @@ def test_arguments_are_checked_against_type_hints():
         assert status == 422 and message in body["error"]["message"], (bad, body)
 
 
+def test_dates_decimals_and_uuids_are_parsed_and_checked():
+    import datetime as dt
+    import decimal
+    import uuid
+    srv = server()
+
+    def book(day: dt.date, at: Optional[dt.datetime] = None, start: dt.time = None, price: decimal.Decimal = None,
+             ref: uuid.UUID = None) -> dict:
+        return {"day": type(day).__name__ + ":" + day.isoformat(), "at": at.isoformat() if at else None,
+                "start": str(start) if start else None, "price": str(price) if price is not None else None,
+                "ref": str(ref) if ref else None}
+    srv.register_rpc(book)
+    ok = call(srv, "book", {"day": "2026-03-04", "at": "2026-03-04T10:30:00Z", "start": "09:15",
+                            "price": "19.90", "ref": "12345678-1234-5678-1234-567812345678"})
+    assert ok == (200, {"result": {"day": "date:2026-03-04", "at": "2026-03-04T10:30:00+00:00", "start": "09:15:00",
+                                   "price": "19.90", "ref": "12345678-1234-5678-1234-567812345678"}})
+    for bad, message in [({"day": "banana"}, "book.day must be a valid date"),
+                         ({"day": 20260304}, "book.day expects date"),
+                         ({"day": "2026-03-04", "at": "soon"}, "book.at must be a valid datetime"),
+                         ({"day": "2026-03-04", "price": "lots"}, "book.price must be a valid Decimal"),
+                         ({"day": "2026-03-04", "price": "NaN"}, "finite"),
+                         ({"day": "2026-03-04", "ref": "x"}, "book.ref must be a valid UUID")]:
+        status, body = call(srv, "book", bad)
+        assert status == 422 and message in body["error"]["message"], (bad, body)
+
+
 def test_deeply_nested_json_is_refused_not_a_crash():
     srv = server()
 

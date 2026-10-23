@@ -328,6 +328,7 @@ jobs:
           python -m build
           python -m venv /tmp/wheel-env
           /tmp/wheel-env/bin/pip install dist/*.whl
+          /tmp/wheel-env/bin/python -c "from pyweb import mcp; assert 'teams' in mcp.doc_pages() and mcp.threat_model_path(), 'docs missing from the wheel'"
           cd /tmp && /tmp/wheel-env/bin/pyweb new smoke && cd smoke
           /tmp/wheel-env/bin/pyweb build app.pyweb --out dist --production
           /tmp/wheel-env/bin/python -c "from pyweb.testing import TestClient; c = TestClient('app.pyweb'); assert c.get('/').status == 200"

@@ -12,9 +12,12 @@ containers and objects are checked strictly.
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
+import decimal
 import inspect
 import types
 import typing
+import uuid
 
 _HINTS: dict = {}
 
@@ -116,10 +119,37 @@ def _scalar(value, ann, where):
         raise ArgError(f"{where} expects {_name(ann)}") from None
 
 
+def _temporal(value, ann, where):
+    """``date``/``datetime``/``time`` from ISO 8601 text (what date inputs and JSON send)."""
+    if isinstance(value, ann) and (ann is not dt.date or not isinstance(value, dt.datetime)):
+        return value
+    if not isinstance(value, str):
+        raise ArgError(f"{where} expects {_name(ann)} (ISO 8601 text)")
+    text = value.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"                   # Python 3.10's fromisoformat doesn't read "Z"
+    try:
+        return ann.fromisoformat(text)
+    except ValueError:
+        raise ArgError(f"{where} must be a valid {_name(ann)}") from None
+
+
 def _by_type(value, ann, where):
     from pyweb.models import Email, Model
     if ann in (int, float, bool, str):
         return _scalar(value, ann, where)
+    if ann in (dt.datetime, dt.date, dt.time):
+        return _temporal(value, ann, where)
+    if ann is decimal.Decimal or ann is uuid.UUID:
+        if isinstance(value, (dict, list, bool)) or value is None:
+            raise ArgError(f"{where} expects {_name(ann)}")
+        try:
+            out = ann(str(value).strip())
+        except (ValueError, decimal.InvalidOperation):
+            raise ArgError(f"{where} must be a valid {_name(ann)}") from None
+        if ann is decimal.Decimal and not out.is_finite():
+            raise ArgError(f"{where} must be a finite number")
+        return out
     if issubclass(ann, Email):
         text = _scalar(value, str, where)
         if "@" not in text:

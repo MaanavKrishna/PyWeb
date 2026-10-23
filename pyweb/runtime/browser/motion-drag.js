@@ -50,14 +50,19 @@ export function setup(el, s, api) {
   el.addEventListener("pointerdown", (e) => {
     if (e.button || (e.target instanceof Element && e.target.closest("input,textarea,select,button,a[href]") && e.target !== el)) return;
     api.stop(el, ["x", "y"]);
-    el.setPointerCapture(e.pointerId);
+    try { el.setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
+    // Follow the pointer on the window (captured events bubble there): WebKit can stop sending a
+    // captured pointer's events to an element that moves under it.
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", end);
+    addEventListener("pointercancel", end);
     const x = api.current(el, s, "x").n, y = api.current(el, s, "y").n;
     drag = { id: e.pointerId, px: e.clientX, py: e.clientY, x, y, b: bounds(el, s, api, axis), samples: [[performance.now(), x, y]] };
     s.active.add("drag");
     api.refresh(el, s);
     fire("dragstart", { x, y, velocity: { x: 0, y: 0 } });
   });
-  el.addEventListener("pointermove", (e) => {
+  const move = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
     const ela = s.spec.drag_elastic === false ? 0 : s.spec.drag_elastic ?? 0.35;
     let x = axis === "y" ? drag.x : drag.x + e.clientX - drag.px;
@@ -67,11 +72,14 @@ export function setup(el, s, api) {
     drag.samples.push([performance.now(), x, y]);
     if (drag.samples.length > 6) drag.samples.shift();
     fire("drag", { x, y });
-  });
-  const end = (e) => {
+  };
+  function end(e) {
     if (!drag || e.pointerId !== drag.id) return;
     const d = drag;
     drag = null;
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", end);
+    removeEventListener("pointercancel", end);
     const [t1, x1, y1] = d.samples[d.samples.length - 1];
     const old = d.samples.find(([t]) => t1 - t < 100) || d.samples[0];
     const dt = Math.max((t1 - old[0]) / 1000, 1 / 120);
@@ -80,9 +88,7 @@ export function setup(el, s, api) {
     api.refresh(el, s);
     release(x1, y1, axis === "y" ? 0 : vx, axis === "x" ? 0 : vy, d.b);
     fire("dragend", { x: x1, y: y1, velocity: { x: vx, y: vy } });
-  };
-  el.addEventListener("pointerup", end);
-  el.addEventListener("pointercancel", end);
+  }
   el.addEventListener("keydown", (e) => {
     const step = e.shiftKey ? 50 : 10;
     const dx = { ArrowLeft: -step, ArrowRight: step }[e.key] || 0, dy = { ArrowUp: -step, ArrowDown: step }[e.key] || 0;

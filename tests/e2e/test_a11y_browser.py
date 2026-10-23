@@ -27,9 +27,11 @@ def axe():
 
 
 def _without_csp(route):
-    if route.request.resource_type != "document":
+    if route.request.resource_type != "document" or route.request.method != "GET":
         return route.continue_()
     resp = route.fetch(max_redirects=0)            # the browser follows redirects itself
+    if resp.status != 200:
+        return route.continue_()                   # WebKit can't fulfill a redirect; a GET can be repeated
     headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-security-policy"}
     return route.fulfill(response=resp, headers=headers)
 

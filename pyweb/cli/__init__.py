@@ -172,7 +172,27 @@ def _topology_problems(app_dir):
     return out
 
 
+def cmd_build_desktop(args):
+    from pyweb.desktop import package as _pkg
+    out = args.out if args.out != "dist" else "dist-desktop"
+    try:
+        out, name = _pkg.make_project(args.file, out, bundle=args.bundle, version=args.app_version,
+                                      author=args.author, author_email=args.author_email,
+                                      requires=args.requires, pyweb_requirement=args.pyweb)
+    except ValueError as exc:
+        raise SystemExit(f"build failed: {exc}") from None
+    print(f"wrote the desktop project for {name} to {out}/ (Briefcase)")
+    if args.package:
+        made = _pkg.package(out)
+        for path in made:
+            print(f"installer: {path}")
+    else:
+        print(f"make an installer: cd {out} && briefcase package   (or add --package)")
+
+
 def cmd_build(args):
+    if getattr(args, "desktop", False):
+        return cmd_build_desktop(args)
     from pyweb.compiler import compile_source
     from pyweb.build import build as _build
     src = _load(args.file)
@@ -382,6 +402,11 @@ def cmd_files(args):
     gone = filegc.collect(models or None, grace=args.grace, dry_run=args.dry_run)
     verb = "would delete" if args.dry_run else "deleted"
     print(f"{verb} {len(gone)} file(s) no row refers to" + ("".join(f"\n  {k}" for k in gone[:50]) if gone else ""))
+
+
+def cmd_desktop(args):
+    from pyweb.desktop import shell
+    shell.run(args.file, dev=args.dev, smoke=args.smoke, gui=args.gui)
 
 
 def cmd_push(args):
@@ -838,7 +863,16 @@ def main(argv=None):
                     help="print the PyWeb version and exit")
     sub = ap.add_subparsers(dest="cmd", required=False)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
-    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.set_defaults(fn=cmd_build)
+    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS")
+    p.add_argument("--desktop", action="store_true", help="a desktop app project (Briefcase) in dist-desktop/")
+    p.add_argument("--package", action="store_true", help="with --desktop: also build the installer for this OS")
+    p.add_argument("--bundle", default="com.example", help="with --desktop: reversed domain (com.example)")
+    p.add_argument("--app-version", default="0.1.0", help="with --desktop: the app's version (1.2.3)")
+    p.add_argument("--author", default=None)
+    p.add_argument("--author-email", default=None)
+    p.add_argument("--requires", action="append", default=[], help="with --desktop: another package the app needs")
+    p.add_argument("--pyweb", default=None, help="with --desktop: the PyWeb requirement (default: this version)")
+    p.set_defaults(fn=cmd_build)
     p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("profile", help="serve the app and show where its time goes (a flame graph on Python 3.15+)")
     p.add_argument("file", nargs="?", default="app.pyweb")
@@ -856,6 +890,12 @@ def main(argv=None):
     p.add_argument("--grace", type=int, default=24 * 3600, help="only files older than this many seconds")
     p.add_argument("--dry-run", action="store_true", help="list what would be deleted")
     p.set_defaults(fn=cmd_files)
+    p = sub.add_parser("desktop", help="run the app in its own window (needs pyweb-stack[desktop])")
+    p.add_argument("file", nargs="?", default="app.pyweb")
+    p.add_argument("--dev", action="store_true", help="reload when files change (development)")
+    p.add_argument("--smoke", action="store_true", help="open the window, check the first page loads, close it")
+    p.add_argument("--gui", default=None, help="force a pywebview backend: qt, gtk, edgechromium, cocoa")
+    p.set_defaults(fn=cmd_desktop)
     p = sub.add_parser("push", help="Web Push: key makes a PYWEB_VAPID_KEY, public prints the public key")
     p.add_argument("push_action", choices=["key", "public"])
     p.set_defaults(fn=cmd_push)

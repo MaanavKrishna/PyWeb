@@ -153,6 +153,20 @@ load balancer in front.
 | I | The dev server exposed to the network | `pyweb dev` binds to `127.0.0.1`; static paths can't leave the static folder | `test_production_gaps.py::test_dev_server_traversal_blocked_over_http` |
 | — | Production misconfiguration (no secret, no HTTPS cookies, no proxy setting, missing data key) | `pyweb check --production` lists each gap | `test_encrypted_fields.py::test_production_check_flags_a_missing_or_shared_key`, `test_deploy_v5.py::test_check_production_knows_what_the_app_needs` |
 
+## 7b. The desktop shell
+
+The app's server listens on `127.0.0.1`, reachable by other programs and accounts on the computer and by
+websites in the user's browser.
+
+| | Threat | Mitigation | Proof |
+|---|---|---|---|
+| S/E | Another local program or user calling the app's server | Every request and WebSocket needs the window's cookie, set by a one-time launch link | `test_desktop.py::test_everything_needs_the_cookie`, `test_desktop.py::test_the_window_gets_in_once` |
+| S | A website using DNS rebinding to reach the server under its own name | `Host` must be exactly `127.0.0.1:<port>` | `test_desktop.py::test_host_and_origin_are_checked` |
+| T | A website in the user's browser sending requests to the app (CSRF) | Other origins and cross-site fetches are refused; no CORS headers; the cookie is `SameSite=Strict` | `test_desktop.py::test_host_and_origin_are_checked`, `test_desktop.py::test_no_cors` |
+| E | Another site loaded in the window, or a page reaching the computer | Links to other sites open in the browser (http, https, mailto only); `file://` is off; there's no JavaScript bridge: desktop functions run server-side behind the usual checks | `test_desktop.py::test_links_open_outside_the_window`, `test_desktop.py::test_shell_wiring` |
+| E | Text from the app reaching a shell through notifications or "reveal" | Commands get argument lists, never a shell; PowerShell gets values through the environment | `test_desktop.py::test_notify_reveal_and_links_use_argv` |
+| I | Secrets of one installation readable by other users | `secrets.json` is made per installation, readable by the user only | `test_desktop.py::test_secrets_are_made_once_and_kept_private` |
+
 ## 8. The release
 
 | | Threat | Mitigation | Proof |

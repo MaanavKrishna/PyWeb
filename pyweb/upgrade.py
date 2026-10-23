@@ -82,6 +82,11 @@ def _code_findings(path, text):
                 out.append(Finding(rel, node.lineno, "memory-jobs",
                                    f"{', '.join(old)} {'keeps' if len(old) == 1 else 'keep'} jobs in memory (a restart loses them): use @app.job "
                                    "and .enqueue(...), which are durable and retried"))
+        if isinstance(node, ast.Attribute) and node.attr in ("mobile", "edge") \
+                and isinstance(node.value, ast.Name) and node.value.id == "platform":
+            out.append(Finding(rel, node.lineno, "platform-placeholder",
+                               f"platform.{node.attr} is always False: it was a placeholder (there's no "
+                               f"{node.attr} target). platform.desktop, platform.pwa and platform.installed are real now"))
         if isinstance(node, ast.Call) and ast.unparse(node.func).endswith(".page") and node.args \
                 and isinstance(node.args[0], ast.Constant) and node.args[0].value == "/metrics":
             out.append(Finding(rel, node.lineno, "metrics-route",

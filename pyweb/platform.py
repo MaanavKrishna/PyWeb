@@ -1,49 +1,80 @@
-"""Multi-target platform branches: web / mobile / desktop / edge.
+"""Where the app is running: in a browser tab, as an installed app, or as a desktop app.
 
 ```python
 from pyweb import platform
 
-if platform.web:
-    <Article>...</Article>
-
-if platform.mobile:
-    <NativeList>...</NativeList>
+@app.page("/")
+def Home():
+    if platform.desktop:
+        <button onclick={export}>Save to a file…</button>
+    else:
+        <a href="/export.txt" download>Download</a>
 ```
 
-On the server all flags except ``server`` are False; the compiler
-evaluates the branch for its target and prunes dead branches per
-output (web bundle drops mobile code and vice versa). Shared business
-logic lives outside the branch. This is intentionally *not* a
-write-once-render-everywhere widget set — each target keeps its
-native controls; PyWeb shares state, RPC, models and routing.
+* ``platform.desktop``: inside ``pyweb desktop`` or a packaged desktop app.
+* ``platform.pwa``: this request comes from the installed web app (``App(pwa=...)``,
+  opened from the home screen or dock). The browser says so in a cookie, so use it for
+  layout, never for security.
+* ``platform.installed``: ``desktop or pwa``.
+* ``platform.web``: not the desktop app (a browser tab or the installed web app).
+* ``platform.server``: always True (this code runs on the server).
+
+``mobile`` and ``edge`` are always False: they were placeholders in 0.x and there are no
+such targets (``pyweb upgrade`` points at them).
+
+The values are read when used, so a page can branch per request.
 """
 
 from __future__ import annotations
 
 import os
 
-_TARGET = os.environ.get("PYWEB_TARGET", "web")
-
-web = _TARGET in ("web", "server")
-mobile = _TARGET in ("ios", "android")
-desktop = _TARGET in ("desktop",)
 server = True
-edge = _TARGET == "edge"
+mobile = False
+edge = False
 
-#: All known targets (used by the compiler to prune branches).
+#: Branch names :func:`prune` knows.
 TARGETS = ("web", "ios", "android", "desktop", "edge", "server")
 
 
+def _desktop() -> bool:
+    if os.environ.get("PYWEB_DESKTOP", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return os.environ.get("PYWEB_TARGET", "") == "desktop"
+
+
+def _pwa() -> bool:
+    from pyweb import context
+    try:
+        req = context.current().request
+    except (RuntimeError, LookupError, AttributeError):
+        return False
+    cookies = getattr(req, "cookies", None) or {}
+    return cookies.get("pyweb_display") == "standalone"
+
+
 def target() -> str:
-    return _TARGET
+    """``"desktop"`` in the desktop app, else ``"web"``."""
+    return "desktop" if _desktop() else "web"
+
+
+def __getattr__(name):
+    if name == "desktop":
+        return _desktop()
+    if name == "web":
+        return not _desktop()
+    if name == "pwa":
+        return _pwa()
+    if name == "installed":
+        return _desktop() or _pwa()
+    raise AttributeError(f"module 'pyweb.platform' has no attribute {name!r}")
 
 
 def prune(source: str, keep: str) -> str:
-    """Prune platform branches for ``keep`` from ``source`` text.
+    """Drop ``if platform.<other>:`` branches from ``source`` for the ``keep`` target.
 
-    Keeps ``if platform.<keep>:`` blocks, drops the other platform
-    branches, unwraps shared code. Operates on source text with ``ast``
-    so pruning is exact, not regex-based.
+    Keeps ``if platform.<keep>:`` blocks, drops the other platform branches, unwraps shared
+    code. Operates on source text with ``ast``, so pruning is exact, not regex-based.
     """
     import ast as _ast
     tree = _ast.parse(source)

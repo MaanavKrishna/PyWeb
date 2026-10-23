@@ -12,6 +12,7 @@ class App:
     ``client_nav=False`` makes links do full page loads.
     ``pwa=True`` (or ``pwa=PWA(...)``) makes the app installable, usable offline and able
     to send push notifications (see :mod:`pyweb.pwa` and :mod:`pyweb.push`).
+    ``desktop=Window(...)`` sets the window of the desktop app (``pyweb desktop``).
     ``database`` (a URL like ``"sqlite:///app.db"`` or a database object) is
     where Models keep their rows. ``DATABASE_URL``, when set, wins over a URL
     given here: develop on SQLite, deploy on Postgres, same code.
@@ -19,7 +20,7 @@ class App:
 
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
                  title="PyWeb", stylesheets=(), lang="en", base_url=None, description=None,
-                 image=None, client_nav=True, pwa=None):
+                 image=None, client_nav=True, pwa=None, desktop=None):
         self.title = title
         self.stylesheets = list(stylesheets)
         self.lang = lang
@@ -31,6 +32,10 @@ class App:
         if pwa is not None and pwa is not False:
             from pyweb.pwa import config as _pwa_config
             _pwa_config(self)            # bad settings fail here, not on the first request
+        self.desktop = desktop           # pyweb.desktop.Window(...): the window of the desktop app
+        if desktop is not None:
+            from pyweb.desktop import config as _desktop_config
+            _desktop_config(self)
         self.database = database
         self.db = None
         if database is not None:

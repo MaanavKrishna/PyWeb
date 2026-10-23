@@ -127,7 +127,9 @@ class LoadedApp:
         migrate only when asked (``pyweb serve --migrate``)."""
         from . import models as M
         from .config import settings
-        if settings().production or os.environ.get("PYWEB_NO_AUTO_MIGRATE") or not self.models():
+        # A desktop app is one person's copy, in one process: it brings its database up to date at start.
+        desktop = os.environ.get("PYWEB_DESKTOP", "").lower() in ("1", "true", "yes", "on")
+        if (settings().production and not desktop) or os.environ.get("PYWEB_NO_AUTO_MIGRATE") or not self.models():
             return []
         db = M.database()
         if db is None:
@@ -289,7 +291,7 @@ class LoadedApp:
         return page_html(name=page_name, title=title, body=body, state=state,
                          js_url=js_url if page["js"] else None, css_urls=self.stylesheets,
                          lang=self.lang, importmap=importmap, layouts=layouts,
-                         head=self.head_for(page, dynamic, path), head_extra=self.pwa_head(),
+                         head=self.head_for(page, dynamic, path), head_extra=self.pwa_head() + _desktop_head(),
                          nav=getattr(self.app, "client_nav", True) is not False)
 
     def pwa_head(self):
@@ -317,6 +319,13 @@ class LoadedApp:
                 value = base + value
             out[key] = value
         return {k: v for k, v in out.items() if v not in (None, False, "")}
+
+
+def _desktop_head():
+    """In the desktop app: the script that sends links to other sites to the user's browser."""
+    if os.environ.get("PYWEB_DESKTOP", "").lower() in ("1", "true", "yes", "on"):
+        return '<script type="module" src="/__pyweb/desktop.js"></script>'
+    return ""
 
 
 class _SourceLoader:

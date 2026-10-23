@@ -86,6 +86,7 @@ warning in an earlier release. They are the intended 1.0 API.
 | `pyweb.auth` | passwords, sessions, TOTP, magic links, WebAuthn assertion verification |
 | `pyweb.telemetry` | `span`, `on_error`, log fields, metric names |
 | `pyweb.cache`, `pyweb.realtime` | as documented above |
+| `pyweb.platform`, `pyweb.desktop`, `pyweb.pwa`, `pyweb.push` | `desktop`/`pwa`/`installed`/`web` flags, the desktop API and `Window`, `PWA`, `push.send` ([Desktop apps](32-desktop.md), [Installable apps](31-pwa-push.md)) |
 | CLI | `new dev check inspect build serve worker db deploy upgrade` and their documented flags |
 | `dist/` layout | `app.pyweb`, `manifest.json` keys documented in [Deployment](12-deployment.md) |
 
@@ -93,7 +94,7 @@ warning in an earlier release. They are the intended 1.0 API.
 `pyweb.livetable` (in-memory live tables; it was `pyweb.live` before 0.4),
 the deploy plan's Python API (`pyweb.deploy.plan`; the `pyweb deploy` command is supported),
 `pyweb.sync` (offline sync), `pyweb.css` helpers, `pyweb.plugins`,
-`pyweb.platform`, `pyweb.lsp` (its Python functions; the `pyweb lsp`
+`pyweb.lsp` (its Python functions; the `pyweb lsp`
 command itself is supported), `pyweb.dts` (TypeScript declarations to Python dataclasses;
 it was `pyweb.npm` before 0.4), `pyweb.browser`
 server-side stubs, the `pyweb.compiler` internals and the generated

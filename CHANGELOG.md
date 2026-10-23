@@ -56,6 +56,16 @@ project uses [semantic versioning](https://semver.org).
   offline page, and with `cache_pages=True` pages visitors opened while
   signed out stay readable offline. The worker is registered through a
   third Trusted Types policy, `pyweb-sw`, which accepts only `/sw.js`.
+- **Desktop apps.** `pyweb desktop app.pyweb` opens the app in its own
+  window (pywebview: WebView2, WKWebView, WebKitGTK or Qt), with its
+  database, uploads and per-installation secrets in the OS's data folder.
+  Only the window gets in: a one-time launch cookie, an exact `Host` and
+  same-origin requests are required, and links to other sites open in the
+  browser. `pyweb.desktop` gives server code file dialogs, notifications,
+  "reveal in folder" and the data folder; `App(desktop=Window(...))` sets
+  the window. `pyweb build --desktop [--package]` writes a Briefcase
+  project with icons for every OS and builds the installer (MSI, DMG,
+  `.deb`/`.rpm`). `pyweb-stack[desktop]` installs what it needs.
 - **Push notifications.** A `data-pw-push="subscribe"` button asks for
   permission; `push.send(user, "Title", "Body", url="/orders/42")` encrypts
   (RFC 8291), signs (VAPID) and delivers through background jobs, deleting
@@ -103,6 +113,10 @@ project uses [semantic versioning](https://semver.org).
   about a third of the time it did: modules load when first used.
 - Tracebacks from `.pyweb` files show the source lines.
 - `pyweb check` reports the line of a Python syntax error.
+- **`pyweb.platform` is real and supported:** `platform.desktop`,
+  `platform.pwa`, `platform.installed` and `platform.web` are read per
+  request. `platform.mobile` and `platform.edge` are always False (they
+  were placeholders); `pyweb upgrade` points at them.
 
 ### Fixed
 - `get_or_404()` inside a server function answered 500; it now answers 404.

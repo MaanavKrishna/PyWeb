@@ -19,6 +19,10 @@ pyweb serve [DIR] [--host 0.0.0.0] [--port $PORT|8000] [--workers N] [--migrate]
                                      production server for a built dist/ (N processes)
 pyweb files clean [--dry-run] [--grace SECONDS] [--app app.pyweb]
                                      delete uploaded files no row refers to (also runs daily)
+pyweb desktop [FILE] [--dev] [--smoke] [--gui qt|gtk|...]
+                                     run the app in its own window (needs pyweb-stack[desktop])
+pyweb build FILE --desktop [--package] [--bundle com.example] [--app-version 1.0.0]
+                                     a Briefcase project in dist-desktop/ (with --package: the installer)
 pyweb push key | public               make a PYWEB_VAPID_KEY for push notifications; print the public key
 pyweb openapi FILE [--out openapi.json] [--server URL]
                                      an OpenAPI 3.1 document for the app's server functions

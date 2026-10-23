@@ -130,6 +130,14 @@ project uses [semantic versioning](https://semver.org).
   and `org_role`; new `pyweb_openapi` and `pyweb_security_check` tools.
 - **`pyweb upgrade`** points at stylesheets written for the 0.5 sign-in and
   admin pages' classes.
+- **Playground:** apps with teams get a "Team member" visitor next to
+  "Signed in" (both in one demo team, so you can see what each role sees),
+  and installable apps get an Install tab with their manifest and icons.
+- **Docs:** [Upgrading to 0.6](docs/27-upgrading.md), testing apps with
+  teams, and the SaaS tutorial rewritten around teams.
+- **New `desktop` template** (`pyweb new notes --template desktop`): a
+  Markdown notes app in its own window that exports a note with the
+  system's Save dialog, with its tests and packaging instructions.
 - **Plain functions from other `.pyweb` files work in browser code**,
   along with the functions and constants they use.
 - **`math` in browser code.** `import math` (and `from math import pi`)
@@ -201,6 +209,14 @@ project uses [semantic versioning](https://semver.org).
   new-project dialog, toasts, animated live tasks, empty states and the
   zinc theme; the dashboard's totals count up and it adds the kit's bar
   chart and a sparkline. The shared `static/app.css` only lays pages out.
+- **The `saas` template (Teamboard) has teams.** Projects and tasks are
+  `tenant=True` Models shared by an organization; each new user gets a
+  team, and the sidebar links to members and invitations and to API
+  tokens. Creating a project publishes a `project.created` webhook, and
+  the app is installable (`pwa=True`). Its tests show two teams kept apart
+  and two teammates sharing projects.
+- `pyweb check` no longer asks for a policy on `tenant=True` Models: the
+  organization scope already limits who reads them.
 - The CI benchmark measures fixed copies of the todo and saas apps
   (`bench/apps/`), so redesigning an example doesn't read as a speed
   change.

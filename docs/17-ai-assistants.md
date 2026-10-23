@@ -53,12 +53,12 @@ in, which is normally your project.
 | Tool | What it does |
 |---|---|
 | `pyweb_guide` | Returns the rules for writing `.pyweb` apps (or one section): what runs where, state, markup, components, server functions, the browser Python subset, and every common error with its fix. |
-| `pyweb_new_app` | Creates an app from a template (`blank`, `counter`, `todo`, `blog`, `saas`, `auth`, `chat`, `ai-chat`) with `AGENTS.md`, `CLAUDE.md`, tests and a stylesheet; apps with a database also get their first migration. `saas` (accounts, Models with row policies, forms, live pages, jobs, admin) is the best start for a product. |
+| `pyweb_new_app` | Creates an app from a template (`blank`, `counter`, `todo`, `blog`, `saas`, `auth`, `chat`, `ai-chat`, `desktop`) with `AGENTS.md`, `CLAUDE.md`, tests and a stylesheet; apps with a database also get their first migration. `saas` (teams, accounts, tenant Models, forms, live pages, jobs, webhooks, admin) is the best start for a product; `desktop` is a notes app for `pyweb desktop`. |
 | `pyweb_check` | Compiles the app and runs security checks. Returns `ok`, errors with `line`, `message` and a fix `hint`, plus pages (with their layouts, live-data variables and npm packages), signals, what's sent to the browser, JS size and the server functions (marking those that stream). |
 | `pyweb_inspect` | For every name: does it run in the browser or on the server, and why. |
 | `pyweb_compiled` | The JavaScript generated for a page, and its server-rendered HTML. |
-| `pyweb_render` | Requests a URL from the app: status, redirect target, title and head tags, the layouts and page that rendered, HTML, and the Python traceback for 500s. |
-| `pyweb_call` | Calls an `@server` function exactly like the browser does, returning the result (or every streamed chunk, for functions that `yield`) or the typed error. Cookies persist, so an assistant can log in and then render a protected page. |
+| `pyweb_render` | Requests a URL from the app: status, redirect target, title and head tags, the layouts and page that rendered, HTML, and the Python traceback for 500s. `as_user` (with `roles`, `org` and `org_role`) renders it as a signed-in user, a member of that organization. |
+| `pyweb_call` | Calls an `@server` function exactly like the browser does, returning the result (or every streamed chunk, for functions that `yield`) or the typed error. Cookies persist, so an assistant can log in and then render a protected page; it takes the same `as_user`, `roles`, `org` and `org_role`. |
 | `pyweb_routes` | The map of the app: every page with its route, parameters (path or query string, with types and defaults), title and head tags, the layouts around it and its live-data variables; layouts, error pages, and server functions. |
 | `pyweb_packages` | Adds, removes or lists npm packages for browser code (no Node.js): returns versions, exported names from the package's TypeScript declarations, and the `npm(...)` lines to bind them. Adding downloads from the npm registry. |
 | `pyweb_screenshot` | Opens a page in headless Chromium, optionally runs steps (click, fill, press, select, goto, wait), and returns a screenshot plus the page text, console errors and whether the page hydrated. Needs Playwright (`pip install playwright && python -m playwright install chromium`). |
@@ -68,6 +68,8 @@ in, which is normally your project.
 | `pyweb_jobs` | Background jobs with their errors and counts; retry failed ones, or run what's queued now to test a job end to end. |
 | `pyweb_requests` | What the last `pyweb_render`/`pyweb_call` requests did: time, status, every SQL statement, N+1 warnings, spans, jobs queued, emails and errors. |
 | `pyweb_test` | Runs the app's pytest tests and returns pass/fail counts, the summary and the failure output. |
+| `pyweb_openapi` | The OpenAPI 3.1 document for the app's server functions, as `pyweb openapi` writes it (for API clients and API tokens). |
+| `pyweb_security_check` | The security review: secrets in the source, SQL built from strings, Models without policies, tenant Models read with `.unscoped()`, malformed rate limits, and with `production: true` the production settings. Returns `ok` (no blocking finding) and each finding with its line, and links the threat model. |
 
 The server also exposes the guide and every template as resources
 (`pyweb://guide`, `pyweb://templates/<name>`) and three prompts:

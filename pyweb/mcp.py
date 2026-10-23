@@ -35,7 +35,7 @@ import traceback
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 HERE = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES = ("blank", "counter", "todo", "blog", "saas", "auth", "chat", "ai-chat")
+TEMPLATES = ("blank", "counter", "todo", "blog", "saas", "auth", "chat", "ai-chat", "desktop")
 
 INSTRUCTIONS = (
     "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). "
@@ -281,14 +281,26 @@ def _initial_migration(directory):
 
 def _readme(title, template, has_seeds):
     seed = "pyweb db seed                # example data (see seeds.py)\n" if has_seeds else ""
+    if template == "desktop":
+        run = ('pip install "pyweb-stack[desktop]"\n'
+               "pyweb desktop app.pyweb      # its own window; --dev reloads on save\n"
+               "pyweb dev app.pyweb          # or in a browser, at http://localhost:8000\n")
+    else:
+        run = ('pip install "pyweb-stack[auth]"\n'
+               "pyweb dev app.pyweb          # http://localhost:8000, reloads on save, with the dev toolbar\n")
+    if template == "desktop":
+        ship = ("pyweb build --desktop app.pyweb --package   # an installer for this OS\n```\n\n"
+                "The data lives in the user's data folder; see the desktop guide for signing installers.\n")
+    else:
+        ship = ("pyweb deploy compose         # or: docker, k8s, fly, render, railway\n```\n\n"
+                "`pyweb deploy` explains what it will run (database, Redis, workers) and why,\n"
+                "then writes the files. `pyweb check --production` checks the settings.\n")
     return f"""# {title}
 
 A [PyWeb](https://maanavkrishna.github.io/PyWeb/) app, from the `{template}` template.
 
 ```bash
-pip install "pyweb-stack[auth]"
-pyweb dev app.pyweb          # http://localhost:8000, reloads on save, with the dev toolbar
-{seed}pytest                       # the tests in test_app.py
+{run}{seed}pytest                       # the tests in test_app.py
 ```
 
 ## Changing the data
@@ -303,12 +315,7 @@ pyweb db upgrade             # applies it (`pyweb dev` does this for you)
 ## Shipping it
 
 ```bash
-pyweb deploy compose         # or: docker, k8s, fly, render, railway
-```
-
-`pyweb deploy` explains what it will run (database, Redis, workers) and why,
-then writes the files. `pyweb check --production` checks the settings.
-"""
+{ship}"""
 
 
 class _Apps:
@@ -708,7 +715,8 @@ def _model_info(model):
         fields.append(entry)
     return {"model": model.__name__, "table": meta.table, "fields": fields,
             "many_to_many": sorted(meta.m2m), "reverse": sorted(meta.reverse),
-            "policy": bool(getattr(model, "__pyweb_policy__", None) or getattr(meta, "policy", None))}
+            "policy": bool(getattr(model, "__pyweb_policy__", None) or getattr(meta, "policy", None)),
+            "tenant": bool(getattr(meta, "tenant", False))}
 
 
 def tool_db_schema(args):

@@ -436,8 +436,8 @@ def Todos():
 
 1. Start from a template: `pyweb new NAME --template saas` (or the
    `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, saas
-   (accounts, Models, forms, jobs, admin: the best start for a product),
-   auth, chat, ai-chat.
+   (teams, accounts, tenant Models, forms, jobs, admin: the best start for a
+   product), auth, chat, ai-chat, desktop (a notes app in its own window).
 2. Edit `app.pyweb`. After every edit run `pyweb check app.pyweb`
    (MCP: `pyweb_check`) and fix errors by line number.
 3. Need a JavaScript library? `pyweb add NAME` (MCP: `pyweb_packages`).

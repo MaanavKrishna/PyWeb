@@ -1,9 +1,10 @@
 # Tutorial: a SaaS in an hour
 
-This builds **Teamboard**, a small product with accounts, projects and
-tasks that update live in every open tab, forms that check what people
-type, a background job, a daily email and an admin, then ships it. It
-uses each part of PyWeb once, in the order you'd meet them.
+This builds **Teamboard**, a small product where teams share projects
+and tasks that update live in every open tab, with invitations and roles,
+forms that check what people type, a background job, a webhook, a daily
+email, API tokens and an admin, installable on phones and desktops. Then
+it ships it. It uses each part of PyWeb once, in the order you'd meet them.
 
 ```bash
 pip install "pyweb-stack[auth]"
@@ -19,13 +20,13 @@ of this page walks through `app.pyweb` and then changes it.
 ## 1. The data
 
 ```python
-class Project(Model):
+class Project(Model, tenant=True):
     name: str = Field(min=2, max=60)
     about: str = Field(default="", max=500)
     owner: User = Field(readonly=True)
 
 
-class Task(Model):
+class Task(Model, tenant=True):
     title: str = Field(min=1, max=120)
     done: bool = False
     project: Project = Field(readonly=True)
@@ -35,33 +36,52 @@ class Task(Model):
 Each class is a table, and each `Field` is a column with its rules
 (`min`, `max`). `owner: User` is a foreign key to the auth kit's users.
 `readonly=True` means a browser can never set it: the server decides who
-owns a row.
+owns a row. `tenant=True` adds an `org` column: each project and task
+belongs to a team.
 
 The template came with `migrations/0001_initial.py`, and `pyweb dev`
 applied it. See [Data & databases](09-data.md).
 
-## 2. Who sees what
+## 2. Teams, and who sees what
 
 ```python
-def mine(model):
-    return lambda user: model.owner_id == (user.id if user else -1)
+auth = app.use_auth(orgs=True)
+auth.plans({"free": {"seats": 5}, "pro": {"seats": 50}})
 
 
-Project.policy(read=mine(Project), write=lambda user, row: user is not None and row.owner_id == user.id)
+def my_team():
+    team = auth.org()
+    user = auth.user()
+    if team is None and user is not None:
+        team = auth.create_org(f"{user.name or user.email.split('@')[0]}'s team")
+        auth.switch_org(team)
+    return team
 ```
 
-A row policy applies to every query and save made while handling a
-request. `Project.get_or_404(7)` finds project 7 only if it's yours.
-Guessing someone else's id gets a 404, so an IDOR bug can't happen.
+`orgs=True` adds organizations: `/orgs` lists yours, `/orgs/<slug>`
+invites people by email and sets their roles (owner, admin, member,
+viewer). The invitation email links to a page that adds the person to
+the team once they sign in with that email.
+Each new user gets a team of their own on their first visit, and the
+sidebar shows its name. The free plan allows five seats.
+
+While a request runs for a team, every query on a `tenant=True` Model
+only sees that team's rows, and new rows belong to it.
+`Project.get_or_404(7)` finds project 7 only if it's your team's.
+Guessing another team's id gets a 404, so an IDOR bug can't happen. On
+Postgres, row-level security enforces the same rule in the database. See
+[Teams](30-teams.md).
 
 ## 3. Server functions and forms
 
 ```python
 @server(login=True)
 def create_project(project: Project):
+    my_team()
     project.owner = auth.user()
-    project.save()
+    project.save()                                 # in the current team
     welcome_tasks.enqueue(project.id)
+    webhooks.publish("project.created", {"id": project.id, "name": project.name})
     return project
 ```
 
@@ -78,6 +98,13 @@ name is refused in the browser as you type, and again on the server. The
 form also works without JavaScript, carries a CSRF token, and a double
 click creates one project, not two. The whole function is one
 transaction. See [Forms](23-forms.md).
+
+`webhooks.publish(...)` sends a signed `project.created` event to every
+endpoint the team registered (`WebhookEndpoint` rows), retried in the
+background. People who'd rather call Teamboard from a script make an API
+token at `/account/tokens` and call the same server functions with
+`Authorization: Bearer ...`; `pyweb openapi app.pyweb` describes them.
+See [Webhooks & files](33-webhooks-files.md).
 
 ## 4. Live pages
 
@@ -129,7 +156,10 @@ Teamboard is built from the UI kit (`from pyweb.ui import ...`):
   tasks slide in, deleted ones slide out and the rest glide into place,
   in every open tab;
 - `App(theme=Theme.preset("zinc"))` sets the colours, for the sign-in
-  pages and `/admin` too.
+  pages and `/admin` too;
+- `pwa=True` makes it installable: browsers offer "Install", and the
+  installed app opens in its own window with an offline page. See
+  [Installable apps & push](31-pwa-push.md).
 
 Change the theme in the dev toolbar (`pyweb dev`, then Theme) and save
 it into `app.pyweb`. See [UI kit and motion](34-ui-and-motion.md).
@@ -150,7 +180,7 @@ class Task(Model):
 @server(login=True)
 def add_task(project_id: int, title: str = Field(min=1, max=120), due: date | None = None):
     project = Project.get_or_404(project_id)
-    return Task.create(title=title, due=due, project=project, owner_id=project.owner_id)
+    return Task.create(title=title, due=due, project=project, owner=auth.user())
 ```
 
 and in the project page's form:
@@ -185,8 +215,9 @@ pytest
 ```
 
 `test_app.py` signs in with `client.login("ann@example.com")`, creates
-projects, runs the queued jobs and checks that Bob can't see Ann's
-project. Add a test for each thing you change. `pyweb db check` in CI
+projects, runs the queued jobs and checks that Bob, in another team,
+can't see Ann's project, while `client.login("bob@example.com",
+org="Rocket team", org_role="member")` makes him Ann's teammate, who can. Add a test for each thing you change. `pyweb db check` in CI
 fails if a Model changed without a migration.
 
 ## 10. Ship it

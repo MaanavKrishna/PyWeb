@@ -146,7 +146,7 @@ def load(source, files_json="", keep_data=False):
         pages.append({"name": name, "route": page["route"], "js": page["js"],
                       "placement": {k: list(v) for k, v in page["placement"].items() if not k.startswith("__")}})
     return json.dumps({"ok": True, "pages": pages, "output": printed.getvalue(), "database": M.database() is not None,
-                       "auth": _has_auth()})
+                       "auth": _has_auth(), "orgs": _has_orgs(), "pwa": _has_pwa()})
 
 
 def _have_sqlite():
@@ -162,6 +162,33 @@ def _have_sqlite():
 def _has_auth():
     kit = getattr(getattr(_client.site.app, "app", None), "auth", None)
     return type(kit).__name__ == "AuthKit"
+
+
+def _has_orgs():
+    kit = getattr(getattr(_client.site.app, "app", None), "auth", None)
+    return bool(getattr(kit, "orgs_enabled", False))
+
+
+def _has_pwa():
+    return bool(getattr(getattr(_client.site.app, "app", None), "pwa", None))
+
+
+def manifest():
+    """For installable apps (``pwa=``): the web app manifest and its icons as data: URLs."""
+    import base64
+    if not _has_pwa():
+        return json.dumps({"manifest": None})
+    res = _client.get("/manifest.webmanifest")
+    if res.status != 200:
+        return json.dumps({"manifest": None})
+    data = res.json()
+    icons = []
+    for icon in data.get("icons", []):
+        got = _client.get(icon["src"])
+        if got.status == 200:
+            icons.append({"sizes": icon.get("sizes", ""), "purpose": icon.get("purpose", ""),
+                          "src": "data:image/png;base64," + base64.b64encode(got.body).decode()})
+    return json.dumps({"manifest": data, "icons": icons})
 
 
 def _run_jobs():
@@ -241,14 +268,26 @@ def rows(table, limit=100):
     return json.dumps({"columns": list(res.columns), "rows": data})
 
 
+TEAM = "Demo team"
+
+
 def sign_in(who):
-    """``""`` signs out; ``"user"`` / ``"admin"`` sign the preview in as a test account."""
+    """``""`` signs out; ``"user"`` / ``"member"`` / ``"admin"`` sign the preview in as a test account.
+
+    In apps with teams they all belong to one team ("Demo team"): ``user`` owns it, ``member``
+    is a member, and ``admin`` is a site admin who also administers it. So switching between them
+    shows what each role sees of the same team's data."""
     with _captured() as printed:
         if not who:
             _client.logout()
             return json.dumps({"user": None, "output": printed.getvalue()})
         roles = ["admin"] if who == "admin" else []
         email = f"{who}@example.com"
-        user = _client.login(email, roles=roles, name=who.capitalize())
+        team = {}
+        if _has_orgs():
+            team = {"org": TEAM, "org_role": {"user": "owner", "member": "member", "admin": "admin"}.get(who, "member")}
+        _client.logout()
+        user = _client.login(email, roles=roles, name=who.capitalize(), **team)
     label = getattr(user, "email", None) or (user or {}).get("sub") or email
-    return json.dumps({"user": label, "roles": roles, "output": printed.getvalue()})
+    return json.dumps({"user": label, "roles": roles, "output": printed.getvalue(),
+                       "org": team.get("org"), "org_role": team.get("org_role")})

@@ -172,17 +172,22 @@ policies outside requests. `with system():` turns scoping off on purpose
 
 ```python
 from pyweb.testing import TestClient
-from pyweb.tenancy import org_scope
 
 def test_projects_stay_private():
     ann, bo = TestClient("app.pyweb"), TestClient("app.pyweb")
-    ann.login("ann@example.com")
-    bo.login("bo@example.com")
-    ann.rpc("new_org", name="Acme")             # your own server functions
-    bo.rpc("new_org", name="Globex")
-    ann.rpc("add_project", name="Rocket")
+    ann.login("ann@example.com", org="Acme")            # a member (here the owner) of Acme
+    bo.login("bo@example.com", org="Globex")
+    ann.rpc("add_project", name="Rocket")              # your own server functions
     assert bo.rpc("projects") == []
+    bo.login("bo@example.com", org="Acme", org_role="viewer")   # now Bo joins Acme too
+    assert [p["name"] for p in bo.rpc("projects")] == ["Rocket"]
 ```
+
+`login(..., org=...)` creates the organization if needed, adds the
+membership with `org_role` (default `"owner"`) and switches to it.
+`pyweb.testing.as_org(org)` runs test code for an organization, and
+`Factory(...).for_org(org)` makes tenant rows in one. See
+[Testing](11-testing.md#apps-with-teams).
 
 PyWeb's own test suite runs random sequences of reads, writes, deletes
 and bulk updates by several organizations and checks that none of them

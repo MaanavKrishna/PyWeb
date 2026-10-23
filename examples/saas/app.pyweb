@@ -1,5 +1,6 @@
-"""Teamboard: a small SaaS. Accounts, projects and tasks that update live,
-forms with validation, a background job, a daily email and an admin.
+"""Teamboard: a small SaaS. Teams with invitations and roles, projects and tasks that
+update live, forms with validation, a background job, a webhook, a daily email, API
+tokens, an admin, and an installable app.
 
 Run it:      pyweb dev app.pyweb        (sign up; the confirmation link is printed in the terminal)
 Test it:     pytest
@@ -8,7 +9,7 @@ Ship it:     pyweb deploy compose        (or fly, render, railway, k8s)
 
 import logging
 
-from pyweb import App, Field, Form, Input, Model, Submit, Textarea, server
+from pyweb import App, Field, Form, Input, Model, Submit, Textarea, server, webhooks
 from pyweb.authkit import User
 from pyweb.telemetry import span
 from pyweb.ui import (Badge, Button, Card, CardContent, Checkbox, Dialog, DialogContent, DialogDescription,
@@ -18,50 +19,54 @@ from pyweb.ui import (Badge, Button, Card, CardContent, Checkbox, Dialog, Dialog
                       SidebarTrigger, Theme, toast)
 
 app = App(title="Teamboard", database="sqlite:///app.db", stylesheets=["/static/app.css"],
-          theme=Theme.preset("zinc"))
-auth = app.use_auth()
+          theme=Theme.preset("zinc"), pwa=True)
+auth = app.use_auth(orgs=True)                      # teams: /orgs to invite people and set roles
+auth.plans({"free": {"seats": 5}, "pro": {"seats": 50}})
 log = logging.getLogger("teamboard")
 
 
 # ------------------------------------------------------------------ data
 
-class Project(Model):
+class Project(Model, tenant=True):                # belongs to a team: other teams can't see it
     name: str = Field(min=2, max=60)
     about: str = Field(default="", max=500)
     owner: User = Field(readonly=True)
 
 
-class Task(Model):
+class Task(Model, tenant=True):
     title: str = Field(min=1, max=120)
     done: bool = False
     project: Project = Field(readonly=True)
     owner: User = Field(readonly=True)
 
 
-# Each person sees and changes only their own rows, on every query and save made for a request.
-def mine(model):
-    return lambda user: model.owner_id == (user.id if user else -1)
-
-
-Project.policy(read=mine(Project), write=lambda user, row: user is not None and row.owner_id == user.id)
-Task.policy(read=mine(Task), write=lambda user, row: user is not None and row.owner_id == user.id)
+def my_team():
+    """The signed-in person's current team. Their first visit makes them one of their own."""
+    team = auth.org()
+    user = auth.user()
+    if team is None and user is not None:
+        team = auth.create_org(f"{user.name or user.email.split('@')[0]}'s team")
+        auth.switch_org(team)
+    return team
 
 
 # ------------------------------------------------------------------ actions
 
 @server(login=True)
 def create_project(project: Project):
+    my_team()
     project.owner = auth.user()
-    project.save()
+    project.save()                                 # in the current team
     welcome_tasks.enqueue(project.id)              # runs in the background, after this commits
+    webhooks.publish("project.created", {"id": project.id, "name": project.name})   # to the team's endpoints
     toast("Project created", "Its starter checklist is on the way.", tone="success")
     return project
 
 
 @server(login=True)
 def add_task(project_id: int, title: str = Field(min=1, max=120)):
-    project = Project.get_or_404(project_id)       # someone else's project: 404, thanks to the policy
-    return Task.create(title=title, project=project, owner_id=project.owner_id)
+    project = Project.get_or_404(project_id)       # another team's project: 404
+    return Task.create(title=title, project=project, owner=auth.user())
 
 
 @server(login=True)
@@ -82,7 +87,8 @@ def remove(task_id: int) -> None:
 
 @app.job(retries=3)
 def welcome_tasks(project_id: int):
-    """A new project starts with a checklist (a job: it could just as well call an API)."""
+    """A new project starts with a checklist (a job: it could just as well call an API). Jobs run for
+    the team that queued them."""
     project = Project.get(project_id)
     with span("seed checklist", project=project_id):
         for title in ("Invite your team", "Write the first task", "Ship something small"):
@@ -114,11 +120,15 @@ def sidebar_projects():
 @app.layout
 def Shell(children):
     user = auth.user()
+    team = my_team() if user else None
     projects = sidebar_projects() if user else []
     <SidebarProvider>
         if user:
             <Sidebar label="Teamboard">
-                <SidebarHeader><a class="brand" href="/projects">Teamboard</a></SidebarHeader>
+                <SidebarHeader>
+                    <a class="brand" href="/projects">Teamboard</a>
+                    <a class="team" href="/orgs" title="Switch or manage teams">{team.name}</a>
+                </SidebarHeader>
                 <SidebarContent>
                     <SidebarGroup>
                         <SidebarMenu>
@@ -144,6 +154,8 @@ def Shell(children):
                         <DropdownMenuContent>
                             <MenuLabel>{user.email}</MenuLabel>
                             <MenuItem href="/account">Account</MenuItem>
+                            <MenuItem href={f"/orgs/{team.slug}"}>Team and invitations</MenuItem>
+                            <MenuItem href="/account/tokens">API tokens</MenuItem>
                             if "admin" in (user.roles or []):
                                 <MenuItem href="/admin">Admin</MenuItem>
                             <MenuSeparator />

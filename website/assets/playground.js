@@ -26,6 +26,9 @@
   const reqOut = $("pg-requests");
   const reqCount = $("pg-reqcount");
   const dbOut = $("pg-db");
+  const installOut = $("pg-install");
+  const installTab = $("pg-installtab");
+  const memberOpt = $("pg-member");
   const DRAFT_KEY = "pyweb-playground-draft";
 
   let host = null;          // Python functions: load, request, ...
@@ -312,7 +315,7 @@
       pyodide = py;
       py.runPython(hostPy);
       host = {};
-      for (const fn of ["load", "request", "recent", "tables", "rows", "sign_in"]) host[fn] = py.globals.get(fn);
+      for (const fn of ["load", "request", "recent", "tables", "rows", "sign_in", "manifest"]) host[fn] = py.globals.get(fn);
       cfg.static.forEach((name, i) => py.globals.get("install_static")(name, statics[i]));
       runtimeUrl = URL.createObjectURL(new Blob([runtime], { type: "text/javascript" }));
       run();
@@ -358,6 +361,11 @@
     showError(null);
     pages = res.pages;
     hasDatabase = res.database;
+    memberOpt.hidden = !res.orgs;          // apps with teams: everyone signs in to one "Demo team"
+    if (!res.orgs && userSel.value === "member") userSel.value = "user";
+    installTab.hidden = !res.pwa;
+    if (!res.pwa && tabOpen("install")) selectTab("preview");
+    if (res.pwa && tabOpen("install")) showInstall();
     lastRequest = "";
     dbTable = "";
     reqOut.querySelectorAll(".pg-req").forEach((d) => d.remove());
@@ -450,6 +458,8 @@
       const realFetch = window.fetch.bind(window);
       window.EventSource = undefined; // live updates use the polling path here
       window.WebSocket = undefined;
+      // An installable app's service worker would be the docs site's: the preview has none.
+      if (navigator.serviceWorker) navigator.serviceWorker.register = () => Promise.resolve(null);
       window.fetch = (input, init) => {
         const url = typeof input === "string" ? input : input.url;
         if (!url.startsWith("/__pyweb/")) return realFetch(input, init);
@@ -629,13 +639,56 @@
     try {
       const r = call("sign_in", userSel.value);
       printed(r.output);
-      log("call", r.user ? `signed in as ${r.user}${(r.roles || []).length ? " (" + r.roles.join(", ") + ")" : ""}` : "signed out");
+      const extra = [...(r.roles || []), ...(r.org ? [`${r.org_role} of ${r.org}`] : [])];
+      log("call", r.user ? `signed in as ${r.user}${extra.length ? " (" + extra.join(", ") + ")" : ""}` : "signed out");
     } catch (err) {
       log("error", "couldn't sign in: " + (err.message || err));
       userSel.value = "";
     }
     navigate(path);
   });
+
+  // What a browser would offer to install: the app's manifest and icons (apps with pwa=).
+  function showInstall() {
+    if (!host) return;
+    installOut.innerHTML = "";
+    let info;
+    try { info = call("manifest"); } catch (err) { installOut.append(el("p", "pg-empty", String(err.message || err))); return; }
+    const m = info.manifest;
+    if (!m) { installOut.append(el("p", "pg-empty", "This app isn't installable. Add pwa=True to App(...).")); return; }
+    const card = el("div", "pg-app");
+    const big = (info.icons || []).find((i) => i.sizes === "192x192") || (info.icons || [])[0];
+    if (big) {
+      const img = el("img");
+      img.src = big.src;
+      img.alt = "";
+      card.append(img);
+    }
+    const text = el("div");
+    text.append(el("b", "", m.name || ""), el("span", "", `${m.short_name || ""} · opens ${m.display || "standalone"} at ${m.start_url || "/"}`));
+    const colours = el("span", "pg-swatches");
+    for (const [label, value] of [["theme", m.theme_color], ["background", m.background_color]]) {
+      if (!value) continue;
+      const sw = el("i");
+      sw.style.background = value;
+      colours.append(sw, el("small", "", `${label} ${value}`));
+    }
+    text.append(colours);
+    card.append(text);
+    const icons = el("div", "pg-icons");
+    for (const i of info.icons || []) {
+      const fig = el("figure");
+      const img = el("img");
+      img.src = i.src;
+      img.alt = `${i.sizes} icon`;
+      fig.append(img, el("figcaption", "", i.sizes));
+      icons.append(fig);
+    }
+    const note = el("p", "pg-empty", "In a real browser this app can be installed, with a service worker for an " +
+      "offline page. The playground shows the manifest but doesn't register the worker.");
+    const json = el("pre", "pg-json", JSON.stringify(m, null, 2));
+    installOut.append(card, icons, note, json);
+  }
 
   // ------------------------------------------------------------ panels
   async function gzipSize(text) {
@@ -689,6 +742,8 @@
     placeOut.hidden = name !== "place";
     reqOut.hidden = name !== "requests";
     dbOut.hidden = name !== "db";
+    installOut.hidden = name !== "install";
+    if (name === "install") showInstall();
     if (name === "requests") {
       unseenRequests = 0;
       reqCount.hidden = true;

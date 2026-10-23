@@ -209,7 +209,9 @@ def _app_findings(tree, already):
             owned = [i.target.id for i in cls.body if isinstance(i, ast.AnnAssign) and isinstance(i.target, ast.Name)
                      and ast.unparse(i.annotation).replace(" | None", "") in users
                      and i.target.id in ("owner", "user", "author", "created_by", "account")]
-            if owned:
+            tenant = any(k.arg == "tenant" and isinstance(k.value, ast.Constant) and k.value.value
+                         for k in cls.keywords)
+            if owned and not tenant:          # tenant=True rows are scoped to the organization already
                 models[cls.name] = (cls.lineno, owned[0])
     policies = {ast.unparse(n.func.value) for n in ast.walk(tree) if isinstance(n, ast.Call)
                 and isinstance(n.func, ast.Attribute) and n.func.attr == "policy"}

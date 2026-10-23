@@ -36,6 +36,7 @@ def test_notes():
 | `.get(path)`, `.post(path, data)`, `.request(method, path, body, headers)` | return a response with `.status`, `.text`, `.json()`, `.header(name)` |
 | `.rpc(name, **args)` | call a server function; returns the result or raises `RPCError` |
 | `.login(email, roles=[...])` | sign in as someone without the sign-in form (with `app.use_auth()`, the account is created if needed); returns the user |
+| `.login(email, org="Acme", org_role="admin")` | also make them a member of that organization (created if needed) and switch to it |
 | `.logout()` | forget the session |
 | `.cookies` | the cookie jar |
 | `.app.module` | the executed app module, for direct access to its objects |
@@ -109,6 +110,38 @@ def test_emails_land_in_the_outbox(client):
   50) instead of being sent.
 - Row policies apply to requests (`client.get`, `client.rpc`), not to
   code the test runs directly, so a test can set up anyone's rows.
+
+## Apps with teams
+
+With `app.use_auth(orgs=True)`, `client.login(..., org=...)` puts the
+user in an organization and makes it their current one, so `tenant=True`
+Models and `org_role=` guards behave as they would for a real member.
+`as_org(org)` runs test code for an organization, and
+`Factory(...).for_org(org)` makes tenant rows in one:
+
+```python
+from pyweb.authkit.orgs import Organization
+from pyweb.testing import Factory, as_org
+
+
+def test_members_see_their_teams_projects(client):
+    Project = client.app.module.Project
+    ann = client.login("ann@example.com", org="Rocket team")      # owner
+    rocket = Organization.where(name="Rocket team").first()
+    Factory(Project, name=lambda n: f"Project {n}", owner=ann).for_org(rocket).create_batch(2)
+    client.logout()
+    client.login("bob@example.com", org="Rocket team", org_role="member")
+    assert "Project 2" in client.get("/projects").text
+    client.logout()
+    client.login("eve@example.com", org="Other team")
+    assert "Project 2" not in client.get("/projects").text      # another team's rows
+    with as_org(rocket):
+        assert Project.query().count() == 2
+```
+
+`org_role` defaults to `"owner"`. Pages and server functions guarded with
+`org_role=` or `feature=` answer 403 for the wrong role or plan, which a
+test can check with `client.get(...).status` or `pytest.raises(RPCError)`.
 
 ## Migrations in CI
 

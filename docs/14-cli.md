@@ -2,7 +2,7 @@
 
 ```text
 pyweb new NAME [--template T]        create NAME/ with app.pyweb, test_app.py, AGENTS.md, CLAUDE.md, static/;
-                                     T = blank | counter (default) | todo | blog | saas | auth | chat | ai-chat
+                                     T = blank | counter (default) | todo | blog | saas | auth | chat | ai-chat | desktop
                                      (apps with a database also get migrations/0001_initial.py and a README)
 pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
                                      development server: recompile on save, live reload, error overlay,

@@ -16,8 +16,12 @@ can decide up front whether they matter for your app.
 - **SQLite is for one machine.** Several processes on one host share it
   fine, but more than one server needs Postgres or MySQL;
   `pyweb check --production` and `pyweb deploy` say so.
-- **Uploaded files aren't garbage-collected.** Deleting a row doesn't
-  delete its file yet.
+- **Desktop apps are a window around your app.** They run the same
+  server on the user's machine; there's no mobile app target, and
+  installers aren't signed for you (see [Desktop apps](32-desktop.md)).
+- **Tenant isolation is enforced by the database only on Postgres.** On
+  SQLite and MySQL it comes from PyWeb's query scoping, so raw SQL there
+  must filter by organization itself (see [Teams](30-teams.md)).
 - **The playground can't upload files**, and runs background jobs right
   after each request (the browser's Python has no threads).
 
@@ -51,9 +55,8 @@ See the [changelog](https://github.com/MaanavKrishna/PyWeb/blob/main/CHANGELOG.m
 Planned, roughly in order. Nothing here is promised for a date.
 
 1. **1.0**: the API, RPC protocol and CLI frozen under semantic versioning,
-   after 0.5 has been used in production for a while.
-2. **File uploads to object storage from the playground and the admin**,
-   and garbage collection of unused uploads.
+   after 0.6 has been used in production for a while.
+2. **File uploads from the playground and the admin.**
 3. **State-preserving hot reload** while developing.
 
 Ideas, bug reports and pull requests are welcome; see

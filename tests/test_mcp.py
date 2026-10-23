@@ -129,9 +129,22 @@ def test_templates_match_examples(name):
     assert packaged == (ROOT / "examples" / name / "app.pyweb").read_text()
 
 
-def test_saas_template_matches_its_example():
-    for fn in ("app.pyweb", "seeds.py", "test_app.py"):
-        assert (ROOT / "pyweb" / "templates" / "saas" / fn).read_text() == (ROOT / "examples" / "saas" / fn).read_text()
+@pytest.mark.parametrize("name, files", [("saas", ("app.pyweb", "seeds.py", "test_app.py")),
+                                         ("desktop", ("app.pyweb", "test_app.py"))])
+def test_folder_templates_match_their_examples(name, files):
+    folder = ROOT / "pyweb" / "templates" / name
+    assert sorted(f.name for f in folder.iterdir() if f.is_file()) == sorted(files)
+    for fn in files:
+        assert (folder / fn).read_text() == (ROOT / "examples" / name / fn).read_text()
+
+
+def test_desktop_template_brings_its_tests_and_readme(server, tmp_path):
+    tool(server, "pyweb_new_app", directory="notes", template="desktop", title="My Notes")
+    assert 'App(title="My Notes"' in (tmp_path / "notes" / "app.pyweb").read_text()
+    readme = (tmp_path / "notes" / "README.md").read_text()
+    assert "pyweb desktop app.pyweb" in readme and "--desktop" in readme and "deploy compose" not in readme
+    res = tool(server, "pyweb_test", path="notes")
+    assert res["ok"] and res["passed"] == 5, res["output"]
 
 
 def test_template_css_matches_examples():

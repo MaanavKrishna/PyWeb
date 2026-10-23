@@ -5,12 +5,13 @@
 **Full-stack web apps in one Python file.**
 
 Server-rendered pages, a reactive UI compiled from Python, typed calls to
-your server, Models with migrations, forms, accounts, live updates,
-background jobs and one-command deploys, with no JavaScript toolchain.
+your server, Models with migrations, forms, accounts and teams, live
+updates, background jobs, a UI kit with motion, installable and desktop
+apps, and one-command deploys, with no JavaScript toolchain.
 
 [![CI](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/MaanavKrishna/PyWeb/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/pyweb-stack)](https://pypi.org/project/pyweb-stack/)
-![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab)
+![Python](https://img.shields.io/badge/python-3.10%E2%80%933.15-3776ab)
 [![Docs](https://img.shields.io/badge/docs-maanavkrishna.github.io%2FPyWeb-0d9488)](https://maanavkrishna.github.io/PyWeb/)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
@@ -257,6 +258,58 @@ keeps only the files the browser loads and pins them in `pyweb.lock`.
 There's no `node_modules` and no bundler, and pages that don't use a
 package don't load it. [npm packages →](docs/18-npm-packages.md)
 
+### Teams, and apps people install
+
+```pyweb
+from pyweb import App, Model, server
+from pyweb.desktop import Window
+
+app = App(title="Tracker", database="sqlite:///app.db", pwa=True,
+          desktop=Window(width=1100, height=760))
+auth = app.use_auth(orgs=True)        # organizations, invitations, roles, plans
+auth.plans({"free": {"seats": 5}, "pro": {"seats": 50, "exports": True}})
+
+
+class Issue(Model, tenant=True):      # each organization sees only its own rows
+    title: str
+
+
+@server(org_role=["owner", "admin"], feature="exports", rate="10/hour", per="org")
+def export_issues() -> list:
+    return [i.to_dict() for i in Issue.query()]
+
+
+@app.page("/", login=True)
+def Issues():
+    issues = Issue.query().live()
+
+    <ul>
+        for issue in issues:
+            <li>{issue["title"]}</li>
+    </ul>
+```
+
+`tenant=True` scopes every query, relation, live list and job to the
+current organization, and on Postgres row-level security enforces it in
+the database too. Members, invitations, API tokens and data export come
+with the auth kit. `pwa=True` makes the app installable, with an offline
+page and Web Push; `pyweb desktop app.pyweb` opens the same app in its own
+window, and `pyweb build --desktop --package` makes an installer.
+[Teams →](docs/30-teams.md) · [Installable apps & push →](docs/31-pwa-push.md) ·
+[Desktop apps →](docs/32-desktop.md) · [Webhooks & files →](docs/33-webhooks-files.md)
+
+### A UI kit, with motion
+
+`from pyweb.ui import Button, Dialog, DataTable, toast, ...` gives you
+accessible, themed components in the style of shadcn/ui and Radix:
+dialogs, menus, comboboxes, a command palette, tabs, a date picker, data
+tables, charts and toasts, rendered on the server and keyboard-tested in
+Chromium, Firefox and WebKit. `animate="fade-up"`, `exit=`, `layout` and
+`drag` animate any element with springs. `App(theme=Theme(accent=...))`
+restyles everything, including the sign-in and admin pages, and
+`pyweb ui add Dialog` copies a component into your app to change.
+[UI kit & motion →](docs/34-ui-and-motion.md)
+
 ### Ship it, then see what it does
 
 ```bash
@@ -284,9 +337,15 @@ N+1 loops. [Scaling & deploying →](docs/25-scaling.md) ·
   WebSockets on one asyncio loop per process, with `--workers N`
   processes. Sessions are signed cookies, so servers stay stateless
   behind any load balancer. uvicorn and other ASGI servers work too.
-- **Secure defaults**: escaped output, a hashed Content Security Policy,
-  CSRF and origin checks, row policies, rate limits, request size limits
-  and `pyweb check --production` before you deploy.
+- **Fast**: about 3,000 requests per second per process for a typical
+  page, and each core used on free-threaded Python 3.15t.
+  [Performance →](docs/29-performance.md)
+- **Secure by design**: escaped output, a hashed Content Security Policy
+  with Trusted Types, CSRF and origin checks, row policies and tenant
+  isolation, encrypted fields, rate limits per function, an SSRF-safe
+  `fetch`, secret scanning and `pyweb check --production` before you
+  deploy. Every threat is listed with its mitigation and its test in the
+  [threat model](THREAT_MODEL.md).
 
 ## See it
 
@@ -307,7 +366,7 @@ it runs the real PyWeb, server functions included, in your browser.
 
 ```bash
 pip install pyweb-stack
-pyweb new myapp --template saas      # saas | blank | counter | todo | blog | auth | chat | ai-chat
+pyweb new myapp --template saas      # saas | desktop | blank | counter | todo | blog | auth | chat | ai-chat
 cd myapp
 pyweb dev app.pyweb                  # edit app.pyweb; the page reloads on save
 ```
@@ -381,7 +440,8 @@ real browser by the test suite.
 
 | Example | Shows |
 |---|---|
-| [`saas`](examples/saas/app.pyweb) | accounts, Models with migrations, row policies, forms, live lists, a job, a daily email, an admin |
+| [`saas`](examples/saas/app.pyweb) | teams with invitations and roles, tenant Models with migrations, forms, live lists, a job, a webhook, API tokens, an admin; installable |
+| [`desktop`](examples/desktop/app.pyweb) | a Markdown notes app in its own window, exporting through the system's Save dialog |
 | [`counter`](examples/counter/app.pyweb) | signals, computed values, binding a number input |
 | [`todo`](examples/todo/app.pyweb) | components, list mutation, filters, keyed lists, rows that animate in and out |
 | [`ui`](examples/ui/app.pyweb) | the UI kit (dialogs, menus, pickers, toasts, a data table, charts) and motion (stagger, gestures, drag, layout) |
@@ -398,10 +458,10 @@ real browser by the test suite.
 | | |
 |---|---|
 | Start | [Introduction](docs/01-introduction.md) · [Quickstart](docs/02-quickstart.md) · [Tutorial](docs/03-tutorial.md) · [A SaaS in an hour](docs/28-saas-tutorial.md) · [AI assistants & MCP](docs/17-ai-assistants.md) |
-| Language | [`.pyweb` files](docs/04-pyweb-files.md) · [State & reactivity](docs/05-reactivity.md) · [Python in the browser](docs/07-browser-python.md) · [npm packages](docs/18-npm-packages.md) |
-| Server | [Server functions & RPC](docs/06-server-functions.md) · [Pages & routing](docs/08-pages-routing-assets.md) · [Layouts & navigation](docs/19-layouts-navigation.md) · [Data](docs/09-data.md) · [Forms](docs/23-forms.md) · [Auth](docs/10-auth.md) · [Live data](docs/21-live-data.md) · [Background jobs](docs/24-jobs.md) · [Building AI apps](docs/20-ai-apps.md) |
-| Ship | [Testing](docs/11-testing.md) · [Deployment](docs/12-deployment.md) · [Scaling](docs/25-scaling.md) · [Logs, metrics & tracing](docs/26-observability.md) · [Security](docs/13-security.md) · [CLI](docs/14-cli.md) · [Upgrading to 0.5](docs/27-upgrading.md) |
-| Reference | [Recipe: wallets & web3](docs/22-recipe-web3.md) · [Toolkit & stability](docs/15-toolkit.md) · [Limitations & roadmap](docs/16-limitations-roadmap.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) |
+| Language | [`.pyweb` files](docs/04-pyweb-files.md) · [State & reactivity](docs/05-reactivity.md) · [Python in the browser](docs/07-browser-python.md) · [npm packages](docs/18-npm-packages.md) · [UI kit & motion](docs/34-ui-and-motion.md) |
+| Server | [Server functions & RPC](docs/06-server-functions.md) · [Pages & routing](docs/08-pages-routing-assets.md) · [Layouts & navigation](docs/19-layouts-navigation.md) · [Data](docs/09-data.md) · [Forms](docs/23-forms.md) · [Auth](docs/10-auth.md) · [Teams](docs/30-teams.md) · [Live data](docs/21-live-data.md) · [Background jobs](docs/24-jobs.md) · [Webhooks & files](docs/33-webhooks-files.md) · [Installable apps & push](docs/31-pwa-push.md) · [Desktop apps](docs/32-desktop.md) · [Building AI apps](docs/20-ai-apps.md) |
+| Ship | [Testing](docs/11-testing.md) · [Deployment](docs/12-deployment.md) · [Scaling](docs/25-scaling.md) · [Logs, metrics & tracing](docs/26-observability.md) · [Performance](docs/29-performance.md) · [Security](docs/13-security.md) · [CLI](docs/14-cli.md) · [Upgrading to 0.6](docs/27-upgrading.md) |
+| Reference | [Recipe: wallets & web3](docs/22-recipe-web3.md) · [Toolkit & stability](docs/15-toolkit.md) · [Limitations & roadmap](docs/16-limitations-roadmap.md) · [Architecture](ARCHITECTURE.md) · [Threat model](THREAT_MODEL.md) · [Changelog](CHANGELOG.md) |
 
 The same docs are published at
 **[maanavkrishna.github.io/PyWeb](https://maanavkrishna.github.io/PyWeb/)**,

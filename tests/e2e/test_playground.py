@@ -250,3 +250,28 @@ def test_database_jobs_and_sign_in(page, site):
     page.click('.pg-tabs [data-tab="requests"]')
     page.locator(".pg-req", has_text="create_project").locator("summary").click()
     expect(page.locator(".pg-req", has_text="create_project")).to_contain_text("INSERT")
+
+
+@pytest.mark.skipif(not SQLITE, reason="the pyodide package has no sqlite3 wheel (CI downloads it)")
+def test_teams_and_the_install_preview(page, site):
+    app = open_playground(page, site, "#saas")
+    expect(page.locator("#pg-member")).to_be_attached()
+    page.select_option("#pg-user", "user")                                 # owns "Demo team"
+    expect(page.locator("#pg-console")).to_contain_text("owner of Demo team", timeout=15000)
+    page.fill("#pg-url", "/projects")
+    page.press("#pg-url", "Enter")
+    app.locator("#new-project").click()
+    app.locator("input[name=name]").fill("Shared plan")
+    app.locator("dialog button[type=submit]").click()
+    expect(app.locator("#tasks li")).to_have_count(3, timeout=15000)
+    page.select_option("#pg-user", "member")                               # a teammate sees the team's project
+    expect(page.locator("#pg-console")).to_contain_text("member of Demo team", timeout=15000)
+    page.fill("#pg-url", "/projects")
+    page.press("#pg-url", "Enter")
+    expect(app.locator(".project", has_text="Shared plan")).to_be_visible(timeout=15000)
+    page.click('.pg-tabs [data-tab="install"]')                            # the saas app is installable
+    expect(page.locator(".pg-app b")).to_have_text("Teamboard")
+    expect(page.locator(".pg-icons img")).to_have_count(2)
+    expect(page.locator(".pg-json")).to_contain_text('"display"')
+    page.locator("#pg-example").select_option("counter")                   # not installable: no tab
+    expect(page.locator("#pg-installtab")).to_be_hidden(timeout=30000)

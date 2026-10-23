@@ -961,7 +961,7 @@ def main(argv=None):
     p.add_argument("--days", type=float, default=7, help="purge: finished more than this many days ago")
     p.add_argument("--timeout", type=float, default=60, help="run: give up after this many seconds")
     p.set_defaults(fn=cmd_jobs)
-    p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=list(__import__("pyweb.mcp", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (saas: accounts, data, jobs, admin)"); p.set_defaults(fn=cmd_new)
+    p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=list(__import__("pyweb.mcp", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (saas: teams, accounts, data, jobs, admin; desktop: a notes app in its own window)"); p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server (stdio) for AI assistants"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
     p = sub.add_parser("check"); p.add_argument("file"); p.add_argument("--strict", action="store_true", help="exit 1 on any finding (security warnings too)")

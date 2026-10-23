@@ -49,14 +49,24 @@ def test_the_form_works_without_javascript(client):
     assert "Launch" in client.get(res.header("Location")).text
 
 
-def test_people_only_see_their_own_projects(client):
+def test_teams_only_see_their_own_projects(client):
     client.login("ann@example.com")
-    project = client.rpc("create_project", project={"name": "Secret plans"})
+    project = client.rpc("create_project", project={"name": "Secret plans"})   # in Ann's own team
     client.logout()
     client.login("bob@example.com")
-    assert client.get(f"/projects/{project['id']}").status == 404
+    assert client.get(f"/projects/{project['id']}").status == 404           # another team's: not found
     with pytest.raises(RPCError):
         client.rpc("add_task", project_id=project["id"], title="sneaky")
+
+
+def test_teammates_share_projects(client):
+    client.login("ann@example.com", org="Rocket team")
+    project = client.rpc("create_project", project={"name": "Launch"})
+    client.logout()
+    client.login("bob@example.com", org="Rocket team", org_role="member")
+    assert "Launch" in client.get(f"/projects/{project['id']}").text
+    client.rpc("add_task", project_id=project["id"], title="Book the venue")
+    assert jobs.Worker(schedule=False).drain() == 1                           # the checklist job, for the team
 
 
 def test_tasks(client):

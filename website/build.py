@@ -67,7 +67,7 @@ DOCS = [
     ("29-performance.md", "performance", "Performance", "Ship"),
     ("13-security.md", "security", "Security model", "Ship"),
     ("14-cli.md", "cli", "Command line", "Ship"),
-    ("27-upgrading.md", "upgrading", "Upgrading to 0.5", "Ship"),
+    ("27-upgrading.md", "upgrading", "Upgrading to 0.6", "Ship"),
     ("15-toolkit.md", "toolkit", "Toolkit & stability", "Reference"),
     ("22-recipe-web3.md", "web3", "Recipe: wallets & web3", "Reference"),
     ("16-limitations-roadmap.md", "roadmap", "Limitations & roadmap", "Reference"),
@@ -432,7 +432,7 @@ def markdown(text, *, compile_pyweb=True):
 
 # ------------------------------------------------------------------ layout
 
-CSS_VERSION = "5"
+CSS_VERSION = "6"
 
 LOGO = ('<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="pwg" x1="0" y1="0" x2="1" y2="1">'
         '<stop offset="0" stop-color="#3d5afe"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#f2a10c"/>'
@@ -447,6 +447,9 @@ _ICON_PATHS = {
     "form": '<path d="m9 11 3 3 9-9"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     "user": '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
     "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    "users": '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+             '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "lock": '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
     "rocket": '<path d="M5 15c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>'
               '<path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>'
               '<path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
@@ -484,7 +487,7 @@ PYODIDE_CDN = f"https://cdn.jsdelivr.net/pyodide/v{PYODIDE_VERSION}/full/"
 PLAYGROUND_EXAMPLES = [("counter", "Counter"), ("todo", "Todo list"), ("ui", "UI kit and motion"),
                        ("showcase", "Showcase: server search"),
                        ("site", "Multi-page site with a layout"), ("blog", "Blog: a Model and pages"),
-                       ("saas", "SaaS: accounts, data, forms, jobs"), ("auth", "Sign-in and sessions"),
+                       ("saas", "SaaS: teams, data, forms, jobs"), ("auth", "Sign-in and sessions"),
                        ("chat", "Chat with live updates"), ("ai-chat", "AI chat (demo model)")]
 
 
@@ -786,6 +789,14 @@ def landing(bench, demo_gz):
         ("user", "server", "Accounts in one line",
          "<code>app.use_auth()</code>: sign-up, passkeys, magic links, GitHub/Google/Microsoft, two-factor, "
          "throttling, an audit log and <code>/admin</code> for every Model."),
+        ("users", "server", "Teams",
+         "<code>app.use_auth(orgs=True)</code>: organizations, invitations, roles and plans. "
+         "<code>class Project(Model, tenant=True)</code> keeps each team's rows its own, in every query, live list and "
+         "job, and on Postgres the database enforces it too."),
+        ("desktop", "both", "Installable and desktop",
+         "<code>App(pwa=True)</code> makes the app installable, with an offline page and Web Push. "
+         "<code>pyweb desktop</code> opens the same file in its own window, and <code>pyweb build --desktop</code> "
+         "packages an installer."),
         ("bolt", "both", "Live, row by row",
          "<code>Post.query().live()</code> updates every open tab when the data changes, one changed row at a time over "
          "one WebSocket. Server functions that <code>yield</code> stream AI replies, with a Stop that really stops."),
@@ -795,6 +806,10 @@ def landing(bench, demo_gz):
         ("shield", "server", "Checked boundaries",
          "Database handles, imports and secrets can't reach browser code: it's a compile error with a line number. "
          "<code>pyweb inspect</code> explains every decision."),
+        ("lock", "both", "Security by design",
+         "Trusted Types and a hashed CSP, encrypted fields, rate limits per function, an SSRF-safe "
+         "<code>fetch</code>, signed webhooks and secret scanning. A <a href=\"https://github.com/MaanavKrishna/PyWeb/blob/main/THREAT_MODEL.md\">threat model</a> "
+         "lists every threat with its test."),
         ("box", "browser", "npm without Node",
          "<code>pyweb add chart.js/auto</code> vendors a package for browser code, pinned in "
          "<code>pyweb.lock</code>. No <code>node_modules</code>, no bundler."),
@@ -810,7 +825,7 @@ def landing(bench, demo_gz):
          "completion for your Models, and a lens that writes migrations.", "Set up your editor"),
         ("ai-assistants.html", "AI assistants", "An MCP server to scaffold, check, render, screenshot and test, and to "
          "read your schema, data and recent requests.", "Connect an assistant"),
-        ("saas-tutorial.html", "A SaaS in an hour", "Accounts, data, live updates, a job and an admin, then "
+        ("saas-tutorial.html", "A SaaS in an hour", "Teams, data, live updates, a job and an admin, then "
          "<code>pyweb deploy</code>: the tutorial builds and ships one.", "Follow it"),
     ]
     tool_html = "".join(f'<a class="tool reveal" href="{h}"><b>{t}</b><span>{d}</span><em>{c} →</em></a>'
@@ -826,10 +841,10 @@ def landing(bench, demo_gz):
 <div class="hero-wrap">
 <section class="hero">
   <div class="hero-text">
-    <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: Models, forms, accounts, live updates, jobs, deploys →</a>
+    <a class="eyebrow" href="changelog.html"><b>New</b> {__version__}: teams, installable and desktop apps, a UI kit with motion →</a>
     <h1>Full-stack web apps in <span class="grad">one Python file.</span></h1>
     <p class="sub">PyWeb is a Python web framework: server-rendered pages, a reactive UI compiled from Python, and typed calls to
-    server functions, plus the rest of a product (data, forms, accounts, live updates, background jobs, deploys) in the same file.
+    server functions, plus the rest of a product (data, forms, accounts and teams, live updates, background jobs, deploys) in the same file.
     No JavaScript toolchain, no runtime download.</p>
     <div class="cta"><a class="btn primary" href="quickstart.html">Get started <span class="arrow">→</span></a>
     <a class="btn" href="playground.html">Try it in your browser</a></div>
@@ -864,7 +879,7 @@ def landing(bench, demo_gz):
   </div>
 </section>
 <section class="band product">
-  <div class="band-text reveal"><div class="kicker">New in 0.5</div>
+  <div class="band-text reveal"><div class="kicker">One file</div>
     <h2>A whole product, still one file</h2>
     <p>Accounts, a table with rules, a form, a background job and a list that updates in every open tab: {len(product.strip().splitlines())} lines.</p>
     <ul class="checks"><li><code>app.use_auth()</code> adds sign-up, passkeys, OAuth and <code>/admin</code></li>
@@ -1040,12 +1055,14 @@ def playground_page():
       <button type="button" role="tab" data-tab="db" aria-selected="false">Database</button>
       <button type="button" role="tab" data-tab="js" aria-selected="false">JavaScript</button>
       <button type="button" role="tab" data-tab="place" aria-selected="false">What runs where</button>
+      <button type="button" role="tab" data-tab="install" aria-selected="false" id="pg-installtab" hidden>Install</button>
     </div>
     <div class="pg-urlbar">
       <button id="pg-reload" class="pg-icon" type="button" title="Reload the page" aria-label="Reload">{icon("reset")}</button>
       <select id="pg-page" aria-label="Page"></select><input id="pg-url" aria-label="Path" value="/">
       <select id="pg-user" aria-label="Visitor" title="Who is looking: sign the preview in as a test account">
-        <option value="">Signed out</option><option value="user">Signed in</option><option value="admin">Admin</option></select>
+        <option value="">Signed out</option><option value="user">Signed in</option>
+        <option value="member" id="pg-member" hidden>Team member</option><option value="admin">Admin</option></select>
       <div class="pg-sizes" role="group" aria-label="Preview width">
         <button type="button" data-width="390" title="Phone" aria-label="Phone width">{icon("phone")}</button>
         <button type="button" data-width="768" title="Tablet" aria-label="Tablet width">{icon("tablet")}</button>
@@ -1058,6 +1075,7 @@ def playground_page():
     <div id="pg-db" class="pg-panel pg-db" hidden><p class="pg-empty">Apps with <code>App(database=...)</code> keep their rows here (a fresh SQLite database each run). Pick a table to see what your server functions wrote.</p></div>
     <div id="pg-jswrap" class="pg-panel" hidden><div class="pg-jsinfo" id="pg-jsinfo"></div><pre id="pg-js"></pre></div>
     <div id="pg-place" class="pg-panel" hidden></div>
+    <div id="pg-install" class="pg-panel pg-install" hidden></div>
   </section>
 </div>
 <p class="pg-note">Everything runs in your browser: PyWeb's compiler, server rendering and your <code>@server</code>

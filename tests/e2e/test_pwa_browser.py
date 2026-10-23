@@ -56,6 +56,8 @@ def test_installable_and_offline(page, tmp_path):
         until(page, "document.documentElement.dataset.pwPush !== undefined")
         assert page.evaluate("document.documentElement.dataset.pwPush") in ("default", "denied", "unsupported")
         assert "pyweb_display=browser" in page.evaluate("document.cookie")
+        page.click("text=two")                     # links still work once <html data-pw-push> is set
+        expect(page.locator("h1")).to_have_text("Page two")
         page.goto(url + "/two")                                          # kept for offline (signed out)
         expect(page.locator("h1")).to_have_text("Page two")
     # The server is gone: a kept page still opens, others show the offline page.

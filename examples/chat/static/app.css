@@ -82,3 +82,24 @@ main.pw-sidebar-inset { max-width: none; margin: 0; padding: 0; }
 .hero h1 { font-size: var(--pw-text-4xl); line-height: var(--pw-leading-4xl); margin: var(--pw-space-6) 0 var(--pw-space-4); }
 .hero .row { justify-content: center; margin-top: var(--pw-space-8); }
 .user-button { width: 100%; justify-content: flex-start; }
+.pw-sidebar-header .team { display: block; padding: 0 var(--pw-space-4) var(--pw-space-3); color: var(--pw-fg-muted);
+  font-size: var(--pw-text-sm); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-sidebar-header .team:hover { color: var(--pw-fg); }
+
+/* desktop notes */
+main.notes { display: grid; grid-template-columns: 240px 1fr; max-width: none; margin: 0; padding: 0; height: 100vh; }
+.note-list { border-right: 1px solid var(--pw-border); background: var(--pw-surface); overflow-y: auto; padding: var(--pw-space-4); }
+.list-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--pw-space-4); }
+.list-head h1 { font-size: var(--pw-text-lg); margin: 0; }
+.note-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--pw-space-1); }
+.note { width: 100%; text-align: left; font: inherit; color: var(--pw-fg); background: none; border: 0;
+  border-radius: var(--pw-radius); padding: var(--pw-space-2) var(--pw-space-3); cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note:hover { background: var(--pw-gray-3); }
+.note.active { background: var(--pw-accent-3); color: var(--pw-accent-11); font-weight: 600; }
+.editor { display: flex; flex-direction: column; gap: var(--pw-space-4); padding: var(--pw-space-6); min-width: 0; }
+.note-title { font-size: var(--pw-text-xl); font-weight: 600; }
+.panes { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: var(--pw-space-4); min-height: 0; }
+.panes textarea { resize: none; height: 100%; font-family: var(--pw-font-mono); }
+.preview { overflow-y: auto; padding: var(--pw-space-2) var(--pw-space-4); border: 1px solid var(--pw-border); border-radius: var(--pw-radius); }
+@media (max-width: 640px) { main.notes { grid-template-columns: 1fr; height: auto; } .panes { grid-template-columns: 1fr; } }

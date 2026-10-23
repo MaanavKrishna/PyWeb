@@ -25,9 +25,10 @@ pyweb dev app.pyweb          # http://localhost:8000, reloads on save
 
 `pyweb new` writes `app.pyweb`, a starter test (`test_app.py`) and
 `AGENTS.md`/`CLAUDE.md` (instructions for AI coding agents). Add
-`--template saas` for a small product with accounts, a database,
-migrations, live updates, a background job and an admin, or `todo`,
-`blog`, `auth`, `chat`, `ai-chat` or `blank`. The default app is a counter.
+`--template saas` for a small product with teams, accounts, a database,
+migrations, live updates, a background job and an admin, `desktop` for a
+notes app in its own window, or `todo`, `blog`, `auth`, `chat`, `ai-chat`
+or `blank`. The default app is a counter.
 Without its styling (the template uses the UI kit's `Card` and `Button`), it is:
 
 ```pyweb

@@ -103,8 +103,9 @@ async function forgetPages() {
 }
 
 document.addEventListener("click", (event) => {
+  // <html data-pw-push> is the state, not a button: without this every click on the page was cancelled.
   const el = event.target instanceof Element ? event.target.closest("[data-pw-push]") : null;
-  if (!el) return;
+  if (!el || el === document.documentElement) return;
   event.preventDefault();
   const action = el.getAttribute("data-pw-push");
   const run = action === "unsubscribe" ? unsubscribe : action === "toggle"

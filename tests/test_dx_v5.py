@@ -217,7 +217,7 @@ def test_mcp_data_tools(tmp_path, monkeypatch):
     schema = mcp.tool_db_schema(p)
     project = next(m for m in schema["models"] if m["model"] == "Project")
     owner = next(f for f in project["fields"] if f["name"] == "owner_id")
-    assert owner["references"] == "User" and owner["readonly"] and project["policy"]
+    assert owner["references"] == "User" and owner["readonly"] and project["tenant"]   # scoped to its team
     assert "projects" in schema["tables"] and schema["drift"] == []
 
     client = mcp.APPS.client("app.pyweb")
@@ -420,6 +420,8 @@ def test_check_finds_app_level_risks(tmp_path, capsys):
     assert not any(k == "missing-policy" and line == at("class Tag(Model)") for k, line in found)
     fixed = CHECK_APP + "\nNote.policy(read=lambda user: Note.owner_id == (user.id if user else -1))\n"
     assert not any(f["kind"] == "missing-policy" for f in check_source(fixed, "app.pyweb"))
+    tenant = CHECK_APP.replace("class Note(Model)", "class Note(Model, tenant=True)")     # scoped to its team
+    assert not any(f["kind"] == "missing-policy" for f in check_source(tenant, "app.pyweb"))
     (tmp_path / "app.pyweb").write_text(CHECK_APP.replace("db.execute", "app.db.execute"))
     main(["check", str(tmp_path / "app.pyweb")])                              # warnings: still exit 0
     with pytest.raises(SystemExit) as e:

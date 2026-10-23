@@ -23,10 +23,12 @@ pipeline.compile_source ─► {pages: {html (static prerender), js, signals, pl
                           ▼
          runtime/server Server ─► hosting.Site ─► net/server (pyweb dev, pyweb serve) │ asgi.create_app
                                     │
-          models + db (queries, migrations) · forms · authkit · livedata · jobs · telemetry
+          models + db (queries, migrations, tenancy) · forms · authkit (orgs) · livedata · jobs
+          · webhooks · pwa/push · desktop gate · ui (theme.css, ui.css) · telemetry
                                                       │
 browser:  runtime.js (signals, DOM regions, py helpers, rpc) + <Page>.js ─► mount()
-          + forms.js, live.js, auth.js, markdown.js on the pages that need them
+          + forms.js, live.js, auth.js, markdown.js, ui/*.js, motion*.js, pwa.js, sw.js
+            on the pages that need them
 ```
 
 ## 1. Parsing (`pyweb/compiler/parser.py`)
@@ -130,7 +132,10 @@ handlers or events get no module.
   signals afterwards. Any mismatch throws inside the hydration pass,
   which disposes what it built and falls back to a fresh client render.
 - **Safety:** text is always set as text; `javascript:` URLs are
-  neutralised.
+  neutralised. The page's CSP requires Trusted Types, and the runtime's
+  only HTML and script sinks go through three private policies:
+  `pyweb-md` (Markdown output), `pyweb-nav` (parsing the next page during
+  client navigation) and `pyweb-sw` (accepts `/sw.js` only).
 - **RPC:** `rpc()` posts JSON, maps errors to `RPCError(code, message)`,
   supports retries, timeouts and abort signals. Calls to server functions
   that `yield` return an `RpcStream`: an async iterable that reads the
@@ -148,6 +153,21 @@ handlers or events get no module.
   query's feed; `watch(get, fn)` runs a handler when a value changes.
   `markdown.js` (loaded only by pages that use `<Markdown>`) renders
   Markdown with the same rules as `pyweb/markdown.py`.
+- **UI kit behaviours** (`runtime/browser/ui/`): kit components are
+  `.pyweb` files (`pyweb/ui/kit/`) that render plain HTML with
+  `data-pw-ui` and `data-part` attributes. `ui/index.js` finds those
+  elements (on load, navigation and through a MutationObserver) and
+  imports one small module per kind (dialog, menu, combobox, tabs, ...),
+  built on shared focus, dismiss-layer, roving-tabindex and placement
+  code in `core.js`. Styling is one stylesheet on theme variables
+  (`/__pyweb/ui.css`, `/__pyweb/theme.css` computed in OKLCH by
+  `ui/theme.py`).
+- **Motion** (`motion.js` and its lazily loaded modules): the compiler
+  turns `initial=`/`animate=`/`exit=`/`layout`/`drag` into one
+  `data-pw-motion` attribute; the engine samples springs into Web
+  Animations keyframes and keeps velocity when interrupted. The runtime
+  has two hooks: `G.exit` lets a leaving row animate out before removal,
+  and `G.swap` wraps navigation in a View Transition.
 
 ## 7. Server (`app_loader.py`, `runtime/server`, `hosting.py`)
 
@@ -156,8 +176,11 @@ placeholders are no-ops) and appends, for each page and component, a
 *state function*: a copy of the function without markup statements that
 returns `locals()`. Rendering a page calls it with the route parameters
 (converted by annotation), honours an early `redirect(...)`, renders the
-UI tree with `ssr.Renderer` (real Python evaluation, same rules as the
-browser), and embeds the browser-read values as JSON. Imported `.pyweb`
+UI tree, and embeds the browser-read values as JSON. Each page's tree is
+compiled once into a Python function that builds the HTML
+(`ssr_codegen.py`); `ssr.Renderer`, which walks the tree, is the
+reference it is tested against (`PYWEB_SSR_VERIFY=1` runs both and
+compares). Imported `.pyweb`
 files are executed the same way as modules registered under their
 import name; a component's render env carries the file it came from, so
 nested components resolve in that file and its markup sees its globals.
@@ -175,7 +198,10 @@ adapter.
 **The network server** (`pyweb/net/`) is PyWeb's own, standard library
 only: one asyncio loop per process holds every keep-alive connection,
 event stream and WebSocket as a coroutine, while page renders and RPC
-calls (ordinary blocking Python) run on a thread pool. `http.py` and
+calls (ordinary blocking Python) run on a thread pool, on the same thread
+that handles the request (the render time limit is enforced by the
+connection handler). On free-threaded Python one process uses every
+core. `http.py` and
 `ws.py` are I/O-free parsers: the HTTP parser refuses anything that could
 desync a proxy (both `Content-Length` and `Transfer-Encoding`, duplicate
 lengths, folded headers, bad chunk sizes) and the WebSocket codec enforces
@@ -203,6 +229,16 @@ disconnects.
   relation and, while developing, raises on a relation read that wasn't
   `include()`d (no silent N+1). Row policies (`Model.policy(read=,
   write=)`) are added to every query and save made for a request.
+- **Tenancy** (`tenancy.py`, `db/rls.py`): `Model, tenant=True` adds an
+  `org` foreign key. The current organization comes from a contextvar
+  (`org_scope`), set from the session for requests and restored in jobs
+  from their payload; `read_scope` ANDs it with the row policy, and
+  writes are stamped or refused. On Postgres, migrations add row-level
+  security policies on `current_setting('pyweb.org_id')`, which the pool
+  sets before statements that touch tenant tables.
+- **Encrypted fields** (`fieldcrypt.py`): `Field(encrypted=True)` stores
+  AES-256-GCM ciphertext with a per-column key derived from
+  `PYWEB_DATA_KEY`; `searchable=True` adds an HMAC blind index column.
 - **Migrations** (`db/schema.py`, `db/migrate.py`): `from_models` and
   `introspect` describe the wanted and the actual schema the same way;
   `diff` turns the difference into operations, splitting risky changes
@@ -242,7 +278,25 @@ With `RedisBus`, changes reach every process and host.
   work without JavaScript, scrypt or argon2id passwords, passkeys
   (`webauthn.py`, pure Python ES256/RS256), magic links, OAuth with PKCE,
   TOTP, delay-based throttling instead of lockouts, and `/admin` for every
-  Model.
+  Model. With `orgs=True`, `orgs.py`/`teams.py`/`orgpages.py` add
+  organizations, memberships, invitations, plans and their pages;
+  `tokens.py` adds API tokens (`Authorization: Bearer` on RPC only) and
+  `privacy.py` data export and account deletion.
+- **Webhooks and files** (`webhooks.py`, `filegc.py`): inbound receivers
+  verify GitHub, Stripe or Standard Webhooks signatures, drop repeats and
+  run the handler as a job; outbound deliveries are signed and retried by
+  a self-requeueing job through the SSRF-safe `http.fetch`. Uploads are
+  recorded in `pyweb_files`, and a daily job deletes files no `File`
+  field references.
+- **Installable apps and push** (`pwa.py`, `push.py`): the manifest,
+  icons (stdlib PNG resizing) and a versioned service worker; Web Push
+  with VAPID and RFC 8291 encryption, delivered by jobs.
+- **Desktop** (`desktop/`): `pyweb desktop` runs the same `Site` on
+  127.0.0.1 behind a gate (a one-time launch token becomes an HttpOnly
+  cookie; exact Host and Origin checks) and opens a pywebview window.
+  Desktop-only functions (file dialogs, notifications) are server-side
+  Python, so the page gains no extra power. `package.py` writes a
+  Briefcase project for installers.
 - **Jobs** (`jobs/`): `@app.job` and `@app.cron` share one store
   interface with three backends: the app's database (`pyweb_jobs`; claims
   with `FOR UPDATE SKIP LOCKED`, enqueueing joins the request's
@@ -286,9 +340,11 @@ field and records everything in `pyweb.lock`).
   commands and snippets, and starts the server.
 - **`pyweb mcp`** (`mcp.py`): the same compiler, `TestClient`, Playwright
   and pytest behind MCP tools for AI assistants, plus read-only data
-  tools (schema, guarded queries, migrations, jobs, recent requests).
+  tools (schema, guarded queries, migrations, jobs, recent requests),
+  `pyweb_openapi` and `pyweb_security_check`. `pyweb_render` and
+  `pyweb_call` can act as a signed-in member of an organization.
 - **`pyweb upgrade`** (`upgrade.py`): reads an app and its scripts and
-  lists what changed since 0.4, with safe rewrites behind `--fix`.
+  lists what changed since 0.4 and 0.5, with safe rewrites behind `--fix`.
 - **Playground** (`website/playground`): PyWeb itself runs in Pyodide.
   `host.py` wraps a `TestClient`; the page renders its HTML into an
   iframe and a fetch bridge sends the iframe's `/__pyweb/` requests back

@@ -1,0 +1,125 @@
+"""Notes: a desktop app. Notes live in a database in your data folder; export one as a Markdown
+file with the system's Save dialog.
+
+Run it:      pyweb desktop app.pyweb      (or `pyweb dev app.pyweb` in a browser)
+Package it:  pyweb build --desktop app.pyweb --package
+"""
+
+import re
+
+from pyweb import App, Field, Markdown, Model, platform, server
+from pyweb.desktop import Window
+from pyweb.ui import Button, Theme, toast
+
+app = App(title="Notes", database="sqlite:///notes.db", stylesheets=["/static/app.css"],
+          theme=Theme.preset("ocean"), desktop=Window(width=1000, height=680, min_size=(640, 420)))
+
+
+class Note(Model):
+    title: str = Field(default="", max=120)
+    body: str = ""
+
+
+def all_notes():
+    return [n.to_dict() for n in Note.query().order("-id")]
+
+
+@server
+def new_note() -> dict:
+    return Note.create(title="Untitled", body="").to_dict()
+
+
+@server
+def save_note(note_id: int, title: str, body: str) -> dict:
+    note = Note.get_or_404(note_id)
+    note.title, note.body = title.strip()[:120] or "Untitled", body
+    note.save()
+    return note.to_dict()
+
+
+@server
+def delete_note(note_id: int) -> None:
+    Note.get_or_404(note_id).delete()
+
+
+@server
+def export_note(note_id: int) -> str:
+    """The system's Save dialog (desktop only); returns where the file went, or "" if cancelled."""
+    from pyweb import desktop
+    note = Note.get_or_404(note_id)
+    name = re.sub(r"[^\w-]+", "-", note.title.lower()).strip("-") or "note"
+    path = desktop.save_file(f"{name}.md", f"# {note.title}\n\n{note.body}\n", types=("Markdown (*.md)",))
+    if path:
+        toast("Exported", path, tone="success")
+    return path or ""
+
+
+@app.page("/")
+def Notes():
+    notes = all_notes()
+    in_desktop = platform.desktop
+    selected = notes[0]["id"] if notes else 0
+    title = notes[0]["title"] if notes else ""
+    body = notes[0]["body"] if notes else ""
+
+    def pick(note):
+        selected = note["id"]
+        title = note["title"]
+        body = note["body"]
+
+    def add():
+        note = new_note()
+        notes = [note] + notes
+        pick(note)
+
+    def save():
+        saved = save_note(selected, title, body)
+        notes = [saved if n["id"] == selected else n for n in notes]
+
+    def remove():
+        delete_note(selected)
+        notes = [n for n in notes if n["id"] != selected]
+        if notes:
+            pick(notes[0])
+        else:
+            selected = 0
+
+    def export():
+        save()
+        export_note(selected)
+
+    <main class="notes">
+        <aside class="note-list">
+            <div class="list-head">
+                <h1>Notes</h1>
+                <Button id="new" size="sm" onclick={add}>New</Button>
+            </div>
+            <ul>
+                for note in notes:
+                    <li animate="fade">
+                        <button type="button" class={{"note": True, "active": note["id"] == selected}}
+                                onclick={lambda: pick(note)}>{note["title"] or "Untitled"}</button>
+                    </li>
+            </ul>
+            if not notes:
+                <p class="empty">No notes yet.</p>
+        </aside>
+        <section class="editor">
+            if selected:
+                <input id="title" class="pw-control note-title" bind={title} aria-label="Title" />
+                <div class="panes">
+                    <textarea id="body" class="pw-control" bind={body} aria-label="Note"
+                              placeholder="Write in Markdown…"></textarea>
+                    <div class="preview markdown" aria-label="Preview"><Markdown text={body} /></div>
+                </div>
+                <div class="row">
+                    <Button id="save" onclick={save}>Save</Button>
+                    if in_desktop:
+                        <Button id="export" variant="outline" onclick={export}>Export as Markdown…</Button>
+                    <span class="spacer"></span>
+                    <Button id="delete" variant="ghost" onclick={remove}>Delete</Button>
+                </div>
+            else:
+                <p class="empty">Make a note with New.</p>
+        </section>
+    </main>

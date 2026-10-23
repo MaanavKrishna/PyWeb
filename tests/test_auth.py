@@ -23,7 +23,8 @@ def test_session_sign_tamper_expiry():
     store = SessionStore("s3cr3t", ttl=1000)
     tok = store.create("u1", {"role": "admin"})
     assert store.get(tok)["user_id"] == "u1"
-    assert store.get(tok[:-2] + "xx") is None
+    tampered = tok[:-1] + ("A" if tok[-1] != "A" else "B")      # always differs from the real signature
+    assert store.get(tampered) is None
     assert store.get("bad") is None
     store.destroy(tok)
     assert store.get(tok) is None

@@ -376,7 +376,8 @@ def test_carry_and_restore_for_multi_step_forms(app):
     try:
         t = forms.carry({"step": 1, "email": "a@example.com"})
         assert forms.restore(t) == {"step": 1, "email": "a@example.com"}
-        assert forms.restore(t[:-2] + "00") is None and forms.restore(t, max_age=-1) is None
+        tampered = t[:-1] + ("1" if t[-1] == "0" else "0")      # always differs from the real signature
+        assert forms.restore(tampered) is None and forms.restore(t, max_age=-1) is None
         assert forms.restore(t, purpose="other") is None
     finally:
         deactivate(token)

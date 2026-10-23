@@ -32,7 +32,7 @@ import traceback
 
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 HERE = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES = ("blank", "counter", "todo", "blog", "saas", "auth", "chat", "ai-chat", "desktop")
+from ._templates import TEMPLATES  # noqa: E402
 
 INSTRUCTIONS = (
     "PyWeb builds full-stack web apps from one .pyweb file (Python + markup). Before writing PyWeb code, "

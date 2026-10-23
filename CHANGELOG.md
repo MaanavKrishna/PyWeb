@@ -56,6 +56,17 @@ project uses [semantic versioning](https://semver.org).
   offline page, and with `cache_pages=True` pages visitors opened while
   signed out stay readable offline. The worker is registered through a
   third Trusted Types policy, `pyweb-sw`, which accepts only `/sw.js`.
+- **A UI kit** (`from pyweb.ui import Button, Card, Badge, Alert, ...`):
+  themed, accessible, server-rendered components. `App(theme=Theme(accent=,
+  radius=, font=, density=, dark=))` or a preset computes 12-step OKLCH
+  colour scales (accent, gray, status colours; light and dark) with
+  contrast checked to 4.5:1. The kit's CSS sits in a cascade layer so
+  app CSS always wins, and every part carries `data-part`/`data-state`
+  attributes. `pyweb ui add|diff|list` copies a component's source into
+  the app. More components and motion are on the way in this release.
+- **Components pass attributes through.** A `**attrs` parameter takes any
+  other attribute, and `{**attrs}` spreads a dict onto an element
+  (explicit attributes win, classes merge).
 - **Desktop apps.** `pyweb desktop app.pyweb` opens the app in its own
   window (pywebview: WebView2, WKWebView, WebKitGTK or Qt), with its
   database, uploads and per-installation secrets in the OS's data folder.
@@ -119,6 +130,11 @@ project uses [semantic versioning](https://semver.org).
   were placeholders); `pyweb upgrade` points at them.
 
 ### Fixed
+- Markup right after an `if`/`for` block inside an element (a
+  `{children}` or text line at the block's indent) was put inside the
+  block; it now follows it.
+- An optional callback prop that wasn't passed no longer throws when its
+  event fires.
 - `get_or_404()` inside a server function answered 500; it now answers 404.
 - `Post.id` (and other columns added automatically) failed before the Model
   had been used once.

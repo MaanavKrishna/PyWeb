@@ -20,7 +20,7 @@ class App:
 
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
                  title="PyWeb", stylesheets=(), lang="en", base_url=None, description=None,
-                 image=None, client_nav=True, pwa=None, desktop=None):
+                 image=None, client_nav=True, pwa=None, desktop=None, theme=None):
         self.title = title
         self.stylesheets = list(stylesheets)
         self.lang = lang
@@ -32,6 +32,10 @@ class App:
         if pwa is not None and pwa is not False:
             from pyweb.pwa import config as _pwa_config
             _pwa_config(self)            # bad settings fail here, not on the first request
+        self.theme = theme               # pyweb.ui.Theme(...) or a preset name: the UI kit's look
+        if theme is not None:
+            from pyweb.ui.theme import config as _theme_config
+            _theme_config(self)
         self.desktop = desktop           # pyweb.desktop.Window(...): the window of the desktop app
         if desktop is not None:
             from pyweb.desktop import config as _desktop_config

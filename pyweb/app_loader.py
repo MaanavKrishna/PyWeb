@@ -195,7 +195,10 @@ class LoadedApp:
                 self.lib_modules[lib.path] for lib in self.libraries if lib.ctx is ctx)
         info = ctx.components[name]
         fn = module.__dict__[STATE_PREFIX + name]
-        local = fn(**{k: v for k, v in props.items() if k in info.params})
+        args = {k: v for k, v in props.items() if k in info.params}
+        if getattr(info, "rest", None):
+            args.update({k: v for k, v in props.items() if k not in info.params and k != "children"})
+        local = fn(**args)
         if module is self.module:
             return info.ui, local
         # Markup in another file sees that file's globals.
@@ -291,8 +294,17 @@ class LoadedApp:
         return page_html(name=page_name, title=title, body=body, state=state,
                          js_url=js_url if page["js"] else None, css_urls=self.stylesheets,
                          lang=self.lang, importmap=importmap, layouts=layouts,
-                         head=self.head_for(page, dynamic, path), head_extra=self.pwa_head() + _desktop_head(),
+                         head=self.head_for(page, dynamic, path), head_extra=self.kit_head() + self.pwa_head() + _desktop_head(),
                          nav=getattr(self.app, "client_nav", True) is not False)
+
+    def kit_head(self):
+        """The theme's and the UI kit's stylesheets: for apps that use the kit or set a theme."""
+        from .compiler.pipeline import KIT_DIR
+        uses_kit = any(os.path.abspath(lib.path).startswith(KIT_DIR) for lib in self.libraries)
+        if not uses_kit and getattr(self.app, "theme", None) is None:
+            return ""
+        from .ui import serve as ui_serve
+        return ui_serve.head_tags(self.app, kit=uses_kit)
 
     def pwa_head(self):
         """Manifest link, theme colour and service worker registration for installable apps."""

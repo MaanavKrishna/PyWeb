@@ -222,7 +222,7 @@ class Renderer:
                 if current:
                     out = f' aria-current="{current}"' + out
             return out
-        self._helpers = (text_of, _attr, href, _bind_attr, _plain, _select_bound, Markup)
+        self._helpers = (text_of, _attr, href, _bind_attr, _plain, _select_bound, Markup, spread_attrs)
         return self._helpers
 
     def component_html(self, tag, props, ns):
@@ -275,7 +275,19 @@ class Renderer:
 
     def attrs_html(self, n, env):
         parts = []
+        has_spread = any(k.startswith(SPREAD) for k in n.attrs)
+        spread_done = False
         for key, val in n.attrs.items():
+            if key.startswith(SPREAD):
+                if not spread_done:
+                    spread_done = True
+                    own = _own_class(n.attrs)
+                    own_v = None if own is None else (own[1] if own[0] == "lit" else self.eval(own[1], env, own[2]))
+                    dicts = [self.eval(v[1], env, v[2]) for k, v in n.attrs.items() if k.startswith(SPREAD)]
+                    parts.append(spread_attrs(explicit_names(n.attrs), own_v, dicts))
+                continue
+            if has_spread and key in ("class", "class_", "className"):
+                continue                              # merged with the spread's classes
             if key.startswith("on") or key == "ref":
                 continue
             if key == "bind":
@@ -341,7 +353,11 @@ class Renderer:
             raise RenderError(f"unknown component <{n.tag}>", n.line)
         props = {}
         for key, val in n.attrs.items():
-            if val is True:
+            if key.startswith(SPREAD):
+                for k, v in dict(self.eval(val[1], env, val[2]) or {}).items():
+                    if k not in n.attrs:
+                        props.setdefault(k, v)
+            elif val is True:
                 props[key] = True
             elif val[0] == "lit":
                 props[key] = val[1]
@@ -368,6 +384,42 @@ def _compiled_ui(nodes):
         _UI_CACHE.clear()
     _UI_CACHE[id(nodes)] = (nodes, compiled)
     return compiled
+
+
+SPREAD = "**"
+SKIP_SPREAD = ("children", "ref", "bind")
+
+
+def explicit_names(attrs):
+    """Attribute names written on the element (they win over a ``{**dict}`` spread)."""
+    return frozenset("class" if k in ("class_", "className") else k for k in attrs if not k.startswith(SPREAD))
+
+
+def _own_class(attrs):
+    for k in ("class", "class_", "className"):
+        v = attrs.get(k)
+        if isinstance(v, tuple):
+            return v
+    return None
+
+
+def spread_attrs(explicit, own_class, dicts):
+    """HTML for ``{**dict}`` spreads: their keys not written on the element, then the merged class.
+    Event handlers and ``children`` are skipped (the browser attaches handlers)."""
+    merged, classes = {}, [own_class]
+    for d in dicts:
+        if not d:
+            continue
+        for key, v in dict(d).items():
+            name = "class" if key in ("class_", "className") else str(key)
+            if name == "class":
+                classes.append(v)
+            elif name in explicit or name in SKIP_SPREAD or name.startswith("on") or name.startswith(SPREAD):
+                continue
+            else:
+                merged[name] = v
+    out = _attr("class", classes)
+    return out + "".join(_attr(name, v) for name, v in merged.items())
 
 
 def _attr(name, v):

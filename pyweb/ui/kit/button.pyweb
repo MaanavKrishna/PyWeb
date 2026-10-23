@@ -1,0 +1,24 @@
+"""Buttons (from pyweb.ui import Button, ButtonGroup).
+
+variant: "default" | "secondary" | "outline" | "ghost" | "link" | "destructive"
+size: "sm" | "md" | "lg" | "icon". With href=, it's a link that looks like a button.
+"""
+
+
+def Button(variant="default", size="md", type="button", href=None, loading=False, disabled=False,
+           onclick=None, children=None, **attrs):
+    busy = "true" if loading else None
+    if href:
+        <a class="pw-button" data-part="button" data-variant={variant} data-size={size} href={href}
+           aria-disabled={"true" if disabled else None} onclick={onclick} {**attrs}>{children}</a>
+    else:
+        <button class="pw-button" data-part="button" data-variant={variant} data-size={size} type={type}
+                disabled={disabled or loading} aria-busy={busy} onclick={onclick} {**attrs}>
+            if loading:
+                <span class="pw-spinner" aria-hidden="true"></span>
+            {children}
+        </button>
+
+
+def ButtonGroup(children=None, **attrs):
+    <div class="pw-button-group" role="group" data-part="button-group" {**attrs}>{children}</div>

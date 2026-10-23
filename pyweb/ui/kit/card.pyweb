@@ -1,0 +1,25 @@
+"""Cards (from pyweb.ui import Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter)."""
+
+
+def Card(children=None, **attrs):
+    <div class="pw-card" data-part="card" {**attrs}>{children}</div>
+
+
+def CardHeader(children=None, **attrs):
+    <div data-part="header" {**attrs}>{children}</div>
+
+
+def CardTitle(children=None, **attrs):
+    <h3 data-part="title" {**attrs}>{children}</h3>
+
+
+def CardDescription(children=None, **attrs):
+    <p data-part="description" {**attrs}>{children}</p>
+
+
+def CardContent(children=None, **attrs):
+    <div data-part="content" {**attrs}>{children}</div>
+
+
+def CardFooter(children=None, **attrs):
+    <div data-part="footer" {**attrs}>{children}</div>

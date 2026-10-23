@@ -337,6 +337,85 @@ function setProp(el, k, v) {
   }
 }
 
+const SKIP_SPREAD = new Set(["children", "ref", "bind"]);
+
+/**
+ * `{**attrs}` in markup: every key of the dict(s) becomes an attribute or event handler.
+ * Attributes written on the element win over the dict; classes are merged; keys the dict
+ * no longer has are removed again.
+ */
+function spread(el, props, keys) {
+  const explicit = new Set();
+  for (const k of Object.keys(props)) {
+    if (!k.startsWith("$")) explicit.add(k === "class_" || k === "className" ? "class" : k);
+  }
+  const own = props.class !== undefined ? props.class : props.class_ !== undefined ? props.class_ : props.className;
+  const handlers = {};
+  const listening = new Set();
+  let shown = new Set();
+  effect(() => {
+    const classes = [typeof own === "function" ? own() : own];
+    const now = new Set();
+    for (const k of keys) {
+      const d = props[k]();
+      if (d == null) continue;
+      const entries = d instanceof Map ? Array.from(d.entries()) : Object.entries(d);
+      for (const [rawKey, v] of entries) {
+        const key = rawKey === "class_" || rawKey === "className" ? "class" : String(rawKey);
+        if (key === "class") { classes.push(v); continue; }
+        if (SKIP_SPREAD.has(key) || explicit.has(key)) continue;
+        if (key.length > 2 && key[0] === "o" && key[1] === "n") {
+          handlers[key] = v;
+          if (!listening.has(key)) {
+            listening.add(key);
+            listen(el, key.slice(2).toLowerCase(), (e) => (typeof handlers[key] === "function" ? handlers[key](e) : undefined));
+          }
+          now.add(key);
+          continue;
+        }
+        applyAttr(el, key, v);
+        now.add(key);
+      }
+    }
+    for (const key of shown) {
+      if (now.has(key)) continue;
+      if (listening.has(key)) handlers[key] = null; else applyAttr(el, key, null);
+    }
+    shown = now;
+    applyAttr(el, "class", classes);
+  });
+}
+
+/**
+ * `<Comp {**d}>`: each key of `d` becomes the prop it names, others join the component's
+ * `**attrs`. Props written on the tag win. Values follow `d` reactively.
+ */
+export function spreadProps(props, spreads, params) {
+  const names = new Set(params);
+  const merged = () => {
+    const out = {};
+    for (const s of spreads) {
+      const d = s();
+      if (d == null) continue;
+      for (const [k, v] of (d instanceof Map ? d.entries() : Object.entries(d))) out[k] = v;
+    }
+    return out;
+  };
+  const keys = Object.keys(merged());
+  const out = { ...props };
+  for (const k of keys) {
+    if (names.has(k) && !(k in props)) out[k] = () => merged()[k];
+  }
+  const own = props.$rest;
+  out.$rest = () => {
+    const extra = {};
+    const m = merged();
+    for (const k of Object.keys(m)) if (!names.has(k)) extra[k] = m[k];
+    return own ? { ...extra, ...own() } : extra;
+  };
+  return out;
+}
+
 function toNodes(v, out) {
   if (v == null || v === false || v === true) return out;
   if (Array.isArray(v)) { for (const c of v) toNodes(c, out); return out; }
@@ -370,7 +449,13 @@ export function h(tag, props, children) {
   const bound = props && props.$bind;
   if (bound && tag !== "select") { if (props.type) el.setAttribute("type", props.type); bind(el, bound); }
   if (props) {
-    for (const k of Object.keys(props)) if (k !== "$bind" && k !== "$ref") setProp(el, k, props[k]);
+    const spreads = Object.keys(props).filter((k) => k.startsWith("$spread"));
+    for (const k of Object.keys(props)) {
+      if (k === "$bind" || k === "$ref" || k.startsWith("$spread")) continue;
+      if (spreads.length && (k === "class" || k === "class_" || k === "className")) continue;   // merged below
+      setProp(el, k, props[k]);
+    }
+    if (spreads.length) spread(el, props, spreads);
     if (props.$ref) props.$ref(el);
   }
   if (H) claimChildren(el, children || []);

@@ -193,7 +193,35 @@ def Home():
   instance. Their initial state must be computable in the browser (pass
   server data in as props).
 - Callback props are called like functions: `on_delete={...}` in the
-  parent, `onclick={on_delete}` inside the component.
+  parent, `onclick={on_delete}` inside the component. A callback prop
+  that wasn't passed (`None`) does nothing when the event fires.
+
+### Passing attributes through
+
+A component with a `**attrs` parameter accepts any other attribute
+(`id`, `aria-*`, `data-*`, `title`, event handlers...), and `{**attrs}`
+puts them on an element:
+
+```pyweb
+from pyweb import App
+
+app = App()
+
+
+def Button(variant="primary", children=None, **attrs):
+    <button class={"btn btn-" + variant} {**attrs}>{children}</button>
+
+
+@app.page("/")
+def Home():
+    <Button id="save" aria-label="Save the draft" class_="wide">Save</Button>
+```
+
+- Attributes written on the element win over the dict's.
+- Classes merge: the button above gets `class="btn btn-primary wide"`.
+- Keys the dict stops having are removed from the element.
+- `{**d}` works on any element and on components: keys that name a
+  prop set it, and the rest go to the component's `**attrs`.
 
 ## Splitting an app into files
 

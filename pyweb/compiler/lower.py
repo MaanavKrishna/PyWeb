@@ -29,6 +29,7 @@ import os
 import re
 
 from . import pyjs
+from .parser import SPREAD
 from .ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode, SlotNode, TextNode
 from .errors import CompileError
 from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
@@ -36,7 +37,7 @@ from .pyjs import (COMPUTED, CONST, HANDLER, PROP, SERVER, SIGNAL, VALUE,
 
 RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when as $when, signal as $signal, "
                   "computed as $computed, mount as $mount, onMount as $onMount, py as $py, rpc as $rpc, "
-                  "slot as $slot, onCleanup as $onCleanup } from \"./runtime.js\";")
+                  "slot as $slot, onCleanup as $onCleanup, spreadProps as $spreadProps } from \"./runtime.js\";")
 
 MARKDOWN_IMPORT = 'import { markdown as $markdown } from "./markdown.js";'
 FORMS_IMPORT = 'import "./forms.js";'
@@ -161,6 +162,7 @@ class PageInfo:
         self.layouts = []           # layouts wrapping this page, outermost first
         self.ui = []
         self.params = [a.arg for a in node.args.args]
+        self.rest = node.args.kwarg.arg if node.args.kwarg else None   # **attrs: props it doesn't name
         self.defaults = {}
         args = node.args
         for a, d in zip(args.args[len(args.args) - len(args.defaults):], args.defaults):
@@ -260,6 +262,19 @@ def scan_module(tree, ui_all, filename, resolve=None):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             mod = getattr(node, "module", None) or ""
             lib = None
+            if isinstance(node, ast.ImportFrom) and mod == "pyweb.ui" and resolve is not None \
+                    and hasattr(resolve, "kit"):
+                # The UI kit: each component comes from its own packaged .pyweb file.
+                for alias in node.names:
+                    kit_lib = resolve.kit(alias.name, node.lineno)
+                    if kit_lib is not None:
+                        _import_library(ctx, kit_lib, ast.ImportFrom(module=kit_lib.name, names=[alias], level=0,
+                                                                     lineno=node.lineno), filename)
+                    else:
+                        local = alias.asname or alias.name
+                        ctx.server_only[local] = f"imported with `from pyweb.ui import {alias.name}`"
+                ctx.uses_kit = True
+                continue
             if isinstance(node, ast.ImportFrom) and mod and not node.level and resolve:
                 lib = resolve(mod, node.lineno)
             if lib is not None:
@@ -746,7 +761,7 @@ def _has_events(nodes):
         if isinstance(n, MarkdownNode):
             return True
         if isinstance(n, Element):
-            if any(k.startswith("on") or k in ("bind", "ref") for k in n.attrs) or _has_events(n.children):
+            if any(k.startswith(("on", SPREAD)) or k in ("bind", "ref") for k in n.attrs) or _has_events(n.children):
                 return True
             if n.is_component:
                 return True
@@ -852,6 +867,11 @@ def classify(info, ctx):
     scope = ctx.module_scope().child(kind="page")
     for p in info.params:
         scope.names[p] = PROP if info.kind == "component" else CONST
+    if info.rest:
+        if info.kind != "component":
+            raise CompileError(f"only components take **{info.rest}; pages get their values from the "
+                               "route and the query string", info.node.lineno, ctx.filename)
+        scope.names[info.rest] = PROP
     for h in info.handlers:
         scope.names[h] = HANDLER
         scope.names["$fn:" + h] = info.handlers[h]
@@ -1073,6 +1093,8 @@ class Emitter:
                 lines.append(f"  const {js} = {arg}[{json.dumps(p)}] || ({_thunk(default)});")
             elif p in info.refs:
                 lines.append(f"  const {js} = {arg}[{json.dumps(p)}];")
+        if info.kind == "component" and info.rest:
+            lines.append(f"  const {jsname(info.rest)} = {arg}[\"$rest\"] || (() => ({{}}));")
         for name in info.order:
             if name not in info.refs and info.kinds[name] != SIGNAL:
                 continue
@@ -1213,6 +1235,10 @@ class Emitter:
         props = []
         for key, val in n.attrs.items():
             name = "class" if key in ("class_", "className") else key
+            if key.startswith(SPREAD):
+                _node, js = self._expr(val[1], val[2], scope)
+                props.append(f"{json.dumps('$spread' + key[len(SPREAD):])}: {_thunk(js)}")
+                continue
             if val is True:
                 props.append(f"{json.dumps(name)}: true")
                 continue
@@ -1242,8 +1268,8 @@ class Emitter:
             kind = scope.lookup(node.id)
             if kind == HANDLER:
                 return jsname(node.id)
-            if kind == PROP:
-                return f"(e) => {jsname(node.id)}()(e)"
+            if kind == PROP:       # an optional handler prop (None when not passed) does nothing
+                return f"(e) => {{ const f = {jsname(node.id)}(); return f ? f(e) : undefined; }}"
             if kind == SERVER:
                 raise CompileError(f"event handler {node.id!r} is a server function; call it from a "
                                    "handler or use a lambda: onclick={lambda: " + node.id + "(...)}",
@@ -1266,21 +1292,31 @@ class Emitter:
                                f"in this file, or import it (`from widgets import {n.tag}`)",
                                n.line, self.ctx.filename)
         comp = self.ctx.components[n.tag]
-        props = []
+        props, rest, spreads = [], [], []
+        rest_name = getattr(comp, "rest", None)
         for key, val in n.attrs.items():
-            if key not in comp.params:
-                raise CompileError(f"<{n.tag}> has no prop {key!r} (props: {', '.join(comp.params) or 'none'})",
-                                   n.line, self.ctx.filename)
+            if key.startswith(SPREAD):
+                _node, js = self._expr(val[1], val[2], scope)
+                spreads.append(_thunk(js))
+                continue
+            known = key in comp.params
+            if not known and not rest_name:
+                raise CompileError(f"<{n.tag}> has no prop {key!r} (props: {', '.join(comp.params) or 'none'}; "
+                                   f"give it **attrs to pass other attributes through)", n.line, self.ctx.filename)
             if val is True:
-                props.append(f"{json.dumps(key)}: () => true")
+                js = "true"
             elif val[0] == "lit":
-                props.append(f"{json.dumps(key)}: () => {json.dumps(val[1])}")
+                js = json.dumps(val[1])
+            elif key.startswith("on"):
+                js = self.handler_js(val[1], val[2], scope)
             else:
-                if key.startswith("on"):
-                    props.append(f"{json.dumps(key)}: {_thunk(self.handler_js(val[1], val[2], scope))}")
-                else:
-                    _node, js = self._expr(val[1], val[2], scope)
-                    props.append(f"{json.dumps(key)}: {_thunk(js)}")
+                _node, js = self._expr(val[1], val[2], scope)
+            if known:
+                props.append(f"{json.dumps(key)}: {_thunk(js)}")
+            else:
+                rest.append(f"{json.dumps(key)}: {js}")
+        if spreads and not rest_name and not comp.params:
+            raise CompileError(f"<{n.tag}> takes no props, so it can't take {{**...}}", n.line, self.ctx.filename)
         if n.children:
             if "children" not in comp.params:
                 raise CompileError(f"<{n.tag}> does not accept children (add a `children` parameter)",
@@ -1288,10 +1324,16 @@ class Emitter:
             props.append(f"\"children\": () => {self.ui_js(n.children, scope, ind)}")
         missing = [p for p in comp.params if p not in comp.defaults and p not in n.attrs
                    and not (p == "children" and n.children)]
-        if missing:
+        if missing and not spreads:
             raise CompileError(f"<{n.tag}> is missing required prop(s): {', '.join(missing)}",
                                n.line, self.ctx.filename)
-        return f"{jsname(n.tag)}({{{', '.join(props)}}})"
+        if rest:
+            props.append(f"\"$rest\": () => ({{{', '.join(rest)}}})")
+        call = f"{{{', '.join(props)}}}"
+        if spreads:
+            # Keys of a {**dict} go to the props they name, the rest to **attrs; written props win.
+            call = f"$spreadProps({call}, [{', '.join(spreads)}], {json.dumps(comp.params)})"
+        return f"{jsname(n.tag)}({call})"
 
 
 def _inside_lambda(root, target):

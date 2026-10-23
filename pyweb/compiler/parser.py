@@ -31,6 +31,7 @@ VOID = {"input", "img", "br", "hr", "meta", "link", "source", "wbr",
 CTL_RE = re.compile(r"^(for\s+.+\s+in\s+.+:|if\s+.+:|elif\s+.+:|else\s*:)\s*(#.*)?$")
 _TAG_START = re.compile(r"<(?:/?[A-Za-z]|!--)")
 _NAME = re.compile(r"[A-Za-z][A-Za-z0-9._:-]*")
+SPREAD = "**"          # attribute keys starting with this hold a {**dict} spread
 _ATTR_NAME = re.compile(r"[A-Za-z_@:][\w:.@-]*")
 
 
@@ -140,6 +141,14 @@ def _scan_tag(s, i):
             return ("open", tag, attrs, False), j + 1
         if closing:
             raise PyWebSyntaxError(f"unexpected attributes on </{tag}>")
+        if s[j] == "{":
+            # {**attrs}: every key of a dict as an attribute (explicit attributes win; classes merge)
+            code, j = _scan_braced(s, j)
+            code = code.strip()
+            if not code.startswith("**") or not code[2:].strip():
+                raise PyWebSyntaxError(f"in <{tag}>, braces without a name must spread a dict: {{**attrs}}")
+            attrs[f"{SPREAD}{len(attrs)}"] = ("expr", code[2:].strip(), 0)
+            continue
         m = _ATTR_NAME.match(s, j)
         if not m:
             raise PyWebSyntaxError(f"invalid attribute in <{tag}> near {s[j:j + 12]!r}")
@@ -517,7 +526,7 @@ def parse_ui_block(lines: dict[int, str]):
             stack.append(_CtlBox(node, indent))
             continue
         toks = scanned[lineno]
-        if toks and toks[0][0] in ("open", "close", "comment"):
+        if toks:          # any markup line (a tag, {expression} or text) back at the if/for's indent ends it
             while stack and isinstance(stack[-1], _CtlBox) and indent <= stack[-1].indent:
                 stack.pop()
         _append_tokens(toks, lineno, stack, root, closes)

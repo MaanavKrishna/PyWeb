@@ -58,6 +58,7 @@ DOCS = [
     ("33-webhooks-files.md", "webhooks", "Webhooks & files", "Server"),
     ("31-pwa-push.md", "pwa", "Installable apps & push", "Server"),
     ("32-desktop.md", "desktop", "Desktop apps", "Server"),
+    ("34-ui-and-motion.md", "ui", "UI kit & motion", "Language"),
     ("20-ai-apps.md", "ai-apps", "Building AI apps", "Server"),
     ("11-testing.md", "testing", "Testing", "Ship"),
     ("12-deployment.md", "deployment", "Deployment", "Ship"),

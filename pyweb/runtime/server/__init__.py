@@ -721,6 +721,12 @@ class Server:
             if answer is not None:
                 tel.route = "pwa"
                 return answer
+        if path in ("/__pyweb/ui.css", "/__pyweb/theme.css"):
+            from pyweb.ui import serve as _ui_serve
+            answer = _ui_serve.handle(self, req)
+            if answer is not None:
+                tel.route = "ui"
+                return answer
         hooks = getattr(getattr(self.app, "app", None), "webhooks", None)
         if hooks and path in hooks:
             from pyweb import webhooks as _webhooks

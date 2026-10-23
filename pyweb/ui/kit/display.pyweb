@@ -1,0 +1,59 @@
+"""Small display components (from pyweb.ui import Badge, Alert, AlertTitle, AlertDescription,
+Separator, Skeleton, Kbd, Avatar, AspectRatio, Progress, Label)."""
+
+
+def Badge(variant="soft", tone=None, children=None, **attrs):
+    <span class="pw-badge" data-part="badge" data-variant={variant} data-tone={tone} {**attrs}>{children}</span>
+
+
+def Alert(tone=None, children=None, **attrs):
+    role = "alert" if tone in ("danger", "warning") else "status"
+    <div class="pw-alert" data-part="alert" data-tone={tone} role={role} {**attrs}>{children}</div>
+
+
+def AlertTitle(children=None, **attrs):
+    <h5 data-part="title" {**attrs}>{children}</h5>
+
+
+def AlertDescription(children=None, **attrs):
+    <div data-part="description" {**attrs}>{children}</div>
+
+
+def Separator(orientation="horizontal", decorative=True, **attrs):
+    role = "none" if decorative else "separator"
+    aria_orientation = None if decorative else orientation
+    <div class="pw-separator" data-part="separator" data-orientation={orientation} role={role}
+         aria-orientation={aria_orientation} {**attrs}></div>
+
+
+def Skeleton(width=None, height="1em", radius=None, **attrs):
+    style = {"width": width, "height": height, "border-radius": radius}
+    <span class="pw-skeleton" data-part="skeleton" aria-hidden="true" style={style} {**attrs}></span>
+
+
+def Kbd(children=None, **attrs):
+    <kbd class="pw-kbd" data-part="kbd" {**attrs}>{children}</kbd>
+
+
+def Avatar(src=None, alt="", fallback="", size="md", **attrs):
+    initials = fallback or "".join(w[:1] for w in str(alt).split()[:2]).upper()
+    <span class="pw-avatar" data-part="avatar" data-size={size} {**attrs}>
+        if src:
+            <img src={src} alt={alt} loading="lazy" />
+        else:
+            <span aria-label={alt or None} role={"img" if alt else None}>{initials}</span>
+    </span>
+
+
+def AspectRatio(ratio=1.7777777777777777, children=None, **attrs):
+    style = {"padding-bottom": str(round(100 / ratio, 4)) + "%"}
+    <div class="pw-aspect" data-part="aspect-ratio" style={style} {**attrs}>{children}</div>
+
+
+def Progress(value=None, max=100, label=None, **attrs):
+    <progress class="pw-progress" data-part="progress" value={value} max={max} aria-label={label}
+              data-state={"indeterminate" if value is None else "loading"} {**attrs}></progress>
+
+
+def Label(children=None, **attrs):
+    <label class="pw-label" data-part="label" {**attrs}>{children}</label>

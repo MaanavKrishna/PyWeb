@@ -12,6 +12,7 @@ import ast
 import builtins
 import hashlib
 import os
+import re
 
 from . import parser as P
 from .codegen.ir import build_graph, to_text
@@ -85,16 +86,31 @@ def _defined_names(node):
     return []
 
 
-def _resolver(filename, libs, stack):
-    """Find ``<module>.pyweb`` next to ``filename`` and compile it (once)."""
-    if not filename or filename.startswith("<") or not os.path.isfile(filename):
-        return None
-    base = os.path.dirname(os.path.abspath(filename))
+KIT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ui", "kit")
+_kit_index_cache: dict = {}
 
-    def resolve(module, lineno):
-        path = os.path.join(base, *module.split(".")) + ".pyweb"
-        if not os.path.isfile(path):
-            return None
+
+def kit_index():
+    """``{component name: path}`` for the UI kit's components (``from pyweb.ui import Button``)."""
+    stamp = tuple(sorted((f, os.path.getmtime(os.path.join(KIT_DIR, f)))
+                         for f in os.listdir(KIT_DIR) if f.endswith(".pyweb"))) if os.path.isdir(KIT_DIR) else ()
+    if _kit_index_cache.get("stamp") != stamp:
+        index = {}
+        for fname, _m in stamp:
+            path = os.path.join(KIT_DIR, fname)
+            with open(path, encoding="utf-8") as fh:
+                for m in re.finditer(r"^def ([A-Z]\w*)\(", fh.read(), re.M):
+                    index[m.group(1)] = path
+        _kit_index_cache.update(stamp=stamp, index=index)
+    return _kit_index_cache["index"]
+
+
+def _resolver(filename, libs, stack):
+    """Find ``<module>.pyweb`` next to ``filename`` (and the UI kit's files) and compile it (once)."""
+    local = bool(filename) and not filename.startswith("<") and os.path.isfile(filename)
+    base = os.path.dirname(os.path.abspath(filename)) if local else None
+
+    def load(module, path, lineno):
         path = os.path.abspath(path)
         if path in stack:
             chain = " -> ".join(os.path.basename(p) for p in (*stack, path))
@@ -111,6 +127,22 @@ def _resolver(filename, libs, stack):
             libs[path] = Library(module, path, compiled, P.parse_source(source, path)[0])
         return libs[path]
 
+    def resolve(module, lineno):
+        if base is None:
+            return None
+        path = os.path.join(base, *module.split(".")) + ".pyweb"
+        if not os.path.isfile(path):
+            return None
+        return load(module, path, lineno)
+
+    def kit(name, lineno):
+        path = kit_index().get(name)
+        if path is None:
+            return None
+        stem = os.path.splitext(os.path.basename(path))[0]
+        return load(f"pyweb.ui.kit.{stem}", path, lineno)
+
+    resolve.kit = kit
     return resolve
 
 
@@ -132,6 +164,8 @@ def _renderer(ctx, globals_=None, strict=False):
                     args[p] = None
             else:
                 args[p] = None
+        if getattr(comp, "rest", None):
+            args[comp.rest] = {k: v for k, v in props.items() if k not in comp.params and k != "children"}
         env = static_state(comp, cctx, args)
         env[NS_KEY] = cctx
         return comp.ui, env

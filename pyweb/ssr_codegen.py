@@ -27,6 +27,7 @@ import sys
 import types
 
 from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode, SlotNode, TextNode
+from .ssr import SPREAD, _own_class, explicit_names
 
 _counter = itertools.count()
 _esc = _html.escape
@@ -102,7 +103,12 @@ class _Gen:
         props = self.var("props")
         self.emit(depth, f"{props} = {{}}")
         for key, val in n.attrs.items():
-            if val is True:
+            if key.startswith(SPREAD):
+                d = self.var("spread")
+                self.emit(depth, f"{d} = dict(({val[1]}) or {{}})", (val[1], val[2]))
+                self.emit(depth, f"for _k, _v in {d}.items():")
+                self.emit(depth + 1, f"if _k not in {sorted(n.attrs)!r}: {props}.setdefault(_k, _v)")
+            elif val is True:
                 self.emit(depth, f"{props}[{key!r}] = True")
             elif val[0] == "lit":
                 self.emit(depth, f"{props}[{key!r}] = {val[1]!r}")
@@ -143,7 +149,24 @@ class _Gen:
     def attrs(self, n, depth, out):
         """``<tag`` and its attributes; static parts are pre-rendered."""
         static = "<" + n.tag
+        has_spread = any(k.startswith(SPREAD) for k in n.attrs)
+        spread_done = False
         for key, val in n.attrs.items():
+            if key.startswith(SPREAD):
+                if spread_done:
+                    continue
+                spread_done = True
+                if static:
+                    self.emit(depth, f"{out}({static!r})")
+                    static = ""
+                own = _own_class(n.attrs)
+                own_code = "None" if own is None else (repr(own[1]) if own[0] == "lit" else f"({own[1]})")
+                dicts = ", ".join(f"({v[1]})" for k, v in n.attrs.items() if k.startswith(SPREAD))
+                self.emit(depth, f"{out}(_spread({explicit_names(n.attrs)!r}, {own_code}, [{dicts}]))",
+                          (val[1], val[2]))
+                continue
+            if has_spread and key in ("class", "class_", "className"):
+                continue
             if key.startswith("on") or key == "ref":
                 continue
             if key == "bind":
@@ -198,7 +221,7 @@ def compile_ui(nodes, label="ui"):
     gen.emit(1, "_a = _o.append")
     gen.block(nodes, 1, "_a")
     gen.emit(1, "return ''.join(_o)")
-    header = ("def _render(_g, _r, _nodes, _text, _attr, _href, _bind, _plain, _select, _Markup):")
+    header = ("def _render(_g, _r, _nodes, _text, _attr, _href, _bind, _plain, _select, _Markup, _spread):")
     source = header + "\n" + "\n".join(gen.lines) + "\n"
     filename = f"<pyweb-ssr-{next(_counter)}:{label}>"
     code = compile(source, filename, "exec")

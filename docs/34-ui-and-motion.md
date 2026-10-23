@@ -357,3 +357,98 @@ Each level is optional; most apps stop at the first.
    from there (`from components.button import Button`). `pyweb ui diff
    button` shows how your copy differs from the kit after an upgrade;
    `pyweb ui list` lists everything in the kit.
+
+## Motion
+
+Animations are attributes on any element:
+
+```pyweb
+from pyweb import App
+
+app = App(title="Tasks")
+
+
+@app.page("/")
+def Tasks():
+    tasks = ["Write docs", "Ship 0.6"]
+
+    def add():
+        tasks = tasks + [f"Task {len(tasks) + 1}"]
+    <main>
+        <button onclick={add} while_hover={{"scale": 1.05}} while_tap={{"scale": 0.95}}>Add</button>
+        <ul>
+            for t in tasks:
+                <li initial={{"opacity": 0, "y": 12}} animate={{"opacity": 1, "y": 0}}
+                    exit={{"opacity": 0, "x": -40}} layout>{t}</li>
+        </ul>
+    </main>
+```
+
+A new row slides in, a removed one slides out before it leaves the page,
+and the others glide to their new places.
+
+| Attribute | |
+|---|---|
+| `initial` | the pose it starts in (rendered by the server, so the first paint already starts there). `initial={False}` starts at `animate` |
+| `animate` | the pose to animate to. When the value changes (`animate={{"x": x}}`), it animates there from wherever it is |
+| `exit` | the pose to animate to before it's removed (an `if` turning false, a row leaving a `for`) |
+| `transition` | how: `{"type": "spring", "stiffness": 300, "damping": 24}`, `{"type": "spring", "duration": 0.4, "bounce": 0.3}`, `{"type": "tween", "duration": 0.3, "ease": "ease-out"}`, plus `delay`, `repeat` (a number, or `"infinite"`), `repeat_type` ("loop", "reverse"), and per value (`{"opacity": {"duration": 0.2}}`) |
+| `while_hover`, `while_tap`, `while_focus`, `while_in_view` | poses held while the pointer is over it, while pressed (Enter and Space too), while keyboard-focused, while on screen (`viewport={{"once": True, "amount": 0.3}}`) |
+| `variants` | named poses: `initial="hidden" animate="show"`. Children with `variants` follow their parent's label; the parent's `transition={{"stagger_children": 0.05}}` (and `delay_children`) staggers them |
+| `layout` | animates every change in its position and size (a reorder, an element opening above it). `layout="position"` animates only position |
+| `layout_id` | an element that appears with the same id as one that just went starts where that one was (a tab underline sliding between tabs). Across pages, client navigation morphs them |
+| `drag` | `drag`, `drag="x"` or `drag="y"`, with `drag_constraints` (`{"left": -100, "right": 100}` or `"parent"`), `drag_elastic` (0-1), `drag_momentum` (default on) and `drag_snap_back`. It fires `dragstart`, `drag` and `dragend` |
+
+Values are `x`, `y` (px, or a string like `"100%"`), `scale`, `scale_x`,
+`scale_y`, `rotate`, `rotate_x`, `rotate_y` (degrees), `opacity`, `blur`,
+and any CSS property (`"background_color": "#ff0"`, `"height": "auto"`).
+A list is keyframes: `animate={{"x": [0, -8, 8, 0]}}`. Physical values
+(position, scale, rotation) move on springs by default, and others on
+tweens. Interrupting an animation keeps its momentum: the next one
+starts from where the element is, at the speed it was going.
+
+**Presets.** `animate="fade-up"` uses a built-in animation, which sets
+the initial, animate and exit poses: `fade`, `fade-up`, `fade-down`,
+`fade-left`, `fade-right`, `slide-up`, `slide-down`, `slide-left`,
+`slide-right`, `scale`, `pop`, `blur-in`, `flip`, `collapse`, `shake`,
+`pulse`. `animate="count"` makes a number count from its old value to
+its new one whenever it changes (`<span animate="count">{total}</span>`).
+Add your own with `pyweb.motion.preset("hero-in", {"initial": {...},
+"animate": {...}})`.
+
+**Components.** Motion attributes on a component reach its root element,
+so `<Card animate="fade-up">` works with every kit component.
+`motion={False}` turns a kit component's own animations off.
+
+**Page transitions.** Client navigation runs inside the browser's View
+Transitions where available (a cross-fade by default; style it with
+`::view-transition-*`). Elements with the same `layout_id` on both pages
+morph into each other.
+
+**The whole app at once.** `App(motion=Motion(feel="gentle", speed=0.8,
+reduced="auto"))` (`from pyweb.motion import Motion`) changes every
+animation, the kit's included:
+- `feel` is "snappy" (default), "gentle", "bouncy", or "none" (no
+  animation);
+- `speed` scales every duration;
+- `reduced="auto"` follows the visitor's reduced-motion setting, so
+  movement jumps and fades stay short. `"always"` reduces for everyone,
+  and `"never"` ignores the setting.
+
+**Browser code.** `from pyweb.motion import animate, timeline, stagger,
+scroll_progress, use_transform` (in event handlers and other browser
+code):
+
+```python
+animate(".row", {"x": [0, 12, 0]}, {"delay": stagger(0.05)})
+timeline([["#title", {"opacity": 1}], ["#body", {"y": 0}, {"at": 0.2}]])
+progress = scroll_progress()          # call progress() to read 0..1
+width = use_transform(progress, [0, 1], [0, 100])
+```
+
+Without scripts, every animated element shows in its final pose.
+Animations change only `opacity`, `translate`, `scale`, `rotate`,
+`filter` and `transform` where they can, which the browser runs off the
+main thread. The engine is about 7.5 KB gzipped (layout, drag and
+counting load only on pages that use them), and pages without motion
+don't load it.

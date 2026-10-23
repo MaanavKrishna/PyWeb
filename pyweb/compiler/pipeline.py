@@ -48,7 +48,8 @@ def static_globals(ctx):
     cached = getattr(ctx, "_static_globals", None)
     if cached is not None:
         return cached
-    env = {"__builtins__": builtins}
+    from .. import motion
+    env = {"__builtins__": builtins, **motion.SSR_HELPERS}
     env.update(ctx.modconsts)
     safe = [ctx.helpers[n] for n, js in ctx.helper_js.items() if js]
     if safe:
@@ -166,7 +167,8 @@ def _renderer(ctx, globals_=None, strict=False):
             else:
                 args[p] = None
         if getattr(comp, "rest", None):
-            args[comp.rest] = {k: v for k, v in props.items() if k not in comp.params and k != "children"}
+            from .. import motion
+            args[comp.rest] = motion.props({k: v for k, v in props.items() if k not in comp.params and k != "children"})
         env = static_state(comp, cctx, args)
         env[NS_KEY] = cctx
         return comp.ui, env

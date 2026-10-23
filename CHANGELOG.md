@@ -75,6 +75,19 @@ project uses [semantic versioning](https://semver.org).
   SVG charts (bar, line, area, pie, sparkline) drawn on the server. Each
   behaviour module loads only on pages that use it; `from pyweb.ui import *`
   imports them all.
+- **Motion** (in the spirit of motion.dev): `initial=`, `animate=`,
+  `exit=` and `transition=` on any element, springs that keep their
+  momentum when interrupted, presets (`animate="fade-up"`), variants with
+  staggered children, `while_hover`/`while_tap`/`while_focus`/
+  `while_in_view`, exit animations for `if` and `for`, `layout` (rows glide
+  to their new places, keeping focus and input values), `layout_id`
+  (shared elements), `drag` with constraints and momentum, counting
+  numbers (`animate="count"`), View Transitions on client navigation, and
+  `from pyweb.motion import animate, timeline, stagger, scroll_progress,
+  use_transform` for browser code. `App(motion=Motion(feel=, speed=,
+  reduced=))` changes every animation at once, the UI kit's included, and
+  reduced-motion settings are followed. The server renders the first
+  pose; pages without motion don't load the engine (7.5 KB gzipped).
 - **`math` in browser code.** `import math` (and `from math import pi`)
   works in browser code, translated to JavaScript's `Math`.
 - **Components pass attributes through.** A `**attrs` parameter takes any
@@ -143,6 +156,8 @@ project uses [semantic versioning](https://semver.org).
   were placeholders); `pyweb upgrade` points at them.
 
 ### Fixed
+- A menubar arrow key pressed right after opening a menu (before focus
+  moved into it) left that menu open.
 - `lambda n=n: go(n)` in an event handler kept the event instead of `n`.
 - Hydrating a page no longer rewrites attributes the server already
   rendered, so it can't undo what a UI kit script (or the user, typing

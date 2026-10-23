@@ -20,7 +20,7 @@ class App:
 
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
                  title="PyWeb", stylesheets=(), lang="en", base_url=None, description=None,
-                 image=None, client_nav=True, pwa=None, desktop=None, theme=None):
+                 image=None, client_nav=True, pwa=None, desktop=None, theme=None, motion=None):
         self.title = title
         self.stylesheets = list(stylesheets)
         self.lang = lang
@@ -36,6 +36,8 @@ class App:
         if theme is not None:
             from pyweb.ui.theme import config as _theme_config
             _theme_config(self)
+        from pyweb.motion import coerce as _motion
+        self.motion = _motion(motion)    # pyweb.motion.Motion(...): every animation's feel and speed
         self.desktop = desktop           # pyweb.desktop.Window(...): the window of the desktop app
         if desktop is not None:
             from pyweb.desktop import config as _desktop_config

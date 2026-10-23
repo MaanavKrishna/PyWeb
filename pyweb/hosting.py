@@ -19,6 +19,8 @@ from . import telemetry
 from .runtime.server import Request, Server
 
 RUNTIME_PATH = os.path.join(os.path.dirname(__file__), "runtime", "browser", "runtime.js")
+#: The motion engine's modules (served next to the runtime; motion.js loads the others when needed).
+MOTION_FILES = ("motion.js", "motion-math.js", "motion-api.js", "motion-count.js", "motion-layout.js", "motion-drag.js")
 
 def security_headers(secure=False):
     """Headers every response carries (the app's own values win).
@@ -307,7 +309,7 @@ class Site:
         rel, _, q = rel.partition("?")
         query = query or q
         if self.source_mode:
-            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js"):
+            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js") or rel in MOTION_FILES:
                 with open(os.path.join(os.path.dirname(RUNTIME_PATH), rel), "rb") as fh:
                     return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], fh.read()
             if rel in self.memory_js:

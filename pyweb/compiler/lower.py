@@ -41,6 +41,10 @@ RUNTIME_IMPORT = ("import { h as $h, t as $t, dyn as $dyn, list as $list, when a
 
 MARKDOWN_IMPORT = 'import { markdown as $markdown } from "./markdown.js";'
 FORMS_IMPORT = 'import "./forms.js";'
+from ..motion import KEYS as MOTION_KEYS  # noqa: E402 - plain data, no cycle
+MOTION_IMPORT = 'import * as $motion from "./motion-api.js";'
+#: pyweb.motion names browser code can use (motion-api.js).
+MOTION_API = ("animate", "timeline", "stagger", "scroll_progress", "use_transform")
 LIVE_IMPORT = 'import { subscribe as $subscribe, live as $live, join as $join } from "./live.js";'
 SECRET_NAME = re.compile(r"(?i)(secret|password|passwd|api_?key|token|private_?key|credential)")
 
@@ -293,6 +297,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                     ctx.browser_globals[local] = browser_bindings[alias.name]
                 elif mod == "pyweb.browser" and alias.name in pyjs.JS_GLOBALS:
                     ctx.browser_globals[local] = alias.name
+                elif mod == "pyweb.motion" and alias.name in MOTION_API:
+                    ctx.browser_globals[local] = f"$motion.{alias.name}"
                 elif isinstance(node, ast.Import) and alias.name == "math":
                     ctx.browser_globals[local] = "Math"
                     ctx.math_names.add(local)
@@ -1029,6 +1035,8 @@ class Emitter:
             imports.append(FORMS_IMPORT)
         if "$subscribe(" in body or "$live(" in body or "$join(" in body:
             imports.append(LIVE_IMPORT)
+        if "$motion." in body:
+            imports.append(MOTION_IMPORT)
         info.npm = []
         for alias in sorted(set(re.findall(r"\$npm_[A-Za-z0-9_]+", body))):
             spec, export = self.ctx.npm_aliases[alias]
@@ -1300,7 +1308,7 @@ class Emitter:
                                f"in this file, or import it (`from widgets import {n.tag}`)",
                                n.line, self.ctx.filename)
         comp = self.ctx.components[n.tag]
-        props, rest, spreads = [], [], []
+        props, rest, spreads, motion_parts = [], [], [], []
         rest_name = getattr(comp, "rest", None)
         for key, val in n.attrs.items():
             if key.startswith(SPREAD):
@@ -1321,8 +1329,15 @@ class Emitter:
                 _node, js = self._expr(val[1], val[2], scope)
             if known:
                 props.append(f"{json.dumps(key)}: {_thunk(js)}")
+            elif key.replace("-", "_") in MOTION_KEYS:
+                motion_parts.append(f"{json.dumps(key.replace('-', '_'))}: {js}")
+            elif key == "motion":                     # motion=False: the kit component doesn't animate
+                rest.append(f'"data-motion": ((m) => (m === false || m === "none" ? "none" : null))({js})')
+                motion_parts.append(f'"animate": ((m) => (typeof m === "string" && m !== "none" ? m : undefined))({js})')
             else:
                 rest.append(f"{json.dumps(key)}: {js}")
+        if motion_parts:
+            rest.append(f'"data-pw-motion": JSON.stringify({{{", ".join(motion_parts)}}})')
         if spreads and not rest_name and not comp.params:
             raise CompileError(f"<{n.tag}> takes no props, so it can't take {{**...}}", n.line, self.ctx.filename)
         if n.children:

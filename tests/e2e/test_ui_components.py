@@ -481,6 +481,7 @@ def test_calendar_and_date_picker(page, tmp_path):
         dp_cal = page.locator("#dp .pw-calendar")
         expect(dp_cal).to_be_visible()
         expect(dp_cal.locator("th").first).to_have_text("Su")
+        page.wait_for_function("document.activeElement && document.activeElement.dataset.date")   # a frame later
         focused = page.evaluate("document.activeElement.dataset.date")
         assert focused, "the picker focuses a day"
         page.keyboard.press("ArrowRight")

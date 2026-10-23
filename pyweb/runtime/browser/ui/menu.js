@@ -115,7 +115,10 @@ export function menuRoot(root, { anchorFor, point } = {}) {
     const opts = { side: root.dataset.side || "bottom", align: root.dataset.align || "start", offset: 4, point: at };
     stops = [at ? (place(null, content, opts), () => {}) : autoPlace(anchorFor(trigger), content, opts),
              pushLayer({ el: content, keep: trigger ? [trigger] : [], dismiss: () => close(true) })];
-    requestAnimationFrame(() => (focus === "last" ? panel.last() : focus === "first" ? panel.first() : content.focus()));
+    requestAnimationFrame(() => {
+      if (!panel) return;                                   // closed again before this frame
+      focus === "last" ? panel.last() : focus === "first" ? panel.first() : content.focus();
+    });
     fire(root, "openchange", { open: true });
   }
 

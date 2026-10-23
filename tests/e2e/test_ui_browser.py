@@ -380,6 +380,14 @@ def test_menus(page, tmp_path):
         expect(page.locator("#filemenu")).to_be_hidden()
         expect(page.locator("#editmenu")).to_be_visible()
         expect(page.locator("#undo")).to_be_focused()
+        page.keyboard.press("Escape")
+        # Arrow pressed in the same frame the menu opened (before focus moved into it).
+        page.locator("#file").focus()
+        page.evaluate("""() => { const t = document.querySelector('#file');
+            for (const key of ['Enter', 'ArrowRight']) t.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })); }""")
+        expect(page.locator("#filemenu")).to_be_hidden()
+        expect(page.locator("#editmenu")).to_be_visible()
+        expect(page.locator("#undo")).to_be_focused()
         page.keyboard.press("Enter")
         expect(page.locator("#last")).to_have_text("undo")
 

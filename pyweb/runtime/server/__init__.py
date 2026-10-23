@@ -728,7 +728,7 @@ class Server:
             if answer is not None:
                 tel.route = "pwa"
                 return answer
-        if path in ("/__pyweb/ui.css", "/__pyweb/theme.css") or path.startswith("/__pyweb/ui/"):
+        if path in ("/__pyweb/ui.css", "/__pyweb/theme.css", "/__pyweb/motion.css") or path.startswith("/__pyweb/ui/"):
             from pyweb.ui import serve as _ui_serve
             answer = _ui_serve.handle(self, req)
             if answer is not None:

@@ -492,6 +492,9 @@ function clearBetween(start, end) {
   while (n && n !== end) { const next = n.nextSibling; n.parentNode.removeChild(n); n = next; }
 }
 
+// Removed nodes: an exit animation (motion.js sets G.exit) may keep one a moment longer.
+function drop(nodes) { for (const n of nodes) if (!(n.nodeType === 1 && G.exit && G.exit(n))) n.remove(); }
+
 function insertAll(before, nodes) {
   const parent = before.parentNode;
   for (const n of nodes) parent.insertBefore(n, before);
@@ -570,7 +573,7 @@ export function list(getItems, renderRow) {
         return { key, start: rs, end: re, dispose, frag: rf };
       });
       for (const q of pool.values()) {
-        for (const e of q) { e.dispose(); for (const n of rangeNodes(e.start, e.end)) n.parentNode.removeChild(n); }
+        for (const e of q) { e.dispose(); drop(rangeNodes(e.start, e.end)); }
       }
       const parent = end.parentNode;
       let ref = end;
@@ -603,7 +606,7 @@ export function when(test, yes, no) {
     cur = idx;
     untrack(() => {
       if (disposeBranch) disposeBranch();
-      if (end) clearBetween(start, end);
+      if (end) { const ns = []; for (let n = start.nextSibling; n !== end; n = n.nextSibling) ns.push(n); drop(ns); }
       const branch = idx === 0 ? yes : no;
       let nodes = [];
       disposeBranch = root((d) => { if (branch) nodes = toNodes(branch(), []); return d; });
@@ -881,7 +884,7 @@ export async function navigate(url, opts = {}) {
   }
   G.at = location.pathname + location.search;
   try {
-    await swap(doc);
+    await (G.swap || ((f) => f()))(() => swap(doc));
   } catch (e) {
     reportError(e);
     location.reload();

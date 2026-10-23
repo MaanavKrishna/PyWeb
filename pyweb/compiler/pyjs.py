@@ -78,6 +78,10 @@ MATH = {
     "isfinite": "Number.isFinite", "isnan": "Number.isNaN", "isinf": "((x) => x === Infinity || x === -Infinity)",
 }
 
+#: Helpers the parser writes for motion attributes (pyweb/motion.py): the spec as JSON; the
+#: initial pose is the server's job (motion.js applies it before paint in the browser).
+MOTION_HELPERS = {"__pw_motion__": "JSON.stringify", "__pw_initial__": "((i, s) => s)"}
+
 JS_RESERVED = frozenset({
     "arguments", "await", "case", "catch", "const", "debugger", "default",
     "delete", "do", "enum", "eval", "export", "extends", "function",
@@ -146,6 +150,7 @@ class ModuleContext:
         self.server_only = {}      # name -> reason
         self.browser_globals = {}  # name -> js expression (pyweb.browser imports)
         self.math_names = set()    # local names of `import math`
+        self.uses_motion = False   # motion attributes or pyweb.motion in browser code
         # results of on-demand helper compilation
         self.helper_js = {}        # name -> js source
         self.helper_async = {}     # name -> bool
@@ -199,6 +204,9 @@ class Translator:
     # ------------------------------------------------------------- names
     def read_name(self, node, scope):
         name = node.id
+        if name in MOTION_HELPERS:
+            self.ctx.uses_motion = True
+            return MOTION_HELPERS[name]
         kind = scope.lookup(name)
         js = jsname(name)
         if kind in REACTIVE_KINDS:

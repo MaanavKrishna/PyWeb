@@ -16,7 +16,9 @@ export default function setup(bar) {
   const nav = roving(bar, ':scope > [data-part="menu"] > [data-part="trigger"]', { orientation: "horizontal" });
   const openOf = () => menus.find((m) => m.menu.isOpen());
   const onKey = (e) => {
-    const m = menus.find((x) => x.trigger === document.activeElement || x.menu.content.contains(document.activeElement));
+    // From the key's own target: the bar's arrow keys may already have moved focus along.
+    const t = e.target instanceof Node ? e.target : null;
+    const m = t && menus.find((x) => x.trigger === t || x.menu.content.contains(t));
     if (!m) return;
     const i = menus.indexOf(m);
     if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && (m.menu.isOpen() || e.target === m.trigger)) {

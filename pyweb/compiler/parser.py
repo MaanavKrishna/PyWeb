@@ -108,6 +108,14 @@ def _scan_braced(s, i):
     raise _Incomplete
 
 
+def _motion(tag, attrs):
+    """HTML elements: animate=, exit=, layout... become one data-pw-motion attribute."""
+    if not tag[:1].islower():
+        return attrs
+    from .. import motion
+    return motion.rewrite(attrs)
+
+
 def _scan_tag(s, i):
     """``s[i] == '<'`` and a tag starts here. Return ``(token, next_index)``."""
     if s.startswith("<!--", i):
@@ -134,11 +142,11 @@ def _scan_tag(s, i):
         if s.startswith("/>", j):
             if closing:
                 raise PyWebSyntaxError(f"malformed closing tag </{tag}/>")
-            return ("open", tag, attrs, True), j + 2
+            return ("open", tag, _motion(tag, attrs), True), j + 2
         if s[j] == ">":
             if closing:
                 return ("close", tag), j + 1
-            return ("open", tag, attrs, False), j + 1
+            return ("open", tag, _motion(tag, attrs), False), j + 1
         if closing:
             raise PyWebSyntaxError(f"unexpected attributes on </{tag}>")
         if s[j] == "{":

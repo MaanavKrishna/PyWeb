@@ -175,6 +175,8 @@ class LoadedApp:
         mod.__dict__["__pyweb_ui__"] = lambda *_a: None
         from .forms import specs as _form_specs
         mod.__dict__["__pw_form_specs__"] = _form_specs
+        from .motion import SSR_HELPERS
+        mod.__dict__.update(SSR_HELPERS)
         app_dir = os.path.dirname(os.path.abspath(self.path)) if self.path else None
         if app_dir and app_dir not in sys.path:
             sys.path.insert(0, app_dir)
@@ -197,7 +199,8 @@ class LoadedApp:
         fn = module.__dict__[STATE_PREFIX + name]
         args = {k: v for k, v in props.items() if k in info.params}
         if getattr(info, "rest", None):
-            args.update({k: v for k, v in props.items() if k not in info.params and k != "children"})
+            from . import motion
+            args.update(motion.props({k: v for k, v in props.items() if k not in info.params and k != "children"}))
         local = fn(**args)
         if module is self.module:
             return info.ui, local
@@ -294,8 +297,18 @@ class LoadedApp:
         return page_html(name=page_name, title=title, body=body, state=state,
                          js_url=js_url if page["js"] else None, css_urls=self.stylesheets,
                          lang=self.lang, importmap=importmap, layouts=layouts,
-                         head=self.head_for(page, dynamic, path), head_extra=self.kit_head() + self.pwa_head() + _desktop_head(),
+                         head=self.head_for(page, dynamic, path), head_extra=self.kit_head() + self.motion_head(body) + self.pwa_head() + _desktop_head(),
                          nav=getattr(self.app, "client_nav", True) is not False)
+
+    def motion_head(self, body=""):
+        """The motion engine and its settings, for apps with motion attributes (or a Motion)."""
+        uses = getattr(self, "_uses_motion", None)
+        if uses is None:
+            uses = self._uses_motion = _uses_motion(self)
+        if not uses and 'data-pw-motion' not in body:
+            return ""
+        from . import motion
+        return motion.head_tags(self.app)
 
     def kit_head(self):
         """The theme's and the UI kit's stylesheets: for apps that use the kit or set a theme."""
@@ -396,3 +409,31 @@ def _convert(value, ann):
             return False
         raise ValueError(value)
     return value
+
+
+def _uses_motion(loaded):
+    """Whether any markup in the app (or the files it imports) has motion attributes, or the
+    app set App(motion=...). Then every page loads the engine, so rows that appear later animate."""
+    from .compiler.ast import ControlFor, ControlIf, Element
+    from .motion import ATTR, KEYS
+    if getattr(loaded.app, "motion", None) is not None:
+        return True
+
+    def walk(nodes):
+        for n in nodes or ():
+            if isinstance(n, Element):
+                if ATTR in n.attrs or (n.is_component and any(k.replace("-", "_") in KEYS for k in n.attrs)):
+                    return True
+                if walk(n.children):
+                    return True
+            elif isinstance(n, ControlFor) and walk(n.body):
+                return True
+            elif isinstance(n, ControlIf) and (walk(n.body) or walk(n.orelse)):
+                return True
+        return False
+    trees = [p.get("ui") for p in loaded.compiled["pages"].values()]
+    trees += [getattr(c, "ui", None) for c in loaded.compiled["context"].components.values()]
+    trees += [getattr(c, "ui", None) for lib in loaded.libraries for c in lib.ctx.components.values()]
+    trees += [getattr(v, "ui", None) if not isinstance(v, dict) else v.get("ui")
+              for v in (loaded.compiled.get("layouts") or {}).values()]
+    return any(walk(t) for t in trees)

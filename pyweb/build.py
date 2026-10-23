@@ -211,6 +211,19 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
         with open(f"{out}/static/{addon_names[addon]}", "w", encoding="utf-8") as fh:
             fh.write(addon_js)
 
+    # The motion engine: kept under its own names (its modules import each other, and pages link
+    # /static/motion.js), with the runtime import pointed at this build's runtime.
+    from .hosting import MOTION_FILES
+    html_all = "".join((u.get("html") or "") + (u.get("js") or "") for u in units)
+    if "data-pw-motion" in html_all or "./motion-api.js" in html_all:
+        for fname in MOTION_FILES:
+            with open(os.path.join(os.path.dirname(rt_path), fname), encoding="utf-8") as fh:
+                mjs = fh.read().replace('from "./runtime.js"', f'from "./{rt_name}"')
+            if production:
+                mjs = minify_js(mjs, minifier=minifier)
+            with open(f"{out}/static/{fname}", "w", encoding="utf-8") as fh:
+                fh.write(mjs)
+
     def write_module(name, js, mappings):
         body = js.replace('from "./runtime.js"', f'from "./{rt_name}"')
         for addon, published in addon_names.items():

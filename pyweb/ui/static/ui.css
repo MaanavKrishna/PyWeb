@@ -16,6 +16,7 @@
   [hidden]:not([hidden="until-found"]) { display: none !important; }   /* even on display: flex parts */
   :focus-visible { outline: none; box-shadow: var(--pw-focus); }
   ::selection { background: var(--pw-accent-5); }
+  [data-motion="none"], [data-motion="none"] * { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
   }

@@ -33,11 +33,30 @@ def head_tags(app, *, kit=True):
     """``<link>``s for the theme (always, so the auth pages follow it) and the kit's stylesheet."""
     from . import theme as T
     th = T.config(app)
-    out = f'<link rel="stylesheet" href="/__pyweb/theme.css?v={th.version()}">'
+    out = f'<link rel="stylesheet" href="/__pyweb/theme.css?v={_theme_version(app, th)}">'
     if kit:
         out += f'<link rel="stylesheet" href="/__pyweb/ui.css?v={version()}">'
         out += '<script type="module" src="/__pyweb/ui/index.js"></script>'
     return out
+
+
+#: Without scripts, elements with motion show in their final pose (the server rendered the first one).
+#: A media query rather than <noscript>: client navigation copies stylesheet links between pages.
+MOTION_CSS = (b"@media (scripting:none){[data-pw-motion]{opacity:1!important;translate:none!important;"
+              b"scale:none!important;rotate:none!important;filter:none!important;transform:none!important}}\n")
+
+
+def _motion_css(app):
+    m = getattr(app, "motion", None)
+    return ":root{" + m.css_vars() + "}\n" if m is not None else ""
+
+
+def _theme_version(app, th):
+    m = getattr(app, "motion", None)
+    if m is None:
+        return th.version()
+    import hashlib
+    return hashlib.sha256((th.version() + repr(m)).encode()).hexdigest()[:10]
 
 
 def handle(server, req):
@@ -49,8 +68,10 @@ def handle(server, req):
     if path == "/__pyweb/theme.css":
         from . import theme as T
         app = getattr(getattr(server, "app", None), "app", None)
-        body = T.config(app).css().encode()
+        body = (T.config(app).css() + _motion_css(app)).encode()
         return Response(200, body, {"Content-Type": "text/css; charset=utf-8", "Cache-Control": cache})
+    if path == "/__pyweb/motion.css":
+        return Response(200, MOTION_CSS, {"Content-Type": "text/css; charset=utf-8", "Cache-Control": cache})
     if path == "/__pyweb/ui.css":
         data, _v = _file("ui.css")
         return Response(200, data, {"Content-Type": "text/css; charset=utf-8", "Cache-Control": cache})

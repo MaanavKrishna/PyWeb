@@ -1,20 +1,39 @@
-"""Real-browser tests (Playwright + Chromium). Skipped when unavailable.
+"""Real-browser tests (Playwright). Skipped when unavailable.
 
 Run: pip install playwright && playwright install chromium
+Other engines: PYWEB_BROWSER=firefox (or webkit) after ``playwright install firefox``. Tests that
+need a Chromium-only feature (CDP, Trusted Types, ...) are marked ``chromium_only`` and skipped there.
 """
+
+import os
 
 import pytest
 
 pw = pytest.importorskip("playwright.sync_api")
+
+ENGINE = os.environ.get("PYWEB_BROWSER", "chromium")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "chromium_only: needs a Chromium-only browser feature")
+
+
+def pytest_collection_modifyitems(config, items):
+    if ENGINE == "chromium":
+        return
+    skip = pytest.mark.skip(reason=f"Chromium-only feature (running {ENGINE})")
+    for item in items:
+        if item.get_closest_marker("chromium_only"):
+            item.add_marker(skip)
 
 
 @pytest.fixture(scope="module")
 def browser():
     with pw.sync_playwright() as p:
         try:
-            b = p.chromium.launch()
+            b = getattr(p, ENGINE).launch()
         except Exception as exc:  # noqa: BLE001 - browser binary missing
-            pytest.skip(f"chromium not available: {exc}")
+            pytest.skip(f"{ENGINE} not available: {exc}")
         yield b
         b.close()
 
@@ -23,6 +42,7 @@ def browser():
 def page(browser):
     ctx = browser.new_context()
     pg = ctx.new_page()
+    pg.engine = ENGINE
     errors = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)

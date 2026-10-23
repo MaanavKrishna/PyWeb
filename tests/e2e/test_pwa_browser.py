@@ -3,10 +3,13 @@ strict CSP (Trusted Types), and pages fall back to the offline page when the ser
 
 import textwrap
 
+import pytest
 from playwright.sync_api import expect
 
 from pyweb.testing import serve
 from tests.e2e.conftest import ready, until
+
+pytestmark = pytest.mark.chromium_only   # service worker and install checks use Chromium
 
 APP = textwrap.dedent('''
     from pyweb import App

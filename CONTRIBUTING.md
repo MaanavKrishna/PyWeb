@@ -21,6 +21,35 @@ ruff check pyweb tests website
 python -m pytest tests --ignore=tests/integration      # unit + browser tests
 ```
 
+Browser tests run in Chromium. CI also runs the UI kit, motion and the
+examples in Firefox and WebKit; to try one locally:
+
+```bash
+python -m playwright install firefox
+PYWEB_BROWSER=firefox python -m pytest tests/e2e/test_ui_browser.py
+```
+
+Tests that need a Chromium-only feature are marked `chromium_only`.
+
+**Screenshots.** `tests/e2e/test_visual_browser.py` compares the UI kit's
+components (light and dark, desktop and phone), the sign-in page and
+`/admin` with the PNGs in `tests/e2e/snapshots/`. Shots use a bundled font,
+so they match across machines; CI pins Playwright so the Chromium matches
+too. When you change how something looks on purpose, rewrite them and
+commit the new images:
+
+```bash
+PYWEB_UPDATE_SNAPSHOTS=1 python -m pytest tests/e2e/test_visual_browser.py
+```
+
+A failing comparison leaves the new image and a diff in `test-results/`
+(CI uploads them as the `screenshot-diffs` artifact).
+
+**Accessibility.** `tests/e2e/test_a11y_browser.py` runs axe-core (fetched
+from npm, checksum checked, cached in `tests/e2e/.cache`) on every example,
+the auth pages and `/admin`, in light and dark: serious or critical
+violations fail it.
+
 Integration tests need real services:
 
 ```bash

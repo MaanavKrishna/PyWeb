@@ -41,6 +41,16 @@ def _state_function(fn):
     return new
 
 
+def _kit_markup(path):
+    """Whether a component file is kit markup (a component copied with ``pyweb ui add``)."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return False
+    return 'data-pw-ui="' in text or 'class="pw-' in text
+
+
 class LoadedApp:
     def __init__(self, path=None, *, source=None, filename=None, asset_urls=None,
                  stylesheets=None):
@@ -313,7 +323,8 @@ class LoadedApp:
     def kit_head(self):
         """The theme's and the UI kit's stylesheets: for apps that use the kit or set a theme."""
         from .compiler.pipeline import KIT_DIR
-        uses_kit = any(os.path.abspath(lib.path).startswith(KIT_DIR) for lib in self.libraries)
+        uses_kit = any(os.path.abspath(lib.path).startswith(KIT_DIR) or _kit_markup(lib.path)
+                       for lib in self.libraries)
         if not uses_kit and getattr(self.app, "theme", None) is None:
             return ""
         from .ui import serve as ui_serve

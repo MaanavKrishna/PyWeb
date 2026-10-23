@@ -17,8 +17,9 @@ from playwright.sync_api import expect
 
 ROOT = Path(__file__).parent.parent.parent
 PYODIDE = os.environ.get("PYWEB_PYODIDE_DIR")
-pytestmark = pytest.mark.skipif(not PYODIDE or not os.path.isdir(PYODIDE),
-                                reason="set PYWEB_PYODIDE_DIR to an unpacked pyodide npm package")
+pytestmark = [pytest.mark.chromium_only,
+              pytest.mark.skipif(not PYODIDE or not os.path.isdir(PYODIDE),
+                                 reason="set PYWEB_PYODIDE_DIR to an unpacked pyodide npm package")]
 
 
 @pytest.fixture(scope="module")

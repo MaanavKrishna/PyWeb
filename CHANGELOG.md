@@ -106,6 +106,11 @@ project uses [semantic versioning](https://semver.org).
   drag, layout and shared-element animations. It runs on the website, as
   a live demo and in the playground.
 - `MenuItem(href=...)` makes a menu item a link.
+- **The UI kit is tested in Chromium, Firefox and WebKit** (keyboard
+  behaviour of every component, motion and the examples), with
+  screenshot baselines per component in light and dark, and axe-core
+  finding no serious violations on the examples, the auth pages and
+  `/admin`.
 - **Accessibility checks** in `pyweb check` and the editor: images
   without alt, clicks keyboards can't reach, unlabelled fields, unnamed
   buttons and links, positive tabindex, an empty page language. The
@@ -194,6 +199,15 @@ project uses [semantic versioning](https://semver.org).
   were placeholders); `pyweb upgrade` points at them.
 
 ### Fixed
+- `checked={row["done"]}` with a database's `0` rendered `checked="0"`, so
+  the server showed every box ticked. Boolean attributes (`checked`,
+  `disabled`, `selected`, ...) now follow truthiness on the server as in
+  the browser.
+- A page using only components copied with `pyweb ui add` didn't get the
+  kit's stylesheet and behaviours.
+- An alert's title was smaller than its text.
+- The plant shop example's link and dark-mode button colours were below
+  WCAG contrast.
 - A `Card` (or `Alert`, `Table`, `Breadcrumb`) inside `Tabs` had its
   content taken for a tab panel and hidden; and the card's header styles
   reached a data table's header row inside it.

@@ -203,6 +203,20 @@ def test_kit_styles_stay_small():
     assert serve.gzip_size("ui.css") < 12 * 1024
 
 
+def test_kit_behaviour_modules_stay_small():
+    """Each behaviour module (minified, gzip) is at most 3 KB, the shared core and loader 6 KB."""
+    import gzip
+    from pyweb.build import minify_js
+    folder = os.path.join(os.path.dirname(T.__file__), os.pardir, "runtime", "browser", "ui")
+    sizes = {}
+    for fn in sorted(os.listdir(folder)):
+        if fn.endswith(".js"):
+            with open(os.path.join(folder, fn), encoding="utf-8") as fh:
+                sizes[fn] = len(gzip.compress(minify_js(fh.read()).encode(), 9))
+    big = {fn: n for fn, n in sizes.items() if n > (6144 if fn in ("core.js", "index.js") else 3072)}
+    assert not big, big
+
+
 def test_kit_files_follow_the_conventions():
     """Every kit component passes attributes through, marks its part, and uses only theme tokens."""
     from pyweb.compiler.pipeline import KIT_DIR, kit_index
@@ -241,7 +255,9 @@ def test_ui_cli(tmp_path, capsys):
     app = tmp_path / "app.pyweb"
     app.write_text('from pyweb import App\nfrom components.button import Button\napp = App()\n\n\n@app.page("/")\n'
                    'def Home():\n    <Button>Go</Button>\n')
-    assert 'data-size="lg"' in TestClient(str(app)).get("/").text
+    page = TestClient(str(app)).get("/").text
+    assert 'data-size="lg"' in page
+    assert "/__pyweb/ui.css" in page and "/__pyweb/ui/index.js" in page    # still styled and wired up
     with pytest.raises(SystemExit, match="no kit component"):
         main(["ui", "add", "Nope", "--dir", str(tmp_path)])
 

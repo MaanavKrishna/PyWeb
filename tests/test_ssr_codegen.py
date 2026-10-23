@@ -87,6 +87,17 @@ def test_current_link_marks_follow_the_request_path():
     assert compiled[1] == '<a aria-current="true" href="/docs">Docs</a><a aria-current="page" href="/docs/x">X</a>'
 
 
+def test_boolean_attributes_follow_truthiness():
+    """checked={row["done"]} with SQLite's 0/1: 0 leaves the attribute out (checked="0" is checked)."""
+    nodes = [Element("input", {"checked": ("expr", "a", 1), "disabled": ("expr", "b", 1),
+                               "hidden": ("expr", "c", 1), "data-n": ("expr", "a", 1)}, [], 1)]
+    for env, want in [({"a": 0, "b": 1, "c": "until-found"}, '<input disabled hidden="until-found" data-n="0">'),
+                      ({"a": 1, "b": 0, "c": None}, '<input checked data-n="1">'),
+                      ({"a": False, "b": 2, "c": ""}, '<input disabled hidden="">')]:
+        interpreted, compiled = render_both(nodes, env)
+        assert compiled == interpreted == ("ok", want)
+
+
 def test_examples_render_the_same_both_ways(monkeypatch, tmp_path):
     """Every example's pages (that need no route data) give identical HTML."""
     import glob

@@ -29,6 +29,11 @@ from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode
 VOID = {"input", "img", "br", "hr", "meta", "link", "source", "wbr",
         "col", "base", "area", "embed", "track", "param"}
 URL_ATTRS = {"href", "src", "action", "formaction", "xlink:href"}
+#: HTML boolean attributes: present or absent, so any falsy value (0 from a database too) leaves
+#: them out, as the browser runtime does when it sets the property.
+BOOLEAN_ATTRS = {"checked", "disabled", "selected", "readonly", "required", "multiple", "hidden", "open",
+                 "autofocus", "inert", "novalidate", "formnovalidate", "defer", "async", "muted", "autoplay",
+                 "controls", "loop", "playsinline", "reversed", "allowfullscreen", "default", "ismap", "nomodule"}
 BOOL_PROPS = {"checked", "selected", "disabled", "readonly", "required", "multiple", "hidden"}
 _BAD_URL = re.compile(r"^\s*(javascript|vbscript|data:text/html)", re.I)
 
@@ -318,9 +323,9 @@ class Renderer:
                     continue
             elif name == "style" and isinstance(v, dict):
                 v = style_of(v)
-            if v is None or v is False:
+            if v is None or v is False or (name in BOOLEAN_ATTRS and not v and not isinstance(v, str)):
                 continue
-            if v is True:
+            if v is True or (name in BOOLEAN_ATTRS and not isinstance(v, str)):
                 parts.append(f" {name}")
                 continue
             if name in URL_ATTRS:
@@ -430,9 +435,9 @@ def _attr(name, v):
             return ""
     elif name == "style" and isinstance(v, dict):
         v = style_of(v)
-    if v is None or v is False:
+    if v is None or v is False or (name in BOOLEAN_ATTRS and not v and not isinstance(v, str)):
         return ""
-    if v is True:
+    if v is True or (name in BOOLEAN_ATTRS and not isinstance(v, str)):
         return f" {name}"
     if name in URL_ATTRS:
         v = safe_url(v)

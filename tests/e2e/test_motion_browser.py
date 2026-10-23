@@ -4,6 +4,8 @@ page transitions, and the frame budget of a 100-row reorder."""
 
 import textwrap
 
+import pytest
+
 from playwright.sync_api import expect
 
 from pyweb.testing import serve
@@ -347,6 +349,7 @@ PAGES = '''
 '''
 
 
+@pytest.mark.chromium_only            # startViewTransition (Firefox and WebKit swap without it)
 def test_client_navigation_uses_view_transitions(page, tmp_path):
     with _open(tmp_path, PAGES) as url:
         page.goto(url)

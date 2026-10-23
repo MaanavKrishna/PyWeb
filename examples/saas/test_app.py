@@ -63,8 +63,11 @@ def test_tasks(client):
     client.login("ann@example.com")
     project = client.rpc("create_project", project={"name": "Chores"})
     task = client.rpc("add_task", project_id=project["id"], title="Water plants")
+    client.rpc("add_task", project_id=project["id"], title="Take out the bins")
     assert client.rpc("toggle", task_id=task["id"]) is True
-    assert "Water plants" in client.get(f"/projects/{project['id']}").text
+    page = client.get(f"/projects/{project['id']}").text
+    assert "Water plants" in page
+    assert len(re.findall(r'<input type="checkbox"[^>]* checked', page)) == 1   # only the finished one
 
 
 def test_the_morning_digest_emails_open_tasks(client):

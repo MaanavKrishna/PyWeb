@@ -1,6 +1,6 @@
-:root { --ink: #14151c; --muted: #6b6e7c; --line: #e4e3dc; --accent: #3d5afe; --accent-soft: #e9edff; --bg: #fafaf7; --surface: #ffffff; }
+:root { --ink: #14151c; --muted: #6b6e7c; --line: #e4e3dc; --accent: #3451e6; --accent-ink: #fff; --accent-soft: #e9edff; --bg: #fafaf7; --surface: #ffffff; }
 @media (prefers-color-scheme: dark) {
-  :root { --ink: #eceef5; --muted: #868b9f; --line: #262a3b; --accent: #7b8cff; --accent-soft: #1b2050; --bg: #0b0c12; --surface: #11131b; }
+  :root { --ink: #eceef5; --muted: #868b9f; --line: #262a3b; --accent: #7b8cff; --accent-ink: #0b0c12; --accent-soft: #1b2050; --bg: #0b0c12; --surface: #11131b; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
@@ -15,7 +15,7 @@ textarea { min-height: 90px; width: 100%; }
 button { padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; font-weight: 500; transition: border-color .15s, background .15s; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
-button.primary, form > button { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary, form > button { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 ul { list-style: none; padding: 0; margin: 0; }
 li { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
 li.done span { text-decoration: line-through; color: var(--muted); }

@@ -9,6 +9,8 @@ from pyweb.testing import serve
 
 from .conftest import until
 
+pytestmark = pytest.mark.chromium_only   # CDP's virtual authenticator
+
 APP = '''
 from pyweb import App
 

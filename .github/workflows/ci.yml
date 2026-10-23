@@ -114,7 +114,8 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - run: pip install -e ".[test]"
+      # Pinned: the screenshot baselines (tests/e2e/snapshots) are renders of this Chromium.
+      - run: pip install -e ".[test]" "playwright==1.56.0"
       - run: python -m playwright install --with-deps chromium
       - name: Pyodide for the playground tests
         run: |
@@ -128,6 +129,37 @@ jobs:
       - run: python -m pytest tests/e2e -q -p no:cacheprovider
         env:
           PYWEB_SSR_VERIFY: "1"   # browser tests also check compiled rendering against the interpreter
+      - name: Screenshots that changed (actual and diff)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: screenshot-diffs
+          path: test-results/
+          if-no-files-found: ignore
+
+  browsers:
+    name: browser (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[test]" "playwright==1.56.0"
+      - run: python -m playwright install --with-deps ${{ matrix.engine }}
+      # The UI kit, motion and the examples, with their keyboard behaviour, axe and the screenshot pages
+      # (compared in Chromium only). Chromium-only features are marked chromium_only and skipped.
+      - run: |
+          python -m pytest -q -p no:cacheprovider tests/e2e/test_ui_browser.py tests/e2e/test_ui_components.py \
+            tests/e2e/test_ui_example.py tests/e2e/test_motion_browser.py tests/e2e/test_examples_browser.py \
+            tests/e2e/test_hydration.py tests/e2e/test_customise_browser.py tests/e2e/test_a11y_browser.py \
+            tests/e2e/test_visual_browser.py
+        env:
+          PYWEB_BROWSER: ${{ matrix.engine }}
 
   integration:
     name: integration (Postgres, MySQL, Redis)

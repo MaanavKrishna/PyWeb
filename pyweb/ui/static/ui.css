@@ -100,7 +100,7 @@
               background: var(--pw-surface); }
   .pw-alert > :not([data-part="icon"]) { grid-column: 2; }
   .pw-alert:not(:has(> [data-part="icon"])) > * { grid-column: 1 / -1; }
-  .pw-alert > [data-part="title"] { margin: 0; font-weight: 600; }
+  .pw-alert > [data-part="title"] { margin: 0; font-size: inherit; font-weight: 600; }
   .pw-alert > [data-part="description"] { margin: 0; color: var(--pw-fg-muted); }
   .pw-alert[data-tone="danger"] { border-color: var(--pw-danger-6); background: var(--pw-danger-2); color: var(--pw-danger-11); }
   .pw-alert[data-tone="danger"] > [data-part="description"] { color: var(--pw-danger-11); }

@@ -292,8 +292,13 @@ N+1 loops. [Scaling & deploying →](docs/25-scaling.md) ·
 
 | [Live dashboard](examples/dashboard/app.pyweb) | [Streaming AI chat](examples/ai-chat/app.pyweb) | [Multi-page site](examples/site/app.pyweb) |
 |---|---|---|
-| ![Sales dashboard: totals and a Chart.js bar chart that update live](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/dashboard.png) | ![AI chat with a streamed Markdown reply](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/ai-chat.png) | ![Plant shop with a navigation layout and a cart](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/site.png) |
+| ![Sales dashboard: counting totals, the UI kit's bar chart and a Chart.js chart that update live](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/dashboard.png) | ![AI chat with a streamed Markdown reply](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/ai-chat.png) | ![Plant shop with a navigation layout and a cart](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/site.png) |
 | `live()` queries + Chart.js from npm | `yield` + Stop + `<Markdown>` | layout, query parameters, 404 page |
+
+| [UI kit and motion](examples/ui/app.pyweb) | [Teamboard (the saas template)](examples/saas/app.pyweb) |
+|---|---|
+| ![The UI kit tour: buttons, overlays, toasts, pickers, controls and an accordion](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/ui.png) | ![Teamboard: a sidebar of projects, a live task list and a toast](https://raw.githubusercontent.com/MaanavKrishna/PyWeb/main/docs/images/saas.png) |
+| `pyweb.ui` components, `animate=`, `layout`, drag | sidebar layout, dialog, toasts, live animated tasks |
 
 Or open the **[playground](https://maanavkrishna.github.io/PyWeb/playground.html)**:
 it runs the real PyWeb, server functions included, in your browser.

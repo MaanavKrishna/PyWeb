@@ -1,0 +1,130 @@
+"""Every UI kit component family on one page, for the screenshot tests (test_visual_browser.py)."""
+
+from pyweb import App
+from pyweb.ui import *
+
+app = App(title="Gallery")
+
+ROWS = [{"id": 1, "name": "Ada", "role": "Owner", "tasks": 12}, {"id": 2, "name": "Grace", "role": "Admin", "tasks": 9},
+        {"id": 3, "name": "Alan", "role": "Member", "tasks": 15}, {"id": 4, "name": "Kathy", "role": "Viewer", "tasks": 4}]
+SALES = [{"m": "Jan", "v": 40}, {"m": "Feb", "v": 65}, {"m": "Mar", "v": 52}, {"m": "Apr", "v": 80}]
+
+
+@app.page("/")
+def Gallery():
+    <main style="padding: 24px; display: grid; gap: 24px; max-width: 760px">
+        <section id="buttons" style="display: grid; gap: 12px; padding: 8px">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                <Button>Default</Button>
+                <Button variant="secondary">Secondary</Button>
+                <Button variant="outline">Outline</Button>
+                <Button variant="ghost">Ghost</Button>
+                <Button variant="link">Link</Button>
+                <Button variant="destructive">Delete</Button>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+                <Button size="sm">Small</Button>
+                <Button size="lg">Large</Button>
+                <Button size="icon" aria-label="Add">+</Button>
+                <Button disabled={True}>Disabled</Button>
+                <Badge>Badge</Badge>
+                <Badge variant="outline">Outline</Badge>
+                <Badge tone="success">Paid</Badge>
+                <Badge tone="danger">Overdue</Badge>
+                <Kbd>⌘K</Kbd>
+            </div>
+            <Alert tone="info"><AlertTitle>Heads up</AlertTitle><AlertDescription>Something to know.</AlertDescription></Alert>
+            <Alert tone="danger"><AlertTitle>Error</AlertTitle><AlertDescription>It went wrong.</AlertDescription></Alert>
+        </section>
+
+        <section id="forms" style="padding: 8px">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Create account</CardTitle>
+                    <CardDescription>All the form controls.</CardDescription>
+                </CardHeader>
+                <CardContent style="display: grid; gap: 12px">
+                    <label class="pw-field">Email <input class="pw-control" value="ada@example.com" /></label>
+                    <label class="pw-field">Bio <textarea class="pw-control">Hello</textarea></label>
+                    <Checkbox label="Remember me" checked={True} />
+                    <Switch label="Emails" checked={True} />
+                    <RadioGroup name="plan" value="pro" orientation="horizontal" label="Plan"
+                                options={[("free", "Free"), ("pro", "Pro")]} />
+                    <Slider value={30} label="Volume" />
+                    <Progress value={60} label="Upload" />
+                    <ToggleGroup default="b" label="Format">
+                        <ToggleGroupItem value="b">Bold</ToggleGroupItem>
+                        <ToggleGroupItem value="i">Italic</ToggleGroupItem>
+                    </ToggleGroup>
+                </CardContent>
+                <CardFooter><Button>Create</Button><Button variant="outline">Cancel</Button></CardFooter>
+            </Card>
+        </section>
+
+        <section id="disclosure" style="padding: 8px; display: grid; gap: 12px">
+            <Tabs default="a">
+                <TabsList>
+                    <TabsTrigger value="a">Account</TabsTrigger>
+                    <TabsTrigger value="b">Password</TabsTrigger>
+                </TabsList>
+                <TabsContent value="a">Account settings.</TabsContent>
+                <TabsContent value="b">Password settings.</TabsContent>
+            </Tabs>
+            <Accordion>
+                <AccordionItem value="one" open={True}>
+                    <AccordionTrigger>Open item</AccordionTrigger>
+                    <AccordionContent>Its content.</AccordionContent>
+                </AccordionItem>
+                <AccordionItem value="two">
+                    <AccordionTrigger>Closed item</AccordionTrigger>
+                    <AccordionContent>Hidden.</AccordionContent>
+                </AccordionItem>
+            </Accordion>
+            <Skeleton width="200px" />
+            <Separator />
+            <Breadcrumb>
+                <BreadcrumbItem><BreadcrumbLink href="/">Home</BreadcrumbLink></BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem><BreadcrumbPage>Gallery</BreadcrumbPage></BreadcrumbItem>
+            </Breadcrumb>
+        </section>
+
+        <section id="data" style="padding: 8px; display: grid; gap: 12px">
+            <DataTable rows={ROWS} page_size={4} search={False} label="People" columns={[
+                {"key": "name", "label": "Name"}, {"key": "role", "label": "Role"},
+                {"key": "tasks", "label": "Tasks", "align": "end"}]} />
+            <BarChart data={SALES} x="m" y="v" height={160} label="Sales" />
+            <Sparkline values={[3, 6, 4, 8, 7, 10]} width={200} height={40} area={True} label="Trend" />
+        </section>
+
+        <section id="calendar" style="padding: 8px">
+            <Calendar value="2026-03-14" month="2026-03" />
+        </section>
+
+        <section id="overlays" style="padding: 8px; display: flex; gap: 8px">
+            <Dialog>
+                <DialogTrigger id="dialog-open">Dialog</DialogTrigger>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit profile</DialogTitle>
+                        <DialogDescription>Make changes, then save.</DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter><DialogClose>Cancel</DialogClose><DialogClose variant="default">Save</DialogClose></DialogFooter>
+                </DialogContent>
+            </Dialog>
+            <DropdownMenu>
+                <DropdownMenuTrigger id="menu-open">Menu</DropdownMenuTrigger>
+                <DropdownMenuContent>
+                    <MenuLabel>Account</MenuLabel>
+                    <MenuItem shortcut="⌘P">Profile</MenuItem>
+                    <MenuCheckboxItem checked={True}>Compact</MenuCheckboxItem>
+                    <MenuSeparator />
+                    <MenuItem>Sign out</MenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+            <Popover>
+                <PopoverTrigger id="popover-open">Popover</PopoverTrigger>
+                <PopoverContent arrow={True}><p style="margin: 0">Popover content.</p></PopoverContent>
+            </Popover>
+        </section>
+    </main>

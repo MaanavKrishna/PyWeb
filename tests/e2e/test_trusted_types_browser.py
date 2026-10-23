@@ -3,11 +3,14 @@ navigation, hydration) works under them, and violations are reported to the serv
 
 import textwrap
 
+import pytest
 from playwright.sync_api import expect
 
 from pyweb.telemetry.instruments import csp_violations
 from pyweb.testing import serve
 from tests.e2e.conftest import ready
+
+pytestmark = pytest.mark.chromium_only   # Trusted Types are Chromium-only
 
 APP = textwrap.dedent('''
     from pyweb import App, Markdown

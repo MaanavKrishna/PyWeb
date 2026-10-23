@@ -130,6 +130,21 @@ def _ui_ready(page, selector):
 def test_dialogs(page, tmp_path):
     path = tmp_path / "app.pyweb"
     path.write_text(DIALOGS)
+    _check_dialogs(page, path)
+
+
+def test_a_copied_dialog_behaves_the_same(page, tmp_path):
+    """`pyweb ui add Dialog` copies the component's source into the app; the copy still passes."""
+    from pyweb.ui.cli import add
+    add(["Dialog"], str(tmp_path))
+    path = tmp_path / "app.pyweb"
+    source = DIALOGS.replace("from pyweb.ui import (Button, Dialog,", "from pyweb.ui import Button\nfrom components.dialog import (Dialog,")
+    assert "from components.dialog import" in source
+    path.write_text(source)
+    _check_dialogs(page, path)
+
+
+def _check_dialogs(page, path):
     with serve(str(path)) as url:
         page.goto(url)
         ready(page)

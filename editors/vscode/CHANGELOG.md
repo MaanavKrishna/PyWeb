@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+- Completion for teams and security options: `tenant=True`, `org_role=`,
+  `rate=`/`per=`, plan features and webhook schemes.
+- Completion for the UI kit and motion: `Theme(` and `Motion(` values,
+  kit `variant=`/`size=`, motion presets and `transition={{...}}` keys.
+- New warnings: bad rate strings, unknown roles, `.unscoped()` on a tenant
+  Model outside `system()`, unknown variants or presets, spring values out
+  of range, and accessibility problems (missing `alt`, unlabelled inputs,
+  clickable non-buttons and more).
+- Needs PyWeb 0.6 for these features.
+
 ## 0.5.0
 
 - Completion knows your data: Model fields and query methods after `Post.`,

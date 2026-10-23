@@ -6,6 +6,18 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.6.0]
+
+Teams, installable and desktop apps, a UI kit and motion, and security by
+design: organizations with roles, invitations and tenant-scoped Models
+(enforced by the database on Postgres), API tokens and OpenAPI, webhooks,
+PWA and Web Push, native desktop windows and installers, a styled and
+accessible component kit with springs and layout animations, Trusted
+Types, encrypted fields and a threat model, about 2.5× faster serving,
+Python 3.15 and free-threaded builds, and a much more capable MCP server.
+Most 0.5 apps run unchanged; see [Upgrading to 0.6](docs/27-upgrading.md)
+and run `pyweb upgrade --check`.
+
 ### Added
 - **Python 3.14, 3.15 and free-threaded 3.15t** are supported and tested in
   CI. On a free-threaded build one `pyweb serve` process uses every core

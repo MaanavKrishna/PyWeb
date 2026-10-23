@@ -27,6 +27,13 @@ can decide up front whether they matter for your app.
 
 ## Released so far
 
+- **0.6**: teams and beyond the web. Organizations with roles,
+  invitations and tenant-scoped Models (enforced by Postgres row-level
+  security), API tokens and OpenAPI, webhooks in and out, installable apps
+  with Web Push, desktop windows and installers, a UI kit with themes and
+  motion, Trusted Types, encrypted fields and a threat model, about 2.5×
+  faster serving, Python 3.15 and free-threaded builds, and a much richer
+  MCP server.
 - **0.5**: production apps. Models with relations and migrations, forms
   checked in the browser and on the server, an auth kit (passwords,
   passkeys, emailed links, OAuth, two-step sign-in, an admin), row-level

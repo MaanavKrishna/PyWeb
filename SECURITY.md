@@ -4,9 +4,9 @@
 
 | Version | Security fixes |
 |---|---|
-| 0.5.x | yes |
-| 0.4.x | critical fixes only, until 0.6.0 is released (see [Upgrading to 0.5](docs/27-upgrading.md)) |
-| 0.3.x and older | no (please upgrade: `pip install -U pyweb-stack`) |
+| 0.6.x | yes |
+| 0.5.x | critical fixes only, until 0.7.0 is released (see [Upgrading to 0.6](docs/27-upgrading.md)) |
+| 0.4.x and older | no (please upgrade: `pip install -U pyweb-stack`) |
 
 `pyweb upgrade --check` lists what an app needs to change to move to the
 current version, and `pyweb upgrade --fix` applies the safe rewrites.

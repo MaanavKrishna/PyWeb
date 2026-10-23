@@ -148,7 +148,10 @@ a launcher, and icons for every OS (PNGs, a Windows `.ico` and a macOS
 `.icns`, made from one PNG). `--package` also runs Briefcase to make the
 installer for the OS you're on: an MSI on Windows, a DMG on macOS, a
 `.deb`/`.rpm` on Linux. Build each OS's installer on that OS (CI can do
-all three).
+all three). On Linux, Briefcase builds system packages with the OS's own
+Python, so install it there: `/usr/bin/python3 -m venv ~/briefcase &&
+~/briefcase/bin/pip install briefcase`, and put `~/briefcase/bin` on your
+`PATH`.
 
 | Flag | |
 |---|---|

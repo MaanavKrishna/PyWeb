@@ -242,9 +242,12 @@ jobs:
             libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libxcb-randr0 libxcb-render-util0 \
             libxcb-image0 libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxkbfile1 \
             libcairo2-dev libgirepository1.0-dev pkg-config gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
-            libcanberra-gtk3-module python3-dev build-essential
+            libcanberra-gtk3-module python3-dev python3-venv build-essential
       - name: Install
-        run: pip install -e ".[test,desktop]" "pywebview[qt6]" briefcase
+        run: |
+          pip install -e ".[test,desktop]" "pywebview[qt6]"
+          # Linux system packages are built with the OS's own Python, so Briefcase runs on it.
+          /usr/bin/python3 -m venv /tmp/briefcase && /tmp/briefcase/bin/pip install -q briefcase
       - name: The app in a real window (Qt WebEngine)
         run: xvfb-run -a python -m pytest tests/desktop tests/test_desktop.py -q -p no:cacheprovider
         env:
@@ -254,9 +257,9 @@ jobs:
           python -m pyweb.cli build examples/todo/app.pyweb --desktop --out /tmp/todo-desktop \
             --pyweb "pyweb-stack[desktop] @ file://$GITHUB_WORKSPACE"
           cd /tmp/todo-desktop
-          briefcase create linux system --no-input
-          briefcase build linux system --no-input
-          briefcase package linux system --no-input
+          /tmp/briefcase/bin/briefcase create linux system --no-input
+          /tmp/briefcase/bin/briefcase build linux system --no-input
+          /tmp/briefcase/bin/briefcase package linux system --no-input
           ls -la dist
           app=$(find build -path '*usr/bin/*' -type f | head -1)
           PYWEB_DESKTOP_SMOKE=1 PYWEB_DESKTOP_DATA=/tmp/todo-data xvfb-run -a "$app" | tee /tmp/smoke.txt

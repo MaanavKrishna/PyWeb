@@ -64,7 +64,7 @@ def test_enter_and_exit(page, tmp_path):
     with _open(tmp_path, LIST) as url:
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         until(page, "getComputedStyle(document.querySelector('#r1')).opacity === '1'", timeout=3)
         page.click("#add")
         page.wait_for_selector("#r4")
@@ -94,7 +94,7 @@ def test_reduced_motion_is_instant(page, tmp_path):
         page.emulate_media(reduced_motion="reduce")
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.click("#add")
         page.wait_for_selector("#r4")
         page.wait_for_timeout(50)
@@ -139,7 +139,7 @@ def test_interrupting_keeps_velocity_and_gestures(page, tmp_path):
     with _open(tmp_path, MOVE) as url:
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.click("#go")
         page.wait_for_timeout(120)
         a = _x(page, "#ball")
@@ -167,7 +167,7 @@ def test_variants_stagger_children(page, tmp_path):
     with _open(tmp_path, MOVE) as url:
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.wait_for_timeout(200)
         ops = page.eval_on_selector_all(".v", "els => els.map(e => parseFloat(getComputedStyle(e).opacity))")
         assert ops[0] > ops[-1], ops                                         # first ones lead
@@ -223,7 +223,7 @@ def test_layout_animations_keep_identity(page, tmp_path):
     with _open(tmp_path, LAYOUT) as url:
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.wait_for_timeout(300)
         page.locator("#row1 input").fill("typed")
         page.locator("#row1 input").focus()
@@ -251,7 +251,7 @@ def test_hundred_row_reorder_keeps_frames(page, tmp_path):
     with _open(tmp_path, LAYOUT) as url:
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.wait_for_timeout(300)
         page.evaluate("""() => { window.__frames = []; const tick = (t) => { window.__frames.push(t);
                           if (window.__frames.length < 60) requestAnimationFrame(tick); }; requestAnimationFrame(tick); }""")
@@ -288,7 +288,7 @@ def test_drag_and_counting(page, tmp_path):
     with _open(tmp_path, DRAG) as url:
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.wait_for_timeout(200)
         box = page.locator("#free").bounding_box()
         page.mouse.move(box["x"] + 25, box["y"] + 25)
@@ -351,7 +351,7 @@ def test_client_navigation_uses_view_transitions(page, tmp_path):
     with _open(tmp_path, PAGES) as url:
         page.goto(url)
         ready(page)
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.evaluate("""() => { window.__vt = 0; const real = document.startViewTransition.bind(document);
                           document.startViewTransition = (cb) => { window.__vt++; return real(cb); }; }""")
         page.click("#go")
@@ -380,7 +380,7 @@ LOOPS = '''
 def test_repeats_keyframes_and_colours(page, tmp_path):
     with _open(tmp_path, LOOPS) as url:
         page.goto(url)                                                      # no browser code: just the engine
-        page.wait_for_function("window.pywebMotion")
+        until(page, "!!window.pywebMotion")
         page.wait_for_timeout(1000)
         assert page.eval_on_selector("#spin", "el => el.getAnimations().some(a => a.playState === 'running')")
         until(page, "!document.querySelector('#shake').getAnimations().length", timeout=3)

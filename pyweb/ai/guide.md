@@ -169,9 +169,10 @@ def Item(item_id: int):
   `session.require("admin")`. `pyweb.auth.revoke_user(user_id)` signs a user
   out on every device (e.g. after a password change).
 - Give every `@server` parameter a type hint (`str`, `int`, `list[int]`,
-  a dataclass or Model, `Literal[...]`): arguments are checked against
-  them, and wrong types or unknown arguments get a 422 before your code
-  runs. Still check permissions and business rules yourself.
+  `date`, `Decimal`, a dataclass or Model, `Literal[...]`): arguments are
+  checked against them, and wrong types or unknown arguments get a 422
+  before your code runs. Still check permissions and business rules
+  yourself; limit expensive functions with `@server(rate="5/minute")`.
 - `pyweb.auth.hash_password` / `verify_password` for passwords.
 - Data: prefer Models. `app = App(database="sqlite:///app.db")`, then
   `class Post(Model): title: str = Field(max=120); author: User; tags: list[Tag] = []`
@@ -249,6 +250,8 @@ bool abs min max sum round range sorted reversed enumerate zip list dict
 set tuple any all isinstance print`), common str/list/dict/set methods.
 JS globals are available directly: `window`, `document`, `localStorage`,
 `console`, `setTimeout`, `setInterval`, `fetch`, `Math`, `JSON`, `Date`.
+`import math` at the top of the file works in browser code too, and so do
+plain functions imported from another `.pyweb` file.
 
 Not supported in browser code: classes, imports, `with`, generators,
 walrus, `*args/**kwargs` parameters, slice assignment, keyword arguments to
@@ -432,20 +435,138 @@ def Todos():
 - Give libraries an element with `ref={el}` (declare `el = None`; it is
   set before `on_mount`).
 
-## 13. Workflow for agents
+## 13. UI kit and motion
+
+Build interfaces from `pyweb.ui` instead of hand-written CSS and JS. Its
+components render on the server, are keyboard-accessible, and follow the
+app's theme (the sign-in and admin pages too):
+
+```python
+from pyweb.ui import (Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, DialogContent,
+                      DialogHeader, DialogTitle, DialogTrigger, Theme, toast)
+
+app = App(title="Tracker", database="sqlite:///app.db", theme=Theme.preset("violet"))
+
+    <Card>
+        <CardHeader><CardTitle>Issues</CardTitle></CardHeader>
+        <CardContent>
+            <Dialog>
+                <DialogTrigger id="new">New issue</DialogTrigger>
+                <DialogContent>
+                    <DialogHeader><DialogTitle>New issue</DialogTitle></DialogHeader>
+                    <Form action={add_issue}>...</Form>
+                </DialogContent>
+            </Dialog>
+            <Button variant="outline" size="sm" href="/orgs">Team</Button>
+        </CardContent>
+    </Card>
+```
+
+- List components and their `variant`/`size` values with the `pyweb_ui`
+  MCP tool (or read `pyweb://kit/<Name>`). There are buttons, cards,
+  badges, alerts, tables and data tables, charts, tabs, accordions,
+  dialogs and sheets, dropdown and context menus, popovers, tooltips,
+  selects, comboboxes, a command palette, date pickers, sliders, switches,
+  checkboxes, toggle groups, a sidebar layout, pagination, carousels.
+- Every component takes `class_=`, `id=`, `aria-*` and event attributes.
+- `toast("Saved", "details", tone="success")` from a server function shows
+  a toast in the browser.
+- Theme: `Theme(accent="#0f766e", radius=8, font="inter", density="compact")`
+  or `Theme.preset("zinc" | "slate" | "rose" | "ocean" | "violet" | "emerald" | "amber" | "indigo")`.
+- Your own variants: `ui.extend("Button", variant={"brand": {...css}})`;
+  your own components: `variants()` / `style()` / `cx()` from `pyweb.ui`.
+- Motion on any element: `animate="fade-up"` (presets: fade, fade-up/down/left/right,
+  slide-*, scale, pop, blur-in, flip, collapse, shake, pulse), or
+  `initial={{"opacity": 0, "y": 8}} animate={{"opacity": 1, "y": 0}} exit={{"opacity": 0}}`,
+  `layout` (smooth reordering, e.g. on rows of a live list), `while_hover=`,
+  `while_tap=`, `drag`. `App(motion=Motion(feel="snappy" | "gentle" | "bouncy" | "none"))` (`from pyweb.motion import Motion`)
+  sets the feel everywhere; reduced-motion settings are honoured.
+
+## 14. Teams (organizations)
+
+For products where people work in teams, use `app.use_auth(orgs=True)`:
+`/orgs` lists a user's organizations, `/orgs/<slug>` invites members and
+sets roles (owner, admin, member, viewer).
+
+```python
+auth = app.use_auth(orgs=True)
+auth.plans({"free": {"seats": 3, "exports": False}, "pro": {"seats": 50, "exports": True}})
+
+
+class Issue(Model, tenant=True):          # rows belong to the current organization
+    title: str = Field(min=3, max=120)
+
+
+@server(org_role=["owner", "admin"], feature="exports")
+def export_issues() -> list:
+    return [i.to_dict() for i in Issue.query()]
+```
+
+- Every query on a `tenant=True` Model (including `get_or_404`, relations,
+  `.live()` lists, bulk updates) only sees the current organization's
+  rows, and new rows get it automatically. Don't add `org_id` filters or
+  ownership policies for that; don't use `.unscoped()` outside
+  `with system():`.
+- `auth.org()` is the current organization (None until the user has one:
+  create it with `auth.create_org(name)` then `auth.switch_org(org)`),
+  `auth.role()` the user's role in it.
+- Guards: `org_role=` and `feature=` work on `@server`, `@app.page` and
+  `@app.layout`. Plans are True/False features and numeric limits
+  (`seats` is enforced on invite); your billing code changes `org.plan`.
+- Jobs queued in a request run for the same organization.
+- API tokens: users make them at `/account/tokens`; scripts call server
+  functions with `Authorization: Bearer pwk_...`. `pyweb openapi` describes them.
+- Tests: `client.login("ann@example.com", org="Acme", org_role="member")`.
+
+## 15. Installable apps, desktop apps, webhooks, security
+
+- **Installable (PWA):** `App(pwa=True)` (or `pwa=PWA(name=, icon="static/icon.png",
+  theme_color=, cache_pages=True)` from `pyweb.pwa`): manifest, icons, a
+  service worker and an offline page. Push: `pip install "pyweb-stack[push]"`,
+  a button with `data-pw-push="subscribe"`, then `push.send(user, title, body, url)`.
+- **Desktop:** `App(desktop=Window(width=1100, height=760))` (from
+  `pyweb.desktop`), run with `pyweb desktop app.pyweb`, package with
+  `pyweb build --desktop app.pyweb --package`. Native dialogs
+  (`desktop.open_file`, `save_file`, `choose_folder`, `notify`) are called
+  from `@server` functions; show their buttons only when `platform.desktop`
+  (`from pyweb import platform`) is true.
+- **Webhooks in:** `@app.webhook("/hooks/stripe", secret=webhooks.env_secret("STRIPE_SECRET"),
+  scheme="stripe")` (or `"github"`, `"standard"`) on `def on_stripe(event):`
+  (`event.type`, `event.data`). Signatures, replays and retries are handled.
+  **Out:** `webhooks.send(url, "invoice.paid", data, secret=...)`, or
+  `webhooks.publish(event, data)` to every endpoint of the current organization.
+- **Rate limits:** `@server(rate="5/minute")` on anything expensive or
+  abusable (`per="user"` default, `"ip"`, `"org"`, `"all"`).
+- **Fetching URLs users give you:** `from pyweb.http import fetch` (refuses
+  internal addresses), never `urllib`/`requests` directly.
+- **Sensitive fields:** `Field(encrypted=True)` (needs `PYWEB_DATA_KEY` in
+  production), `searchable=True` to look rows up by them; `private=True`
+  for values that must never reach a browser.
+- Don't put API keys in the source: `pyweb check` fails on them. Read
+  them with `os.environ` in server code.
+- Before shipping: `pyweb check --production` (MCP: `pyweb_security_check`
+  with `production=true`).
+
+## 16. Workflow for agents
 
 1. Start from a template: `pyweb new NAME --template saas` (or the
    `pyweb_new_app` MCP tool). Templates: blank, counter, todo, blog, saas
    (teams, accounts, tenant Models, forms, jobs, admin: the best start for a
    product), auth, chat, ai-chat, desktop (a notes app in its own window).
 2. Edit `app.pyweb`. After every edit run `pyweb check app.pyweb`
-   (MCP: `pyweb_check`) and fix errors by line number.
+   (MCP: `pyweb_check`) and fix errors by line number. Look things up with
+   `pyweb_docs`; `pyweb_explain` says where a line's names run and what can
+   go there; `pyweb_ui` lists the kit's components.
 3. Need a JavaScript library? `pyweb add NAME` (MCP: `pyweb_packages`).
    Use `pyweb inspect` (MCP: `pyweb_inspect`) to confirm what runs in the
    browser vs server and what is sent to the browser.
 4. Verify behaviour: list pages, layouts and parameters (`pyweb_routes`),
-   render pages (`pyweb_render`) and call server functions (`pyweb_call`). See the page and try interactions in a real
-   browser with `pyweb_screenshot` (steps: click, fill, press, ...).
+   render pages (`pyweb_render`) and call server functions (`pyweb_call`),
+   as a signed-in member with `as_user`/`org`. See the page and try
+   interactions in a real browser with `pyweb_screenshot` (steps: click,
+   fill, press, ...), and check it in light, dark and at phone width with
+   an accessibility audit using `pyweb_review`. If the user runs
+   `pyweb dev`, `pyweb_dev` and `pyweb_logs` show its errors and logs.
 5. Data: after changing a Model, `pyweb db diff` then `pyweb db upgrade`
    (MCP: `pyweb_migrations`). Look at tables and rows with
    `pyweb_db_schema` / `pyweb_db_query` (read-only), at jobs with
@@ -453,7 +574,9 @@ def Todos():
 6. Test: new apps include `test_app.py` (`pyweb.testing.TestClient`); add
    tests for what you change and run `pytest` (MCP: `pyweb_test`).
    `client.login("ann@example.com", roles=["admin"])` signs a test in.
-7. Ship: `pyweb deploy compose` (or docker, k8s, fly, render, railway)
-   writes everything and explains it; never hand-write Dockerfiles.
+7. Ship: `pyweb_security_check` (with `production=true`), then
+   `pyweb deploy compose` (or docker, k8s, fly, render, railway) writes
+   everything and explains it (`pyweb_deploy_plan` shows the plan without
+   writing); never hand-write Dockerfiles.
 
 Full docs: https://maanavkrishna.github.io/PyWeb/

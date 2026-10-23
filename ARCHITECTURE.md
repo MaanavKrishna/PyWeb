@@ -338,11 +338,19 @@ field and records everything in `pyweb.lock`).
   loops) and run `pyweb db check` in the background for the "needs a
   migration" code lens. `editors/vscode` adds a TextMate grammar,
   commands and snippets, and starts the server.
-- **`pyweb mcp`** (`mcp.py`): the same compiler, `TestClient`, Playwright
-  and pytest behind MCP tools for AI assistants, plus read-only data
-  tools (schema, guarded queries, migrations, jobs, recent requests),
-  `pyweb_openapi` and `pyweb_security_check`. `pyweb_render` and
-  `pyweb_call` can act as a signed-in member of an organization.
+- **`pyweb mcp`** (`mcp.py`, `mcp_tools.py`, `mcp_http.py`, `devlink.py`):
+  the same compiler, `TestClient`, LSP functions, Playwright and pytest
+  behind MCP tools for AI assistants, plus read-only data tools, docs
+  search (the docs ship inside the package) and the UI kit's index. Each
+  tool declares an input and an output schema; arguments are checked
+  before it runs, and slow tools send progress notifications through a
+  contextvar that carries the current call. `mcp_http.py` serves the same
+  `Server` over Streamable HTTP (a session per `initialize`, event streams
+  for tool calls). `pyweb dev` publishes `.pyweb/dev.json` (its address
+  and a random token) through `devlink.Link`, which also keeps the last
+  log records and answers `/__pyweb/dev/agent/*` only with that token;
+  the MCP tools use it to show the running server's errors, logs and
+  requests.
 - **`pyweb upgrade`** (`upgrade.py`): reads an app and its scripts and
   lists what changed since 0.4 and 0.5, with safe rewrites behind `--fix`.
 - **Playground** (`website/playground`): PyWeb itself runs in Pyodide.

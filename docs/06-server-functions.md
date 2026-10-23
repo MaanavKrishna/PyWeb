@@ -40,15 +40,50 @@ def Shop():
 
 - Parameters are matched by name; positional and keyword calls both
   work. `*args`/`**kwargs` are not allowed on `@server` functions.
-- Arguments are validated against annotations before your function runs:
-  `int`, `float` and `bool` are coerced (`"3"` → `3`); a failed coercion
-  or a missing required argument is a `validation_error`. Other
-  annotations are documentation.
+- Arguments are checked against the type hints before your function
+  runs, and anything wrong is a `validation_error` naming the argument:
+  - `str`, `int`, `float` and `bool` are converted the way forms need
+    (`"3"` → `3`), but a dict or list is never accepted for them;
+  - `list[int]`, `dict[str, str]`, `Optional[...]`, `X | None` and
+    `Literal["a", "b"]` are checked item by item;
+  - `date`, `datetime` and `time` are parsed from ISO 8601 text, and
+    `Decimal` and `UUID` from text;
+  - a Model or dataclass parameter is built from an object with only its
+    own fields (a browser can't set `id`, `private=True` or
+    `readonly=True` fields); `Email` must look like one;
+  - `Field(...)` rules (as the default, or in `Annotated[str, Field(max=40)]`)
+    are checked too;
+  - unknown and missing required arguments are refused.
 - Return values are serialised to JSON (the same conversions as page
   state: dataclasses, `datetime`, `Decimal`, `to_dict()` objects).
 - `async def` server functions are supported.
 - Server calls cannot appear directly in markup expressions (`{load()}`):
   markup must be synchronous. Load data in a page variable or a handler.
+
+## Who may call it
+
+Options on `@server` check the caller before your code runs:
+
+```python
+@server(login=True)                               # signed in, or 401
+def save_draft(text: str): ...
+
+@server(roles=["admin"], fresh=600)               # the role (403 otherwise), signed in within 10 minutes
+def delete_everything(): ...
+
+@server(org_role=["owner", "admin"], feature="exports")   # a role in the current organization,
+def export_projects(): ...                                 # and a plan with that feature
+
+@server(rate="5/minute")                          # see "Limits for one function" below
+def send_invite(email: str): ...
+```
+
+`login=`, `roles=` and `fresh=` come with the
+[auth kit](10-auth.md); `org_role=` and `feature=` with
+[teams](30-teams.md). The same options work on `@app.page` and
+`@app.layout`. They decide who may call the function; which rows it may
+touch is the job of [row policies](10-auth.md#row-policies) and
+[tenant Models](30-teams.md#tenant-models).
 
 ## Errors
 
@@ -301,6 +336,10 @@ def send_invite(email: Email):
 def check_coupon(code: str):
     ...
 
+@server(rate="100/hour", per="org")      # one budget for each organization (with teams)
+def generate_summary():
+    ...
+
 @server(rate="1000/day", per="all")      # every caller together
 def generate_report():
     ...
@@ -308,7 +347,8 @@ def generate_report():
 
 `rate` is `calls/unit` with `second`, `minute`, `hour` or `day` (also
 `"30/5m"`). `per="user"` (the default) counts each signed-in user, and
-visitors who aren't signed in by address. Beyond the limit the call gets
+visitors who aren't signed in by address; `per="ip"` counts addresses,
+`per="org"` the current organization and `per="all"` everyone together. Beyond the limit the call gets
 `429 rate_limited` with `Retry-After`. With `PYWEB_REDIS_URL` set, the
 counts are shared by every server process.
 

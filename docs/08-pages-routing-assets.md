@@ -43,6 +43,18 @@ def Book(book_id: int):
   shows a generic 500 page with a request id and logs the traceback.
   Both can be replaced with your own pages (below).
 
+### Page options
+
+| `@app.page(route, ...)` | |
+|---|---|
+| `title=`, `description=`, `image=`, `canonical=`, `noindex=True` | the `<title>` and the head tags (below) |
+| `layout=` | which [layout](19-layouts-navigation.md) wraps the page (`None` for none) |
+| `login=True`, `roles=[...]`, `fresh=600` | who may open it ([Authentication](10-auth.md#guards)) |
+| `org_role=`, `feature=` | a role in the current organization, a plan feature ([Teams](30-teams.md#guards-and-plans)) |
+
+`@app.layout` takes the same guards and applies them to every page under
+it.
+
 ## Query parameters
 
 Page parameters that aren't in the route are read from the query

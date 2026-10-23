@@ -62,6 +62,11 @@ between processes, call `realtime.use_bus(bus)` at startup.
   [Logs, metrics & tracing](26-observability.md)). The older
   `pyweb.observability.Logger`, `Tracer`, `Metrics` and `format_error` still work.
 - `pyweb.security.escape`, `safe_join`, `safe_next`.
+- `pyweb.http.fetch(url, ...)`: fetch URLs that users chose without
+  reaching your internal network (see [Security](13-security.md#requests-your-server-makes)).
+- `pyweb.webhooks`: `send`, `publish`, `verify` and `@app.webhook`
+  receivers; `pyweb.filegc.collect()` deletes unreferenced uploads (see
+  [Webhooks & files](33-webhooks-files.md)).
 
 ## Stability
 
@@ -78,16 +83,20 @@ warning in an earlier release. They are the intended 1.0 API.
 | Models | `Model`, `Field`, the field types, relations, `QuerySet` methods, `policy`, `atomic` (see [Data](09-data.md)) |
 | Forms | `Form`, `Input`, `Textarea`, `Select`, `Checkbox`, `FileInput`, `Submit`, `ValidationError` (see [Forms](23-forms.md)) |
 | `pyweb.authkit` | `use_auth()` options, `auth.user()`, `login=`/`roles=`/`fresh=` guards, the auth Models (see [Authentication](10-auth.md)) |
+| Teams | `use_auth(orgs=True)`, the `auth.org()`/`create_org`/`invite`/... API, `org_role=`/`feature=` guards, `plans()`, `Model, tenant=True`, `pyweb.tenancy.org_scope` (see [Teams](30-teams.md)) |
+| `pyweb.ui`, `pyweb.motion` | the kit's components and their parameters, `Theme`, `toast`, `extend`, `variants`/`style`/`cx`; the motion attributes (`initial`, `animate`, `exit`, `transition`, `variants`, `layout`, `layout_id`, `while_*`, `drag`), `Motion`, `preset` (see [UI kit & motion](34-ui-and-motion.md)) |
+| `pyweb.webhooks`, `pyweb.http` | `@app.webhook`, `send`, `publish`, `WebhookEndpoint`; `fetch` |
 | `pyweb.jobs` | `@app.job`, `.enqueue()`, `@app.cron`, `@app.every`, `current()`, `Worker` (see [Background jobs](24-jobs.md)) |
 | RPC and live wire protocols | URL, request/response JSON, error codes, the `/__pyweb/ws` messages |
-| `pyweb.testing` | `TestClient` (with `login`, `logout`, `rpc`), `Factory`, `serve` |
+| `pyweb.testing` | `TestClient` (with `login` (including `org=`), `logout`, `rpc`), `Factory` (with `for_org`), `as_org`, `serve` |
 | `pyweb.asgi` | `create_app` |
 | `pyweb.db`, `pyweb.db.migrate` | `connect`, `execute`, `transaction`, `stream`, `Query`, migrations and their files |
 | `pyweb.auth` | passwords, sessions, TOTP, magic links, WebAuthn assertion verification |
 | `pyweb.telemetry` | `span`, `on_error`, log fields, metric names |
 | `pyweb.cache`, `pyweb.realtime` | as documented above |
 | `pyweb.platform`, `pyweb.desktop`, `pyweb.pwa`, `pyweb.push` | `desktop`/`pwa`/`installed`/`web` flags, the desktop API and `Window`, `PWA`, `push.send` ([Desktop apps](32-desktop.md), [Installable apps](31-pwa-push.md)) |
-| CLI | `new dev check inspect build serve worker db deploy upgrade` and their documented flags |
+| CLI | `new dev check inspect build serve worker db deploy upgrade ui desktop push openapi files mcp` and their documented flags |
+| `pyweb mcp` | tool, resource and prompt names and their arguments; results may gain fields |
 | `dist/` layout | `app.pyweb`, `manifest.json` keys documented in [Deployment](12-deployment.md) |
 
 **Experimental** (importable, tested, but may change in any release):

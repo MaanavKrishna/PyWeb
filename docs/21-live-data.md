@@ -120,6 +120,11 @@ takes over re-running its query from the page's signed query description.
   every change. For large lists, give rows a key, page them, or show counts.
 - Rows are sent to every page showing the query, so filter per user on
   the server (`.where(owner=auth.user())`, a row policy, or
-  `where owner = ?` in SQL), never in the browser.
+  `where owner = ?` in SQL), never in the browser. Live lists of
+  [tenant Models](30-teams.md#tenant-models) are kept per organization:
+  each team's pages get only its rows.
+- To animate rows as they arrive, leave or move, give the row element
+  `initial`, `animate`, `exit` and `layout` (see
+  [UI kit & motion](34-ui-and-motion.md#motion)).
 - A query nobody has rendered or watched for ten minutes is forgotten
   until a page renders it again.

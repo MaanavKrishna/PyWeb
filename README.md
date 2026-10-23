@@ -331,7 +331,7 @@ N+1 loops. [Scaling & deploying →](docs/25-scaling.md) ·
 - **Every page is server-rendered**: complete HTML on first paint, then
   hydrated in place. Pages without interactivity ship no JavaScript.
 - **Small**: a typical interactive page is under 1 KB of code plus a
-  ~14 KB (gzip) runtime that's cached across pages. Forms and live
+  ~15 KB (gzip) runtime that's cached across pages. Forms and live
   updates add a few KB, only on pages that use them.
 - **Its own server**: `pyweb serve` handles HTTP/1.1 keep-alive and
   WebSockets on one asyncio loop per process, with `--workers N`
@@ -498,15 +498,20 @@ Upgrade with `pip install -U pyweb-stack`.
 | 0.2 | MCP server for AI assistants, AI guide, project templates, `AGENTS.md`/`CLAUDE.md`, `llms.txt` |
 | 0.1 | First public release: compiler, reactive runtime, server rendering, typed RPC, sessions, databases, CLI |
 
-The test suite (about 1,200 tests) covers the parser, the
+The test suite (about 1,600 tests) covers the parser, the
 Python→JavaScript translation (differentially, against CPython), the
-reactive runtime, server rendering, RPC, forms, Models and migrations
-(with property tests), the HTTP and WebSocket parsers (fuzzed), live
-patches, jobs on every backend, every example app in Chromium, the
-playground on Pyodide, and the whole suite against real Postgres, MySQL
-and Redis servers, on Python 3.10–3.13. CI also boots a
-`pyweb deploy compose` stack and runs the VS Code extension in a real
-VS Code.
+reactive runtime, both server renderers against each other, RPC, forms,
+Models and migrations (with property tests), tenant isolation (random
+sequences across organizations), the HTTP and WebSocket parsers and the
+RPC and form parsers (fuzzed), live patches, jobs on every backend,
+every example app in Chromium, the UI kit and motion in Chromium,
+Firefox and WebKit with screenshot baselines and axe-core accessibility
+checks, the playground on Pyodide, the MCP server through the official
+SDK, and the whole suite against real Postgres, MySQL and Redis servers,
+on Python 3.10–3.15 and free-threaded 3.15t. CI also runs an OWASP ZAP
+scan, boots a `pyweb deploy compose` stack, opens a desktop app window
+and builds its installer, gates on benchmarks, and runs the VS Code
+extension in a real VS Code.
 
 ## Contributing
 

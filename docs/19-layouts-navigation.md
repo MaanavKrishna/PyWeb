@@ -125,7 +125,13 @@ From browser code, `navigate("/path")` (from `pyweb.browser`) goes to
 another page the same way, for example after a form is saved.
 
 Navigation fires a `pyweb:navigate` event on `window` and announces the
-new page title to screen readers.
+new page title to screen readers. Where the browser supports View
+Transitions, the old and new page cross-fade, and elements with the same
+`layout_id` on both pages morph from one place to the other (see
+[UI kit & motion](34-ui-and-motion.md#motion)).
+
+Layouts take the same guards as pages (`login=`, `roles=`, `fresh=`,
+`org_role=`, `feature=`); every page under the layout gets them.
 
 ## Marking the current link
 

@@ -273,6 +273,9 @@ app = App()
   in the app are a compile error.
 - Pages belong in the app file. Other files hold components, server
   functions, helpers and constants. Circular imports are a compile error.
+- Plain functions and constants in another `.pyweb` file can be imported
+  too, and work in browser code (handlers, markup) as well as on the
+  server.
 - Plain `.py` modules still import as usual for server code.
 - `pyweb build` copies the imported files into `dist/`, and `pyweb dev`
   reloads when any of them changes.

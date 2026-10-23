@@ -136,6 +136,9 @@ def save_post(post: Post):
 Messages starting with a lowercase letter are shown after the field's
 label ("Title is already used").
 
+A parameter typed `date`, `datetime` or `time` gets a date or time input,
+and the server parses and checks what arrives.
+
 ## Uploads
 
 ```python

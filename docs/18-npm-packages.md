@@ -203,3 +203,8 @@ dataclasses, for typing data that a package hands you.
 With `--production` your page code is minified and hashed as usual;
 vendored files are served as they are, with long-lived caching because
 their URLs include the version.
+
+**Content-Security-Policy.** Pages that use npm packages don't get the
+Trusted Types rule the others have (many libraries write `innerHTML`
+themselves); the rest of the policy still applies. See
+[Security](13-security.md#cross-site-scripting).

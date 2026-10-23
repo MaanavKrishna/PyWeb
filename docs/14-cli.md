@@ -7,7 +7,8 @@ pyweb new NAME [--template T]        create NAME/ with app.pyweb, test_app.py, A
 pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
                                      development server: recompile on save, live reload, error overlay,
                                      the dev toolbar (requests, SQL, jobs, emails, theme and motion
-                                     editors), and background jobs in the same process
+                                     editors), and background jobs in the same process; writes
+                                     .pyweb/dev.json so `pyweb mcp` can see its errors and logs
 pyweb check FILE [--production] [--strict]
                                      compile, security and accessibility checks; --production also checks
                                      the environment; --strict fails on warnings too
@@ -18,6 +19,9 @@ pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
                                      self-contained dist/; --production hashes and minifies
 pyweb serve [DIR] [--host 0.0.0.0] [--port $PORT|8000] [--workers N] [--migrate]
                                      production server for a built dist/ (N processes)
+pyweb ui list | add NAME... [--force] | diff NAME   [--dir .]
+                                     the UI kit's components; copy one into components/ to change
+                                     it; show how your copy differs from the kit
 pyweb files clean [--dry-run] [--grace SECONDS] [--app app.pyweb]
                                      delete uploaded files no row refers to (also runs daily)
 pyweb desktop [FILE] [--dev] [--smoke] [--gui qt|gtk|...]

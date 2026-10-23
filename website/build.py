@@ -76,8 +76,8 @@ DOC_SLUG = {f: s for f, s, _, _ in DOCS}
 GROUPS = ["Start", "Language", "Server", "Ship", "Reference"]
 
 EXAMPLES = [
-    ("saas", "Teamboard (SaaS)", "Accounts, Models with migrations and row policies, forms, lists that update live in "
-     "every tab, a background job, a daily email and an admin.", False),
+    ("saas", "Teamboard (SaaS)", "Teams with invitations and roles, tenant Models with migrations, forms, lists that "
+     "update live in every tab, a background job, a webhook, API tokens and an admin; installable.", False),
     ("counter", "Counter", "Signals, a computed value and a bound number input.", True),
     ("todo", "Todos", "Components, list mutation, filters and keyed lists, with rows that animate in and out.", True),
     ("ui", "UI kit and motion", "Dialogs, menus, pickers, toasts, a data table and charts from pyweb.ui, plus "
@@ -89,10 +89,13 @@ EXAMPLES = [
     ("showcase", "Showcase", "Reactive state, derived values and a server-backed search on one page.", False),
     ("site", "Plant shop", "A layout, client-side navigation, typed query parameters, page titles and a 404 page.",
      False),
-    ("dashboard", "Sales dashboard", "Live queries and a Chart.js chart from npm, updating in every open window.",
+    ("dashboard", "Sales dashboard", "Live queries, counters that count up, the kit's bar chart and a Chart.js chart "
+     "from npm, updating in every open window.",
      False),
     ("ai-chat", "AI chat", "Streaming replies with a Stop button and Markdown, from Anthropic, an OpenAI-compatible "
      "server or a demo model.", False),
+    ("desktop", "Notes (desktop)", "A Markdown notes app for pyweb desktop: its own window, data in the user's "
+     "folder, and export through the system's Save dialog.", False),
 ]
 
 
@@ -715,6 +718,11 @@ def example_page(name, title, blurb, live):
                 f'<span class="url">localhost:8000 · live, {js_gz} B of page code</span>'
                 f'<a href="demos/{name}/index.html" target="_blank" rel="noopener">Open ↗</a></div>'
                 f'<iframe src="demos/{name}/index.html" title="{esc(title)} demo" loading="lazy"></iframe></div>')
+    elif name == "desktop":
+        run = (f"pip install 'pyweb-stack[desktop]'\npyweb desktop examples/{name}/app.pyweb    "
+               f"# or in a browser: pyweb dev examples/{name}/app.pyweb")
+        demo = (f'<div class="callout">This example is a desktop app: it opens in its own window. '
+                f'Run it locally: {code_block(run, "bash")}</div>')
     else:
         demo = (f'<div class="callout">This example needs its server (database, sessions or server functions). '
                 f'Run it locally: {code_block(f"pyweb dev examples/{name}/app.pyweb", "bash")}</div>')
@@ -803,13 +811,11 @@ def landing(bench, demo_gz):
         ("clock", "server", "Background jobs and schedules",
          "<code>@app.job</code> and <code>@app.cron</code>, stored in your database, retried with backoff, and queued "
          "in the request's transaction, so a rollback queues nothing."),
-        ("shield", "server", "Checked boundaries",
-         "Database handles, imports and secrets can't reach browser code: it's a compile error with a line number. "
-         "<code>pyweb inspect</code> explains every decision."),
-        ("lock", "both", "Security by design",
-         "Trusted Types and a hashed CSP, encrypted fields, rate limits per function, an SSRF-safe "
-         "<code>fetch</code>, signed webhooks and secret scanning. A <a href=\"https://github.com/MaanavKrishna/PyWeb/blob/main/THREAT_MODEL.md\">threat model</a> "
-         "lists every threat with its test."),
+        ("shield", "both", "Security by design",
+         "Secrets and database handles can't reach browser code: it's a compile error. Trusted Types, encrypted "
+         "fields, rate limits per function, an SSRF-safe <code>fetch</code>, signed webhooks and secret scanning; "
+         "a <a href=\"https://github.com/MaanavKrishna/PyWeb/blob/main/THREAT_MODEL.md\">threat model</a> lists "
+         "every threat with its test."),
         ("box", "browser", "npm without Node",
          "<code>pyweb add chart.js/auto</code> vendors a package for browser code, pinned in "
          "<code>pyweb.lock</code>. No <code>node_modules</code>, no bundler."),

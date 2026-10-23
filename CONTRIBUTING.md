@@ -19,7 +19,10 @@ Node.js (18+) is needed for the runtime and translator tests.
 ```bash
 ruff check pyweb tests website
 python -m pytest tests --ignore=tests/integration      # unit + browser tests
+PYWEB_SSR_VERIFY=1 python -m pytest tests               # also compare the two server renderers on every page
 ```
+
+CI runs the suite on Python 3.10 to 3.15 and on free-threaded 3.15t.
 
 Browser tests run in Chromium. CI also runs the UI kit, motion and the
 examples in Firefox and WebKit; to try one locally:
@@ -76,7 +79,13 @@ runtime is `pyweb/runtime/browser/runtime.js`, server rendering is
 - **Runtime changes** need a test in `tests/test_runtime_signals.py`
   (Node) or `tests/e2e/test_runtime_dom.py` (browser).
 - **Docs:** every ```` ```pyweb ```` block in `docs/` must compile (the test
-  suite checks). Rebuild the site with `python website/build.py`.
+  suite checks). Rebuild the site with `python website/build.py`. The
+  wheel ships `docs/*.md` and `THREAT_MODEL.md` inside the package
+  (`setup.py`), so `pyweb mcp` can search and serve them. Every test
+  `THREAT_MODEL.md` cites must exist.
+- **MCP tools** declare an output schema; `tests/test_mcp_v6.py` checks
+  results against it and drives the server with the official MCP SDK
+  over stdio and HTTP.
 - **No new required dependencies.** PyWeb's core is standard-library only;
   integrations go behind optional extras.
 - Keep the changelog's "Unreleased" section up to date in your PR.

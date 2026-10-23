@@ -13,7 +13,7 @@ push. In short:
   (CSRF: JSON-only RPCs, `Origin` and `Sec-Fetch-Site` checks,
   `SameSite` cookies);
 - injecting HTML or script through data you display (escaping, URL
-  filtering, a strict Content-Security-Policy);
+  filtering, a strict Content-Security-Policy with Trusted Types);
 - forged or tampered sessions, live-update feeds and live queries
   (HMAC-signed with separate keys);
 - server-only code, imports and secrets leaking into browser code
@@ -22,7 +22,13 @@ push. In short:
   deeply nested bodies, huge headers, slow clients, connection floods,
   too many live connections from one address;
 - tampered npm package files (`pyweb.lock` hashes);
-- path traversal in static files and unsafe redirects after login.
+- path traversal in static files and unsafe redirects after login;
+- with `tenant=True` Models, one organization reading or changing
+  another's rows (scoped queries, and row-level security on Postgres);
+- forged or replayed webhooks (signatures, timestamps, event ids);
+- your server being tricked into calling internal addresses, when you
+  fetch URLs with `pyweb.http.fetch`;
+- API keys committed with the app (`pyweb check` fails on them).
 
 **Your app is responsible for:**
 
@@ -228,7 +234,9 @@ table and column identifiers.
 - `pyweb.security.safe_next` / `is_safe_redirect` validate redirect
   targets; `pyweb.uploads.validate_upload` checks size, declared type and
   magic bytes, and generates safe storage names.
-- Passwords use PBKDF2-HMAC-SHA256 with per-user salts; session cookies
+- The auth kit hashes passwords with scrypt (or argon2id with
+  `pyweb-stack[auth]`); `pyweb.auth.hash_password` for apps without the
+  kit uses PBKDF2-HMAC-SHA256. All use per-user salts. Session cookies
   are HMAC-SHA256 signed and compared in constant time. Each login
   starts a new session, sessions end 30 days after sign-in, and
   `auth.revoke_user(user_id)` signs a user out everywhere
@@ -256,6 +264,18 @@ table and column identifiers.
   private data should only create a feed after checking the visitor
   (for example with `session.require()`), exactly as it would before
   rendering the data itself.
+
+## AI assistants and the dev server
+
+`pyweb mcp` runs on your machine with your permissions, like `pyweb dev`.
+Over stdio only the assistant that started it can talk to it. With
+`--http` it listens on 127.0.0.1 and refuses requests from web pages (by
+their `Origin`) and other host names (DNS rebinding); listening on any
+other address needs a token. `pyweb_db_query` runs one read-only
+statement in a transaction that is always rolled back, with secrets
+redacted. The dev server's state reaches the assistant only with the
+token in `.pyweb/dev.json`, a file only you can read; the dev server
+answers those requests only on loopback.
 
 ## Reporting a vulnerability
 

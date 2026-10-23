@@ -45,6 +45,11 @@ class Post(Model):
   (long text), `Email`, `URL`, `Slug`. Datetimes are stored in UTC and
   come back timezone-aware.
 - A field with no default and no `| None` is required.
+- `class Project(Model, tenant=True)` makes the rows belong to an
+  organization: every query sees only the current organization's rows.
+  See [Teams & organizations](30-teams.md). Row policies (who sees which
+  rows within an app) are on the [Authentication](10-auth.md#row-policies)
+  page.
 
 ### Field options
 

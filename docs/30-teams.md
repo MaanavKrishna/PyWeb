@@ -192,3 +192,8 @@ membership with `org_role` (default `"owner"`) and switches to it.
 PyWeb's own test suite runs random sequences of reads, writes, deletes
 and bulk updates by several organizations and checks that none of them
 ever sees or changes another organization's rows.
+
+With an AI assistant, `pyweb_render` and `pyweb_call` take `as_user` and
+`org` to act as a member, `pyweb_teams` lists each organization's
+members, invitations and rows, and the `add_teams` prompt walks through
+adding teams to an existing app (see [AI assistants & MCP](17-ai-assistants.md)).

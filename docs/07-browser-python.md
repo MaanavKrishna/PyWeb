@@ -37,6 +37,22 @@ rounding like Python), `range`, `sorted` (`key=`, `reverse=`),
 `all`, `chr`, `ord`, `isinstance` (with builtin type names), `print`
 (to the browser console).
 
+**`math`:** `import math` (or `from math import pi, sqrt`) at the top of the file works in
+browser code: `pi`, `e`, `tau`, `inf`, `nan`, `sqrt`, `floor`, `ceil`,
+`trunc`, `fabs`, `exp`, `log` (with a base), `log10`, `log2`, `log1p`,
+`pow`, the trigonometric and hyperbolic functions, `atan2`, `hypot`,
+`copysign`, `degrees`, `radians`, `isfinite`, `isnan`, `isinf`. They
+become JavaScript's `Math` at compile time.
+
+**Helpers from other files:** a plain function (or constant) imported
+from another `.pyweb` file works in browser code like one defined in the
+same file, along with the helpers and constants it uses.
+
+**Python 3.15:** when the app runs on Python 3.15, browser code can also
+unpack in comprehensions (`[*row for row in rows]`, `{**d for d in ds}`),
+and `lazy import` is allowed in server code (it's a clear compile error
+on older Pythons).
+
 **Methods:**
 
 - `str`: `upper lower strip lstrip rstrip split splitlines join replace

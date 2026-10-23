@@ -19,11 +19,15 @@ dist/
   app.pyweb              your app (server functions and page bodies run from it)
   manifest.json          routes, asset names, RPC table, byte sizes
   Dockerfile             a ready-to-use image definition
+  sbom.json              CycloneDX bill of materials: PyWeb and every vendored npm package
+  *.pyweb, *.py          the other files the app imports (including UI kit components it uses),
+                         seeds.py and migrations/
   static/
-    runtime.<hash>.js    shared browser runtime (~14 KB gzip)
-    <Page>.<hash>.js     one module per interactive page
+    runtime.<hash>.js    shared browser runtime (~15 KB gzip)
+    <Page>.<hash>.js     one module per interactive page (and a .map source map)
     <Layout>.<hash>.js   one module per interactive layout
-    markdown.<hash>.js   only when a page uses <Markdown>
+    forms, live, markdown.<hash>.js   only when a page uses <Form>, live data or <Markdown>
+    motion*.js           only when a page uses animate=, layout or the motion API
     vendor/              npm packages from pyweb.lock (see npm packages)
     ...                  your static/ folder
   server/
@@ -31,6 +35,10 @@ dist/
 ```
 
 Without `--production`, files keep readable names and are not minified.
+The UI kit's stylesheet and behaviours (`/__pyweb/ui.css`,
+`/__pyweb/theme.css`, `/__pyweb/ui/*.js`) and, for installable apps, the
+manifest, icons and service worker are served by the server itself, so
+they always match the PyWeb version that serves them.
 
 ## Serve
 

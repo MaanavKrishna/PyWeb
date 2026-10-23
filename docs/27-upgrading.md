@@ -82,9 +82,12 @@ empty. `pyweb upgrade --check` reminds you while it's missing.
 Update the VS Code extension to 0.6 for the new completions and warnings
 (`org_role=`, `rate=`, webhook schemes, tenant Models read with
 `.unscoped()`, accessibility checks). MCP clients pick up the new tools
-(`pyweb_openapi`, `pyweb_security_check`) and the `as_user`/`org`
-arguments of `pyweb_render` and `pyweb_call` the next time they start
-`pyweb mcp`.
+(docs search, the UI kit, design and accessibility review, profiling,
+webhooks, teams, upgrade and deploy checks, and the link to your running
+`pyweb dev`), prompts and resources the next time they start `pyweb mcp`;
+see [AI assistants & MCP](17-ai-assistants.md). Tool arguments are now
+checked against each tool's schema, so a client that sent extra
+arguments gets an error that names them.
 
 ## Upgrading from 0.4 to 0.5
 

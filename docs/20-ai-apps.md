@@ -131,9 +131,10 @@ It renders into `<div class="markdown">`; add classes with `class=`.
   trim the length (the template keeps the last 20 messages of up to
   4,000 characters) and set the model's `max_tokens`.
 - **Limit who can call it.** `pyweb serve` rate-limits RPC calls per
-  client (120 a minute by default). For a public app, also require a
-  login (`session.require()`) and keep per-user budgets in your
-  database.
+  client (120 a minute by default). Give the AI function its own, lower
+  limit and require a sign-in: `@server(login=True, rate="20/hour")`
+  counts each user (or `per="org"` each team). For real money, also keep
+  per-user budgets in your database.
 
 ## Other AI patterns
 

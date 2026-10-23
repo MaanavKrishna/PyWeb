@@ -30,9 +30,26 @@ Around that core, PyWeb has what a product needs, in the same file:
 - **Background work**: `@app.job` and `@app.cron`, stored in your
   database, retried, and queued in the same transaction as the request.
   ([Background jobs](24-jobs.md))
+- **Teams**: `app.use_auth(orgs=True)` adds organizations, invitations,
+  roles and plans, and `class Project(Model, tenant=True)` keeps each
+  team's rows its own, enforced by the database on Postgres.
+  ([Teams & organizations](30-teams.md))
+- **A UI kit with motion**: `from pyweb.ui import Dialog, DataTable, ...`
+  gives accessible, themed components; `animate=`, `exit=` and `layout`
+  animate any element with springs. ([UI kit & motion](34-ui-and-motion.md))
+- **Installable and desktop apps**: `App(pwa=True)` makes an app
+  installable with an offline page and push notifications;
+  `pyweb desktop` opens it in its own window and packages an installer.
+  ([Installable apps](31-pwa-push.md), [Desktop apps](32-desktop.md))
+- **Webhooks and files**: signed webhooks in and out, and unused uploads
+  cleaned up. ([Webhooks & files](33-webhooks-files.md))
 - **Shipping**: `pyweb deploy` writes Docker, Compose, Kubernetes, Fly,
   Render or Railway files; logs, metrics and traces come built in.
   ([Scaling & deploying](25-scaling.md))
+- **Security by design**: Trusted Types, encrypted fields, rate limits
+  per function, an SSRF-safe `fetch` and secret scanning, with every
+  threat listed next to the test that proves its defence.
+  ([Security model](13-security.md))
 
 ```pyweb
 from pyweb import App, server
@@ -95,7 +112,7 @@ and makes Python the source language for all of it:
   sessions. Pages with live data open one WebSocket per tab (Server-Sent
   Events where WebSockets are blocked), and Redis carries changes between
   processes.
-- **What ships is small.** The shared runtime is about 14 KB gzipped and
+- **What ships is small.** The shared runtime is about 15 KB gzipped and
   cached; a typical page adds well under 1 KB. Forms (about 3 KB) and
   live updates (about 2 KB) load only on pages that use them, and pages
   without interactivity ship no JavaScript at all.

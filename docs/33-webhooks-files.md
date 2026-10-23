@@ -40,6 +40,31 @@ few useful ones) and `.source` (the path).
 `secret=` takes the string, or `webhooks.env_secret("NAME")` to read it
 from the environment when a delivery arrives.
 
+### Testing a receiver
+
+Sign a delivery the way the sender would and post it with the test
+client; the handler then runs as a job:
+
+```python
+import json, time
+from pyweb import jobs
+from pyweb.webhooks import sign_standard
+
+def test_new_order_webhook(client):
+    body = json.dumps({"type": "order.created", "data": {"id": 7}}).encode()
+    ts = str(int(time.time()))
+    res = client.request("POST", "/hooks/orders", body, {
+        "Content-Type": "application/json", "webhook-id": "msg_1", "webhook-timestamp": ts,
+        "webhook-signature": sign_standard("whsec_...", "msg_1", ts, body)})
+    assert res.status == 202
+    assert jobs.Worker(schedule=False).drain() == 1
+```
+
+An AI assistant can do the same with the `pyweb_webhook_send` MCP tool,
+which signs for whichever scheme the receiver expects, runs the job and
+reports its result (and with `bad_signature`, checks that forgeries are
+refused).
+
 ## Sending webhooks
 
 ```python

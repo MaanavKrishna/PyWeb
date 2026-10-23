@@ -74,12 +74,13 @@ pyweb inspect app.pyweb
 page Home("/") signals ['count'] rpc []
   place count: browser  # reactive state: assigned in increment(); literal initial value
   place increment: browser  # event handler (compiled to JavaScript)
+  place __page__: browser+server  # server renders HTML per request; browser takes over interactivity
 ```
 
 ## Check, build and serve
 
 ```bash
-pyweb check app.pyweb                          # compile + security checks (CI-friendly)
+pyweb check app.pyweb                          # compile, security and accessibility checks (CI-friendly)
 pyweb build app.pyweb --out dist --production  # hashed, minified, deployable dist/
 pyweb serve dist                               # production server with /healthz
 ```
@@ -98,7 +99,10 @@ ships it. Then, depending on what you're building:
 - forms that check what people type: [Forms & uploads](23-forms.md);
 - sign-up, login, passkeys and an admin: [Authentication](10-auth.md);
 - work that runs later or on a schedule: [Background jobs](24-jobs.md);
-
+- teams that share data: [Teams & organizations](30-teams.md);
+- components, a theme and animation: [UI kit & motion](34-ui-and-motion.md);
+- an app people install, or a desktop app: [Installable apps & push](31-pwa-push.md),
+  [Desktop apps](32-desktop.md);
 - several pages with a shared header: [Layouts & navigation](19-layouts-navigation.md);
 - pages that update when data changes: [Live data](21-live-data.md);
 - chat or other AI features: [Building AI apps](20-ai-apps.md), or start

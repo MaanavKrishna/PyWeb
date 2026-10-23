@@ -24,7 +24,9 @@ Why:
 1. **One machine, SQLite.** `pyweb serve` handles thousands of open
    connections in one process. Background jobs run inside it. The
    database is a file on a persistent volume. This is a good fit for a
-   lot of apps, and `pyweb deploy compose` (or `docker`) sets it up.
+   lot of apps, and `pyweb deploy compose` (or `docker`) sets it up. On
+   a free-threaded Python (3.14t, 3.15t), one process uses every core;
+   see [Performance](29-performance.md).
 2. **Several machines.** They need one shared database (Postgres or
    MySQL) and Redis, so rate limits, live updates and presence reach
    every visitor wherever their connection landed. `DATABASE_URL`

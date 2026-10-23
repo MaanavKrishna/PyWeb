@@ -28,7 +28,14 @@ every request after it:
 
 The *Jobs* tab lists recent background jobs (and retries failed ones);
 *Emails* shows the messages your app sent. In development emails are
-captured there instead of being sent.
+captured there instead of being sent. *Theme* changes the app's theme
+live and saves it into `app.pyweb`; *Motion* picks an animated element
+and tunes its spring (see [UI kit & motion](34-ui-and-motion.md)).
+
+An AI assistant connected to `pyweb mcp` sees the same: `pyweb_dev`
+shows whether the app compiles and its recent errors, `pyweb_logs` its
+log lines, and `pyweb_requests` with `source="dev"` the requests your
+browser made (see [AI assistants & MCP](17-ai-assistants.md)).
 
 The toolbar exists only in the dev server. `pyweb build` and `pyweb serve`
 never include it and its endpoints don't exist in production. Hide it
@@ -127,6 +134,7 @@ port private.
 | `pyweb_mail_total` | outcome | `sent`, `queued`, `failed` |
 | `pyweb_auth_events_total` | kind, ok | sign-ins, sign-ups, resets, ... |
 | `pyweb_errors_total` | where | unhandled errors (`rpc`, `page`, `form`, `job`) |
+| `pyweb_csp_violations_total` | directive | what browsers' Content-Security-Policy blocked (see [Security](13-security.md)) |
 | `pyweb_build_info` | version | |
 
 Routes are labelled by what handled the request, never by the raw path,

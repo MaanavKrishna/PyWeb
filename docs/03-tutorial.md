@@ -2,8 +2,8 @@
 
 We'll build a small multi-user notes app in one file: a page with
 browser-side state, a reusable component, a SQLite database behind
-server functions, and sign-in with sessions. The finished app is about
-90 lines.
+server functions, sign-in with sessions, and the UI kit. Each step is
+a complete app.
 
 ## 1. A page with state
 
@@ -228,7 +228,67 @@ reset, passkeys, OAuth, two-factor and an admin. Then
 and `auth.user()` is the person signed in. The
 [SaaS tutorial](28-saas-tutorial.md) builds on it.
 
-## 5. Ship it
+## 5. Make it look good
+
+The UI kit (`pyweb.ui`) has accessible, themed components; one
+`Theme(...)` sets the colours, corners and type for all of them, and for
+the sign-in and admin pages too. `animate=` adds motion:
+
+```pyweb
+from pyweb import App, Field, Model, server
+from pyweb.ui import Button, Card, CardContent, CardHeader, CardTitle, Theme
+
+app = App(title="Notes", database="sqlite:///notes.db", theme=Theme.preset("emerald"))
+
+
+class Note(Model):
+    body: str = Field(min=1, max=500)
+
+
+@server
+def add_note(body: str = Field(min=1, max=500)) -> list:
+    Note.create(body=body.strip())
+    return Note.query().order("id").all()
+
+
+@app.page("/")
+def Home():
+    notes = Note.query().order("id").all()
+    draft = ""
+
+    def save():
+        notes = add_note(draft)
+        draft = ""
+
+    <main>
+        <Card>
+            <CardHeader><CardTitle>Notes ({len(notes)})</CardTitle></CardHeader>
+            <CardContent>
+                <form onsubmit={save}>
+                    <input class="pw-control" bind={draft} aria-label="New note" placeholder="Write a note" />
+                    <Button type="submit">Save</Button>
+                </form>
+                <ul>
+                    for note in notes:
+                        <li animate="fade-up">{note["body"]}</li>
+                </ul>
+            </CardContent>
+        </Card>
+    </main>
+```
+
+- `Card`, `CardHeader`, `CardTitle` and `Button` render plain HTML on the
+  server; the kit's stylesheet comes with them. The `pw-control` class
+  styles your own inputs the same way.
+- `Theme.preset("emerald")` picks a preset; `Theme(accent="#0f766e",
+  radius=6, font="inter")` sets your own. In `pyweb dev`, the toolbar's
+  Theme tab changes it live and saves it into `app.pyweb`.
+- `animate="fade-up"` makes each new note slide in; people who ask their
+  system for less motion get none.
+
+See [UI kit & motion](34-ui-and-motion.md) for every component.
+
+## 6. Ship it
 
 ```bash
 pyweb check app.pyweb

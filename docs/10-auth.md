@@ -42,6 +42,11 @@ JavaScript:
 | `/reset` | Emails a link to choose a new password. Using it signs out every other device. |
 | `/account` | Name, email, password, passkeys, two-step sign-in with recovery codes, linked accounts, recent activity, every device you're signed in on (browser and system, network, last seen) with a button to sign each one out, or all of them but this one, a download of everything stored about you (JSON) and deleting the account. |
 | `/admin` | Browse, search, edit and delete rows of every Model. Only for users with the `admin` role, who must have signed in within the hour to change anything. Private fields (password hashes, secrets) never appear. |
+| `/account/tokens` | API tokens for scripts and other services (see [Calling server functions from scripts](06-server-functions.md#calling-server-functions-from-scripts-and-other-services)). |
+| `/orgs`, `/orgs/<slug>`, `/invite/<token>` | With `use_auth(orgs=True)`: the user's organizations, members and invitations, and accepting one. See [Teams & organizations](30-teams.md). |
+
+The pages use the [UI kit](34-ui-and-motion.md) and follow
+`App(theme=...)`, so they look like the rest of your app.
 
 To replace one, define a page at the same route; the others stay. The
 kit's Python API does the work for custom pages:
@@ -67,7 +72,10 @@ kit's Python API does the work for custom pages:
 visitor is sent to `/login?next=...`; a server function answers 401.
 A signed-in user without the role gets 403. `fresh` asks people to sign in
 again when their last sign-in is older than that, for things like changing
-billing or deleting an account.
+billing or deleting an account. With teams, `org_role=` and `feature=`
+work the same way ([Teams](30-teams.md#guards-and-plans)), and
+`@server(rate=...)` limits how often one person can call a function
+([Server functions](06-server-functions.md#limits-for-one-function)).
 
 ### Row policies
 
@@ -91,7 +99,9 @@ Note.policy(read=lambda user: Note.owner_id == (user.id if user else -1),
 deleting someone else's answers 403, so guessing another row's id
 (an IDOR bug) gets nothing. Scripts, jobs and tests run outside requests
 and skip policies; inside a request, `with system():` (from
-`pyweb.models`) skips them on purpose.
+`pyweb.models`) skips them on purpose. For data that belongs to a team
+rather than a person, use [tenant Models](30-teams.md#tenant-models)
+instead of writing the same organization check into every policy.
 
 ### The tables
 

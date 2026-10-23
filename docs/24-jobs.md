@@ -155,7 +155,21 @@ developing (no `PYWEB_MAIL_URL`), email is printed straight away as before.
 
 A nightly job (`pyweb.cleanup`, at 03:17 UTC) deletes finished jobs older
 than `PYWEB_JOBS_KEEP_DAYS` (7), expired sign-in links, and audit log
-entries older than `PYWEB_AUDIT_DAYS` (365).
+entries older than `PYWEB_AUDIT_DAYS` (365). Apps with `File` fields also
+get `pyweb.files.collect`, which deletes uploads no row refers to (see
+[Webhooks & files](33-webhooks-files.md)).
+
+PyWeb's own background work uses the same queue: webhook deliveries and
+received webhooks, push notifications and emails.
+
+## Jobs and organizations
+
+A job queued while handling a request for an organization (with
+[teams](30-teams.md)) runs for that organization: tenant Models inside it
+see that organization's rows, as the request did. Jobs queued from
+scripts and schedules have no organization, so they see every
+organization's rows; open one with
+`with org_scope(org):` (from `pyweb.tenancy`).
 
 ## Settings
 

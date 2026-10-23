@@ -35,6 +35,13 @@ account menu, a dialog, toasts and animated live tasks. The sign-in,
 account and `/admin` pages are built from the same classes and follow
 your theme.
 
+**With an AI assistant:** the `pyweb_ui` MCP tool lists every component
+with its variants and sizes, shows one component's parameters and source
+(`pyweb://kit/<Component>`), copies one into your app and makes a
+theme; `pyweb_review` screenshots a page in light and dark at desktop and
+phone widths with an accessibility audit; the `design_pass` prompt puts
+them together.
+
 Pages that use the kit get its stylesheet (`/__pyweb/ui.css`, about
 9 KB gzipped) and the theme (`/__pyweb/theme.css`); pages that don't
 use it get neither.

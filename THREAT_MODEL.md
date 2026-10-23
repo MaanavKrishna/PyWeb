@@ -167,6 +167,16 @@ websites in the user's browser.
 | E | Text from the app reaching a shell through notifications or "reveal" | Commands get argument lists, never a shell; PowerShell gets values through the environment | `test_desktop.py::test_notify_reveal_and_links_use_argv` |
 | I | Secrets of one installation readable by other users | `secrets.json` is made per installation, readable by the user only | `test_desktop.py::test_secrets_are_made_once_and_kept_private` |
 
+## 7c. AI assistants (the MCP server)
+
+| | Threat | Mitigation | Proof |
+|---|---|---|---|
+| S/I | A website in the developer's browser calling `pyweb mcp --http` (DNS rebinding, cross-site requests) | Listens on 127.0.0.1; requests with a foreign `Origin` or `Host` are refused | `test_mcp_v6.py::test_http_sessions_streams_and_checks` |
+| S | Someone on the network calling the MCP server | Any address but loopback needs a bearer token | `test_mcp_v6.py::test_http_needs_a_token_beyond_this_machine` |
+| I | A web page or another local user reading the dev server's logs and errors | The agent endpoints need the token in `.pyweb/dev.json` (mode 0600, git-ignored) and answer only on loopback | `test_mcp_v6.py::test_dev_link_needs_its_token`, `test_mcp_v6.py::test_tools_see_a_running_pyweb_dev` |
+| T | An assistant's "read-only" SQL changing data | One statement, write keywords refused (even in a CTE), a read-only transaction that is rolled back; secrets redacted | `test_dx_v5.py::test_mcp_data_tools` |
+| T | Malformed tool arguments reaching app code | Arguments are checked against each tool's schema before it runs | `test_mcp_v6.py::test_arguments_are_checked_before_the_tool_runs` |
+
 ## 8. The release
 
 | | Threat | Mitigation | Proof |

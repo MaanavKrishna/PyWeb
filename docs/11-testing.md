@@ -176,9 +176,18 @@ def test_counter_in_a_browser():
 `serve()` applies the production Content-Security-Policy, so your
 tests also prove the app works under it.
 
+To check accessibility in the browser too, inject
+[axe-core](https://github.com/dequelabs/axe-core) with
+`context.add_init_script(...)` and fail on serious violations, as PyWeb's
+own tests do (`tests/e2e/test_a11y_browser.py`). With an AI assistant,
+the `pyweb_review` MCP tool does this for a page in light and dark mode
+and at phone width.
+
 ## Compile-time checks
 
-`pyweb check app.pyweb` compiles the app and runs the security checks;
-it exits non-zero on errors, which makes it a useful first CI step.
+`pyweb check app.pyweb` compiles the app and runs the security and
+accessibility checks (images without `alt`, clicks a keyboard can't
+reach, unlabelled fields, ...); it exits non-zero on errors (and, with
+`--strict`, on warnings), which makes it a useful first CI step.
 `compile_source(text)` from `pyweb.compiler` gives you the compiled
 pages (HTML, JS, signals, placement) if you want to assert on them.

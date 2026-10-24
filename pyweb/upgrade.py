@@ -181,6 +181,16 @@ def check(app="app.pyweb"):
             out.append(Finding(os.path.basename(app), 0, "origin",
                                "the auth kit needs PYWEB_ORIGIN (the site's address) in production for the links "
                                "in its emails", action=False))
+        try:
+            from . import a11y
+            problems = a11y.check(source, app)
+        except Exception:  # noqa: BLE001 - a file that doesn't parse is reported by pyweb check itself
+            problems = []
+        if problems:
+            out.append(Finding(os.path.basename(app), problems[0]["line"], "a11y",
+                               f"0.6's `pyweb check` also reports accessibility problems ({len(problems)} here, e.g. "
+                               f"{problems[0]['message']}); they are warnings, but `pyweb check --strict` fails on "
+                               "them", action=False))
         migrations = os.path.join(app_dir, "migrations")
         if "use_auth(" in source and os.path.isdir(migrations):
             text = ""
@@ -193,7 +203,8 @@ def check(app="app.pyweb"):
             if "auth_sessions" not in text:
                 out.append(Finding("migrations", 0, "auth-sessions",
                                    "0.6 lists each signed-in device on /account (table auth_sessions): run "
-                                   "`pyweb db diff --name auth_sessions` and `pyweb db upgrade` (until then, "
+                                   "`pyweb db upgrade` (applies what's pending), then "
+                                   "`pyweb db diff --name auth_sessions` and `pyweb db upgrade` again (until then, "
                                    "sign-in works and the list stays empty)"))
     return sorted(out, key=lambda f: (f.file, f.line))
 

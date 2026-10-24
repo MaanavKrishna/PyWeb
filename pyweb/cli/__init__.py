@@ -495,13 +495,25 @@ def cmd_serve(args):
     _net.run(make_site, host=args.host, port=args.port, workers=workers, logger=logger, ready=ready)
 
 
+def tests_path(path=None):
+    """Where ``pyweb test`` runs pytest: the given file or folder, the folder of a ``.pyweb`` file,
+    or the current folder (templates keep ``test_app.py`` next to ``app.pyweb``)."""
+    target = os.path.abspath(path or ".")
+    if target.endswith(".pyweb"):
+        target = os.path.dirname(target)
+    return target
+
+
 def cmd_test(args):
+    import importlib.util
     import subprocess
     import sys as _sys
-    cmd = [_sys.executable, "-m", "pytest", "tests/", "-q"]
-    if getattr(args, "path", None):
-        cmd = [_sys.executable, "-m", "pytest", args.path, "-q"]
-    raise SystemExit(subprocess.call(cmd))
+    if importlib.util.find_spec("pytest") is None:
+        raise SystemExit("pyweb test runs pytest, which isn't installed: pip install pytest")
+    target = tests_path(getattr(args, "path", None))
+    if not os.path.exists(target):
+        raise SystemExit(f"pyweb test: no such file or folder: {args.path}")
+    raise SystemExit(subprocess.call([_sys.executable, "-m", "pytest", target, "-q"]))
 
 
 def cmd_fmt(args):

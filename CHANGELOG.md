@@ -6,6 +6,18 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- `pyweb test` with no path ran `pytest tests/`, which new apps don't have
+  (their test is `test_app.py` next to `app.pyweb`), so it failed in every
+  new project. It now runs the current folder, and accepts the app's
+  `.pyweb` file as well as a test file or folder.
+- The `pyweb_test` MCP tool given the app's `.pyweb` file (as every other
+  tool takes) found no tests; it now tests that file's folder.
+- `pyweb upgrade` says to apply pending migrations before creating the
+  `auth_sessions` one (on a fresh checkout `pyweb db diff` refused to run),
+  and notes that 0.6's `pyweb check` reports accessibility problems, which
+  `--strict` treats as failures.
+
 ## [0.6.0]
 
 Teams, installable and desktop apps, a UI kit and motion, and security by

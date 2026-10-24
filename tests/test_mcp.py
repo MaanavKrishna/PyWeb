@@ -202,6 +202,8 @@ def test_pyweb_test_reports_failures_and_missing_tests(server, tmp_path):
     assert res["ok"] is False and res["passed"] == 1 and res["failed"] == 1
     assert "test_title" in res["output"] and "1 failed, 1 passed" in res["summary"]
     assert tool(server, "pyweb_test", path="app", filter="home")["passed"] == 1
+    by_file = tool(server, "pyweb_test", path="app/app.pyweb")      # the app file means its folder
+    assert by_file["passed"] == 1 and by_file["failed"] == 1
     (tmp_path / "empty").mkdir()
     none = tool(server, "pyweb_test", path="empty")
     assert none["ok"] is False and "No tests found" in none["hint"]

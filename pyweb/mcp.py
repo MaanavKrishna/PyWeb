@@ -676,7 +676,8 @@ def tool_test(args):
     import subprocess
     if importlib.util.find_spec("pytest") is None:
         raise RuntimeError("pytest is not installed: pip install pytest")
-    target = os.path.abspath(args.get("path") or ".")
+    from .cli import tests_path
+    target = tests_path(args.get("path"))
     cwd = target if os.path.isdir(target) else os.path.dirname(target)
     cmd = [sys.executable, "-m", "pytest", target, "-q", "-rfE", "--no-header", "--color=no", "-p", "no:cacheprovider"]
     if args.get("filter"):
@@ -1022,7 +1023,7 @@ TOOLS = [
      "description": "Run the app's tests with pytest (test_*.py files using pyweb.testing.TestClient) and return "
                     "pass/fail counts, the summary line and the failure output.",
      "inputSchema": {"type": "object", "properties": {
-         "path": {"type": "string", "description": "Test file or directory (default: current directory)."},
+         "path": {"type": "string", "description": "Test file or folder, or the app's .pyweb file (its folder is tested). Default: the current folder."},
          "filter": {"type": "string", "description": "Only run tests matching this pytest -k expression."},
          "max_chars": {"type": "integer"}, "timeout": {"type": "integer"}}}},
 ]

@@ -19,6 +19,7 @@ pytest
 Apps that call `app.use_auth()` need the new `auth_sessions` table:
 
 ```bash
+pyweb db upgrade                        # apply any migrations still pending
 pyweb db diff --name auth_sessions
 pyweb db upgrade
 ```

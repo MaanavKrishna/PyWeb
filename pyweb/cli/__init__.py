@@ -52,6 +52,12 @@ def cmd_inspect(args):
             print(f"{finding['kind']} {args.file}:{finding['line']}: {finding['message']}")
 
 
+def cmd_doctor(args):
+    """Is this project and this machine ready? One line per check, with a fix for each problem."""
+    from pyweb import doctor
+    raise SystemExit(doctor.main(args.file, production=args.production, as_json=args.json, port=args.port))
+
+
 def cmd_check(args):
     from pyweb.compiler import compile_source
     from pyweb.security import check_source
@@ -1016,6 +1022,12 @@ def main(argv=None):
     p.add_argument("--token", default=None, help="--http: require Authorization: Bearer TOKEN (or PYWEB_MCP_TOKEN)")
     p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
+    p = sub.add_parser("doctor", help="check the project and the machine, with a fix for each problem")
+    p.add_argument("file", nargs="?", default="app.pyweb")
+    p.add_argument("--production", action="store_true", help="also check the environment for production")
+    p.add_argument("--json", action="store_true", help="print the checks as JSON")
+    p.add_argument("--port", type=int, default=8000, help="the port pyweb dev will use (default 8000)")
+    p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("check"); p.add_argument("file"); p.add_argument("--strict", action="store_true", help="exit 1 on any finding (security warnings too)")
     p.add_argument("--production", action="store_true", help="also check the environment is ready for production")
     p.set_defaults(fn=cmd_check)

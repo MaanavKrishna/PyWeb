@@ -404,7 +404,7 @@ The [architecture overview](ARCHITECTURE.md) goes through each stage.
 
 ## Build it with AI
 
-PyWeb ships an MCP server with 29 tools, so AI assistants can do what
+PyWeb ships an MCP server with 30 tools, so AI assistants can do what
 you'd do: scaffold an app, search the docs, check each edit (errors come
 back as line numbers with fix hints), build with the UI kit and a theme,
 render pages and call server functions as any signed-in member, look at

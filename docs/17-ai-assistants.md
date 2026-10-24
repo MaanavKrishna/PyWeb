@@ -106,6 +106,7 @@ tool runs. Slow tools (tests, screenshots, profiling) report progress.
 | Tool | What it does |
 |---|---|
 | `pyweb_dev` | Whether `pyweb dev` is running for this app: its URL, whether the app compiles right now (with the error and traceback), its pages and recent 500 errors. |
+| `pyweb_doctor` | Project health, as `pyweb doctor`: each check with `status` (ok, warn, fail), `detail` and a `fix`; `production=true` adds the production settings. |
 | `pyweb_logs` | The dev server's log lines (warnings, errors with tracebacks, slow queries, job failures); `since` returns only newer ones. |
 
 When `pyweb dev` starts, it writes `.pyweb/dev.json` next to the app: its

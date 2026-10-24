@@ -684,3 +684,25 @@ TOOLS = [
      "output": _obj(["orgs"], orgs=_A, tenant_models=_A, plans=_O, hint=_S)},
 ]
 TOOLS += _devlink_tools()
+
+
+def tool_doctor(args):
+    """Every `pyweb doctor` check for the app and this machine."""
+    from . import doctor
+    path = args.get("path") or "app.pyweb"
+    checks = doctor.run(path, production=bool(args.get("production")))
+    return {"ok": not any(c.status == doctor.FAIL for c in checks),
+            "problems": [c.as_dict() for c in checks if c.status != doctor.OK],
+            "checks": [c.as_dict() for c in checks]}
+
+
+TOOLS.append(
+    {"name": "pyweb_doctor", "fn": tool_doctor, "readOnly": True, "title": "Project health",
+     "description": "Is the project ready to run? Python and PyWeb versions, whether the app compiles, missing "
+                    "optional packages, database reachable and migrations applied, Redis, secrets in the source, "
+                    "pending upgrade changes, a stale dev server link, tests, the port and editor; with "
+                    "production=true also the production environment. Each problem comes with a fix. Run it "
+                    "first when something doesn't work and the error isn't obvious.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": PATH, "production": {"type": "boolean", "description": "Also check production settings."}}},
+     "output": _obj(["ok", "checks"], ok=_B, problems=_A, checks=_A)})

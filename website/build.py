@@ -932,7 +932,7 @@ def landing(bench, demo_gz):
   <div class="band-text reveal"><div class="kicker">AI assistants</div>
     <h2>Built for building with AI</h2>
     <p>One file, plain Python, and a compiler that answers mistakes with a line number and a fix. The built-in MCP
-    server gives Claude Code, Cursor and other assistants 29 tools: scaffold and check apps, search the docs, build
+    server gives Claude Code, Cursor and other assistants 30 tools: scaffold and check apps, search the docs, build
     with the UI kit, render pages and call server functions as any signed-in member, review pages in light, dark
     and on a phone with an accessibility audit, profile them, run the tests, read the schema and data, and check
     security and the deploy plan. While you run <code>pyweb dev</code>, they see its live errors and logs.</p>

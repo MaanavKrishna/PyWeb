@@ -88,6 +88,12 @@ pyweb serve dist                               # production server with /healthz
 `dist/` contains your app source, static assets and a `Dockerfile`; see
 [Deployment](12-deployment.md).
 
+If something doesn't work and the error isn't clear, `pyweb doctor`
+checks the project and your machine (Python, the app, optional packages,
+the database and migrations, the port, your editor) and prints a fix for
+each problem; `pyweb doctor --production` also checks the production
+settings.
+
 ## Next
 
 The [tutorial](03-tutorial.md) builds a notes app with a database,

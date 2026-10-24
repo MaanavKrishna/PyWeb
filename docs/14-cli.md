@@ -12,6 +12,11 @@ pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
 pyweb check FILE [--production] [--strict]
                                      compile, security and accessibility checks; --production also checks
                                      the environment; --strict fails on warnings too
+pyweb doctor [FILE] [--production] [--json] [--port 8000]
+                                     is the project ready? Python, the app compiles, optional packages,
+                                     database and migrations, Redis, secrets in the source, upgrade
+                                     changes, a stale dev server link, tests, the port, the editor; a fix
+                                     for each problem (exit 1 on any failure; --json for CI)
 pyweb upgrade [FILE] [--fix]         what to change for this PyWeb version (file and line); --fix applies
                                      the safe rewrites
 pyweb inspect FILE [--security]      where every name runs and why; RPC table; findings

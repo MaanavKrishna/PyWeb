@@ -43,7 +43,7 @@ INSTRUCTIONS = (
     "(as_user/org to act as a signed-in member), look with pyweb_screenshot or pyweb_review (light, dark, "
     "phone, accessibility), and run pyweb_test. Data: pyweb_db_schema, pyweb_db_query (read-only), "
     "pyweb_migrations after changing a Model, pyweb_jobs, pyweb_requests (SQL and N+1 warnings), "
-    "pyweb_teams. When the user runs `pyweb dev`, pyweb_dev and pyweb_logs show its live errors and logs. "
+    "pyweb_teams. When the user runs `pyweb dev`, pyweb_dev and pyweb_logs show its live errors and logs. When something doesn't work and the error isn't obvious, pyweb_doctor checks the project and the machine. "
     "Before shipping: pyweb_security_check (production=true), pyweb_upgrade, pyweb_deploy_plan. Prompts "
     "give step-by-step workflows (add_teams, design_pass, security_review, debug_page, ...)."
 )

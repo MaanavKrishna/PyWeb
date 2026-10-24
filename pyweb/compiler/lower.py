@@ -1187,7 +1187,7 @@ class Emitter:
                 fallback = init
             if kind == SIGNAL:
                 if info.kind in ("page", "layout"):
-                    lines.append(f"  const {js} = $signal({key} in $s ? $s[{key}] : {fallback});")
+                    lines.append(f"  const {js} = $signal({key} in $s ? $s[{key}] : {fallback}, {key});")
                 else:
                     lines.append(f"  const {js} = $signal({fallback});")
             elif origin == "server":

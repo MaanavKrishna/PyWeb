@@ -14,6 +14,12 @@ project uses [semantic versioning](https://semver.org).
   `pyweb dev` overlay and the MCP tools (`frame`, `docs` fields) show the
   same. When page code raises in `pyweb dev`, the error page starts with the
   frames in your own files and their source lines.
+- **`pyweb dev` keeps your place when it reloads.** After a save, the page
+  comes back with its variables (a counter's count, a bound input's text),
+  unbound form fields, scroll position and focus as they were. A variable
+  whose type changed, or that was renamed, starts over; add `?fresh` to the
+  URL to start everything over. Production builds only grow by the names
+  of page variables.
 - **`pyweb doctor`** checks the project and the machine in one go: Python,
   whether the app compiles, optional packages the app needs, the database
   and pending migrations, Redis, secrets written in the source, changes

@@ -86,7 +86,7 @@ function runEffect(e) {
 }
 
 /** A reactive value. `s()` reads (and tracks), `s(v)` writes. */
-export function signal(value) {
+export function signal(value, name) {
   const node = { value, observers: new Set() };
   function s(next) {
     if (arguments.length === 0) { track(node); return node.value; }
@@ -99,6 +99,7 @@ export function signal(value) {
   s.update = (fn) => s(fn(node.value));
   s.subscribe = (cb) => effect(() => cb(s()));
   s.$signal = true;
+  if (name && G.keep) G.keep(name, s); // pyweb dev keeps page state across reloads
   return s;
 }
 export const sig = signal;

@@ -252,7 +252,14 @@ def cmd_build(args):
         raise SystemExit(2)
 
 
-DEV_RELOAD_JS = """<script>(()=>{let v=null;async function t(){try{const r=await fetch('/__pyweb/dev/version');const n=await r.text();if(v!==null&&n!==v)location.reload();v=n}catch{}setTimeout(t,600)}t()})()</script>"""
+def _dev_reload_js():
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "dev",
+                        "reload.js")
+    with open(path, encoding="utf-8") as fh:
+        return "<script>" + fh.read().replace("</", "<\\/") + "</script>"
+
+
+DEV_RELOAD_JS = _dev_reload_js()
 
 
 def _error_overlay(exc, path):

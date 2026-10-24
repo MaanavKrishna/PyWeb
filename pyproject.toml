@@ -66,7 +66,7 @@ pyweb = "pyweb.cli:main"
 include = ["pyweb*"]
 
 [tool.setuptools.package-data]
-pyweb = ["runtime/browser/*.js", "runtime/browser/ui/*.js", "ui/kit/*.pyweb", "ui/static/*", "py.typed", "ai/*.md", "templates/*.pyweb", "templates/*.css", "templates/*/*.pyweb", "templates/*/*.py", "templates/*/*.md"]
+pyweb = ["runtime/browser/*.js", "runtime/browser/ui/*.js", "runtime/browser/dev/*.js", "ui/kit/*.pyweb", "ui/static/*", "py.typed", "ai/*.md", "templates/*.pyweb", "templates/*.css", "templates/*/*.pyweb", "templates/*/*.py", "templates/*/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

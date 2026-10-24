@@ -5,7 +5,9 @@ pyweb new NAME [--template T]        create NAME/ with app.pyweb, test_app.py, A
                                      T = blank | counter (default) | todo | blog | saas | auth | chat | ai-chat | desktop
                                      (apps with a database also get migrations/0001_initial.py and a README)
 pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
-                                     development server: recompile on save, live reload, error overlay,
+                                     development server: recompile on save, live reload that keeps the
+                                     page's variables, form fields, scroll and focus (add ?fresh to
+                                     the URL to start over), error overlay,
                                      the dev toolbar (requests, SQL, jobs, emails, theme and motion
                                      editors), and background jobs in the same process; writes
                                      .pyweb/dev.json so `pyweb mcp` can see its errors and logs

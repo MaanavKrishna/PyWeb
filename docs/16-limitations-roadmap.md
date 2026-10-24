@@ -11,8 +11,9 @@ can decide up front whether they matter for your app.
 - **npm packages must ship ES modules.** CommonJS-only packages and
   packages built on Node.js modules can't run in the browser; see
   [npm packages](18-npm-packages.md).
-- **Dev reload is a full page reload.** State is not preserved across
-  edits.
+- **Dev reload keeps page variables, not component state.** After a save,
+  `pyweb dev` reloads the page with its variables, form fields, scroll
+  and focus as they were; state inside components starts over.
 - **SQLite is for one machine.** Several processes on one host share it
   fine, but more than one server needs Postgres or MySQL;
   `pyweb check --production` and `pyweb deploy` say so.
@@ -64,7 +65,8 @@ Planned, roughly in order. Nothing here is promised for a date.
 1. **1.0**: the API, RPC protocol and CLI frozen under semantic versioning,
    after 0.6 has been used in production for a while.
 2. **File uploads from the playground and the admin.**
-3. **State-preserving hot reload** while developing.
+3. **Hot reload without a page reload** while developing (0.6.1 already
+   keeps the page's variables, fields, scroll and focus across reloads).
 
 Ideas, bug reports and pull requests are welcome; see
 [CONTRIBUTING.md](https://github.com/MaanavKrishna/PyWeb/blob/main/CONTRIBUTING.md).

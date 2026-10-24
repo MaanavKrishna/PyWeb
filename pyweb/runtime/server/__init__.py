@@ -1008,14 +1008,14 @@ class Server:
                 raise
             return self.error_page(status, req, message=str(exc))
         except Exception as exc:  # noqa: BLE001
-            import traceback
             from pyweb.telemetry import report_error
             report_error(exc, "page", page=name)
             if self.logger is not None:
                 self.logger.error(f"page {name} failed: {exc}", request_id=req.id, page=name)
             if self.debug:
+                from pyweb.compiler.errors import explain_exception
                 return self.error_page(500, req, title=f"{type(exc).__name__} in {name}()",
-                                       message=traceback.format_exc())
+                                       message=explain_exception(exc))
             return self.error_page(500, req)
         if isinstance(result, Redirect):
             return Response(result.status, "", {"Location": result.url, "X-Request-Id": req.id})

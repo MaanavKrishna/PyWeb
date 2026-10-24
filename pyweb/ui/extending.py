@@ -135,6 +135,13 @@ def values(component: str) -> dict:
         for dim, val in re.findall(rf'\.{re.escape(root)}\[data-({"|".join(DIMENSIONS)})="([\w-]+)"\]', text):
             if val not in out[dim]:
                 out[dim].append(val)
+    # A base style has no [data-variant] rule of its own: take the defaults of every component on the
+    # same root class too (DialogClose renders a pw-button, so Button's variant="default" works on it).
+    for other, other_root in roots().items():
+        if root and other_root == root and other != component:
+            for dim, val in _DEFAULTS.get(other, {}).items():
+                if val not in out[dim]:
+                    out[dim].append(val)
     for dim, vals in (registered().get(component) or {}).items():
         out[dim] += [v for v in vals if v not in out[dim]]
     return {d: v for d, v in out.items() if v}

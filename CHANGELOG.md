@@ -6,7 +6,21 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **Better error messages.** Compile errors show the line with a caret under
+  the problem, suggest the name you meant (a prop, component, variable,
+  server function argument, kit variant or motion preset: "did you mean
+  'name'?"), and link the docs page that explains them. The CLI, the
+  `pyweb dev` overlay and the MCP tools (`frame`, `docs` fields) show the
+  same. When page code raises in `pyweb dev`, the error page starts with the
+  frames in your own files and their source lines.
+- `pyweb check` warns about kit props and motion values that won't work
+  (`<Button variant="outlin">`), as the editor already did.
+
 ### Fixed
+- `pyweb check` printed the file and line twice for compile errors.
+- Components drawn as a kit button (`DialogClose`) were flagged by the
+  editor for `variant="default"`, which they support.
 - `pyweb test` with no path ran `pytest tests/`, which new apps don't have
   (their test is `test_app.py` next to `app.pyweb`), so it failed in every
   new project. It now runs the current folder, and accepts the app's

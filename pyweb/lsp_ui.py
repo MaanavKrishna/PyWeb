@@ -138,15 +138,19 @@ def problems(text, tree, ui):
             for dim, ok in vals.items():
                 v = n.attrs.get(dim)
                 if isinstance(v, tuple) and v[0] == "lit" and v[1] not in ok:
+                    from .compiler.errors import suggest
+                    best = suggest(v[1], ok)
+                    tip = f"did you mean {best!r}? " if best else ""
                     out.append((line, "unknown-variant", f"<{tag}> has no {dim} {v[1]!r} "
-                                                         f"({', '.join(ok)}; add your own with ui.extend)"))
+                                                         f"({tip}{', '.join(ok)}; add your own with ui.extend)"))
         spec = _motion_spec(n)
         variants = spec.get("variants") if isinstance(spec.get("variants"), dict) else {}
         for key in ("initial", "animate", "exit"):
             v = spec.get(key)
             if isinstance(v, str) and v not in presets and v not in variants:
+                from .compiler.errors import did_you_mean
                 out.append((line, "unknown-preset", f"{key}={v!r} is neither a preset ({', '.join(motion.BUILTIN_PRESETS)}) "
-                                                    "nor one of this element's variants"))
+                                                    f"nor one of this element's variants{did_you_mean(v, list(presets) + list(variants))}"))
         tr = spec.get("transition")
         if isinstance(tr, dict):
             for k, (lo, hi) in SPRING_RANGES.items():
@@ -156,3 +160,16 @@ def problems(text, tree, ui):
             if tr.get("type") not in (None, "spring", "tween", "inertia", "keyframes", "instant"):
                 out.append((line, "motion-range", f"transition type {tr.get('type')!r} isn't spring, tween or inertia"))
     return out
+
+
+def check(text, path=None):
+    """Kit, motion and teams problems as ``pyweb check`` findings: ``[{kind, line, message}]``."""
+    from . import lsp_data, lsp_teams
+    try:
+        tree, ui = lsp_data.parse(text, path)
+    except Exception:  # noqa: BLE001 - the compiler reports files that don't parse
+        return []
+    if tree is None:
+        return []
+    return [{"kind": code, "line": line, "message": msg}
+            for line, code, msg in problems(text, tree, ui) + lsp_teams.problems(text, tree)]

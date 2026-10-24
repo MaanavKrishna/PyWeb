@@ -14,6 +14,17 @@ def _load(path):
         return fh.read()
 
 
+def _pretty_error(exc, path=None):
+    """A compile error as terminal text: where, the code frame, a hint and a docs link."""
+    from pyweb.compiler.errors import pretty
+    path = getattr(exc, "filename", None) or path
+    try:
+        source = _load(path) if path else None
+    except OSError:
+        source = None
+    return pretty(exc, source, path)
+
+
 def cmd_inspect(args):
     from pyweb.compiler import compile_source
     src = _load(args.file)
@@ -48,17 +59,22 @@ def cmd_check(args):
     src = _load(args.file)
     findings = check_source(src, args.file)
     findings += scan_app(args.file)
-    from pyweb import a11y
-    findings += a11y.check(src, args.file)
+    from pyweb import a11y, lsp_ui
+    findings += a11y.check(src, args.file) + lsp_ui.check(src, args.file)
     try:
         out = compile_source(src, filename=args.file)
         n_sig = sum(len(p["signals"]) for p in out["pages"].values())
         print(f"ok: {len(out['pages'])} page(s), {n_sig} signal(s), {len(out['rpc'])} rpc(s)")
     except Exception as exc:  # noqa: BLE001
-        findings.append({"kind": "compile-error", "line": getattr(exc, "lineno", None) or getattr(exc, "line", None) or 0,
-                         "message": getattr(exc, "pyweb_msg", None) or str(exc)})
+        from pyweb.compiler.errors import describe
+        rec = describe(exc, src, args.file)
+        findings.append({"kind": "compile-error", "line": rec.get("line") or 0, "message": rec["message"],
+                         "detail": "\n".join(x for x in (rec.get("frame"), rec.get("hint") and "hint: " + rec["hint"],
+                                                           rec.get("docs") and "docs: " + rec["docs"]) if x)})
     for f in findings:
         print(f"{f['kind']} {f.get('file') or args.file}:{f['line']}: {f['message']}")
+        if f.get("detail"):
+            print("    " + f["detail"].replace("\n", "\n    "))
     problems = production_problems(src, os.path.dirname(os.path.abspath(args.file))) \
         if getattr(args, "production", False) else []
     for p in problems:
@@ -236,26 +252,31 @@ DEV_RELOAD_JS = """<script>(()=>{let v=null;async function t(){try{const r=await
 def _error_overlay(exc, path):
     """HTML page shown in the browser while the app has a compile error."""
     import html as _h
-    lineno = getattr(exc, "lineno", None)
-    snippet = ""
+    from pyweb.compiler.errors import describe
     try:
-        lines = _load(path).splitlines()
-        if lineno:
-            lo, hi = max(0, lineno - 4), min(len(lines), lineno + 3)
-            rows = []
-            for i in range(lo, hi):
-                mark = "&gt;" if i + 1 == lineno else "&nbsp;"
-                rows.append(f"{mark} {i + 1:4d} | {_h.escape(lines[i])}")
-            snippet = "<pre class=code>" + "\n".join(rows) + "</pre>"
+        source = _load(getattr(exc, "filename", None) or path)
     except OSError:
-        pass
+        source = None
+    rec = describe(exc, source, path)
+    where = rec.get("file") or path
+    if rec.get("line"):
+        where += f":{rec['line']}"
+    parts = [f"<h1>{_h.escape(type(exc).__name__)}</h1>",
+             f"<p class=where>{_h.escape(where)}</p><pre>{_h.escape(rec['message'])}</pre>"]
+    if rec.get("frame"):
+        parts.append(f"<pre class=code>{_h.escape(rec['frame'])}</pre>")
+    if rec.get("hint"):
+        parts.append(f"<p class=hint><b>Hint:</b> {_h.escape(rec['hint'])}</p>")
+    if rec.get("docs"):
+        parts.append(f'<p><a href="{_h.escape(rec["docs"])}" target=_blank rel=noopener>Read the docs</a></p>')
     return ("<!doctype html><meta charset=utf-8><title>PyWeb error</title>"
             "<style>body{font:15px/1.5 system-ui;margin:0;background:#1b1b1f;color:#eee}"
             "main{max-width:880px;margin:8vh auto;padding:0 24px}h1{color:#ff6b6b;font-size:20px}"
             "pre{background:#0f0f12;padding:16px;border-radius:8px;overflow:auto;font-size:13px}"
-            ".code{border-left:3px solid #ff6b6b}</style><main>"
-            f"<h1>{_h.escape(type(exc).__name__)}</h1><pre>{_h.escape(str(exc))}</pre>{snippet}"
-            "<p>Fix the file and save: this page reloads automatically.</p></main>" + DEV_RELOAD_JS)
+            ".code{border-left:3px solid #ff6b6b}.where{color:#aaa;margin:0}a{color:#8ab4ff}"
+            ".hint{background:#26262c;padding:10px 14px;border-radius:8px}</style><main>"
+            + "".join(parts)
+            + "<p>Fix the file and save: this page reloads automatically.</p></main>" + DEV_RELOAD_JS)
 
 
 class _DevState:
@@ -346,7 +367,7 @@ def cmd_dev(args):
     link = Link(state)
     _dev_load(state, Site)
     if state.error is not None:
-        print(f"error: {state.error}", file=sys.stderr)
+        print("error: " + _pretty_error(state.error, state.path), file=sys.stderr)
     host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
 
     def ready(port):
@@ -402,7 +423,7 @@ def _watch_and_reload(state, Site):
                 purge_local_modules()
                 _dev_load(state, Site)
                 if state.error is not None:
-                    print(f"error: {state.error}", flush=True)
+                    print("error: " + _pretty_error(state.error, state.path), flush=True)
                 else:
                     print(f"reloaded {state.path}", flush=True)
 
@@ -1048,12 +1069,7 @@ def main(argv=None):
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1)
     except (CompileError, SyntaxError) as exc:
-        if isinstance(exc, SyntaxError) and not isinstance(exc, CompileError):
-            where = f"{exc.filename or getattr(args, 'file', '')}:{exc.lineno}" if exc.lineno else ""
-            msg = getattr(exc, "pyweb_msg", None) or exc.msg
-            print(f"error: {where}: {msg}" if where else f"error: {msg}", file=sys.stderr)
-        else:
-            print(f"error: {exc}", file=sys.stderr)
+        print("error: " + _pretty_error(exc, getattr(args, "file", None)), file=sys.stderr)
         raise SystemExit(1)
 
 

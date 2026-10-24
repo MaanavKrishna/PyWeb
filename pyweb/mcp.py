@@ -48,47 +48,13 @@ INSTRUCTIONS = (
     "give step-by-step workflows (add_teams, design_pass, security_review, debug_page, ...)."
 )
 
-ERROR_HINTS = [
-    ("only exists on the server", "Move that logic into an @server function and call it from the handler."),
-    ("is not defined in browser code", "Define it at module level (a literal constant or a helper function), "
-                                       "make it a page variable, or do the work in an @server function."),
-    ("markup expressions must be", "Assign the server call's result to a page variable at the top of the page, "
-                                   "or call it from an event handler."),
-    ("derived/read-only", "Only assign to page variables the handler owns (state). Computed values update "
-                          "automatically from their inputs."),
-    ("would be sent to the browser", "Keep secrets inside @server functions; never read them in markup or handlers."),
-    ("must name a local variable", "Declare the bound variable in the page first, e.g. `name = \"\"`."),
-    ("must name a page variable", "bind= needs a page variable name, e.g. bind={name}."),
-    ("unknown component", "Define it in this file (a capitalized function containing markup) or import it "
-                          "from another .pyweb file: `from widgets import Card`."),
-    ("is never closed", "Close the tag (or self-close void tags: <input ... />)."),
-    ("mismatched </", "Make closing tags match the most recently opened tag."),
-    ("unterminated tag or expression", "A tag or {expression} is missing its closing > or }."),
-    ("is missing required prop", "Pass every required prop, or give the component parameter a default."),
-    ("has no prop", "Use one of the component's parameter names as the attribute."),
-    ("not supported in browser code", "Rewrite with supported Python (see pyweb_guide section 7) or move the code "
-                                      "into an @server function."),
-    ("must be called", "Call the server function inside a handler: `result = fn(...)`."),
-    ("is a server function; call it from a", "Use a handler or lambda: onclick={lambda: fn(...)}"),
-    ("isn't installed: run `pyweb add", "Run the `pyweb add` command from the message in the app folder, then "
-                                       "check again."),
-    ("which only exists in the browser", "Call the npm package in a handler or on_mount and keep the result in a "
-                                         "page variable that the markup shows."),
-    ("has no {children}", "Put {children} exactly once in the layout's markup where the page should go."),
-    ("uses {children}", "Put {children} exactly once in the layout's markup where the page should go."),
-    ("can only take `children`", "Layouts take only children; read request/session data in the layout body."),
-    ("asks for layout", "Use the name of a function decorated with @app.layout, or layout=None for no layout."),
-    ("npm() takes literal strings", "Bind at module level: Name = npm(\"package\") or npm(\"package\", \"Export\")."),
-]
 
 
 # ------------------------------------------------------------------ helpers
 
 def _hint(message):
-    for needle, hint in ERROR_HINTS:
-        if needle in message:
-            return hint
-    return None
+    from .compiler.errors import hint_for
+    return hint_for(message)
 
 
 def _read_source(args):
@@ -105,15 +71,11 @@ def _compile(args):
     return compile_source(source, filename=filename), source, filename
 
 
-def _error_record(exc, filename):
-    msg = getattr(exc, "pyweb_msg", None) or getattr(exc, "msg", None) or str(exc)
-    if isinstance(msg, str) and msg.startswith("pyweb: "):
-        msg = msg[len("pyweb: "):]
-    line = getattr(exc, "lineno", None)
-    rec = {"file": getattr(exc, "filename", None) or filename, "line": line, "message": str(msg)}
-    hint = _hint(str(msg))
-    if hint:
-        rec["hint"] = hint
+def _error_record(exc, filename, source=None):
+    from .compiler.errors import describe
+    rec = describe(exc, source, filename)
+    rec.setdefault("file", filename)
+    rec.setdefault("line", None)
     return rec
 
 
@@ -369,7 +331,7 @@ def tool_check(args):
     try:
         out = compile_source(source, filename=filename)
     except (SyntaxError, ValueError) as exc:
-        return {"ok": False, "errors": [_error_record(exc, filename)], "findings": findings}
+        return {"ok": False, "errors": [_error_record(exc, filename, source)], "findings": findings}
     pages = []
     for name, p in out["pages"].items():
         pages.append({"name": name, "route": p["route"], "signals": p["signals"],

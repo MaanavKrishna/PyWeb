@@ -1365,6 +1365,10 @@ class Emitter:
 
     def component_call(self, n, scope, ind):
         if n.tag not in self.ctx.components:
+            from .errors import suggest
+            best = suggest(n.tag, self.ctx.components)
+            if best:
+                raise CompileError(f"unknown component <{n.tag}>; did you mean <{best}>?", n.line, self.ctx.filename)
             raise CompileError(f"unknown component <{n.tag}>: define `def {n.tag}(...)` with markup "
                                f"in this file, or import it (`from widgets import {n.tag}`)",
                                n.line, self.ctx.filename)
@@ -1378,6 +1382,11 @@ class Emitter:
                 continue
             known = key in comp.params
             if not known and not rest_name:
+                from .errors import suggest
+                best = suggest(key, comp.params)
+                if best:
+                    raise CompileError(f"<{n.tag}> has no prop {key!r}; did you mean {best!r}?",
+                                       n.line, self.ctx.filename)
                 raise CompileError(f"<{n.tag}> has no prop {key!r} (props: {', '.join(comp.params) or 'none'}; "
                                    f"give it **attrs to pass other attributes through)", n.line, self.ctx.filename)
             if val is True:

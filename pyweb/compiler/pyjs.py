@@ -117,6 +117,14 @@ class Scope:
         self.names = dict(names or {})
         self.kind = kind
 
+    def visible(self):
+        """Every name this scope and its parents define (for "did you mean")."""
+        out, s = set(), self
+        while s is not None:
+            out.update(s.names)
+            s = s.parent
+        return out
+
     def lookup(self, name):
         s = self
         while s is not None:
@@ -234,7 +242,9 @@ class Translator:
             return f"$py.{name}"
         if name in JS_GLOBALS:
             return name
-        raise self.error(node, f"name {name!r} is not defined in browser code")
+        from .errors import did_you_mean
+        known = scope.visible() | set(self.ctx.browser_globals) | set(self.ctx.server_fns) | set(BUILTINS)
+        raise self.error(node, f"name {name!r} is not defined in browser code{did_you_mean(name, known)}")
 
     def is_reactive(self, node, scope):
         """Does evaluating ``node`` read a signal, computed or prop?"""
@@ -676,7 +686,9 @@ class Translator:
             slots = list(args) + ["undefined"] * (len(params) - len(args))
             for k in node.keywords:
                 if k.arg is None or k.arg not in params:
-                    raise self.error(node, f"{callee}() got an unexpected keyword argument {k.arg!r}")
+                    from .errors import did_you_mean
+                    raise self.error(node, f"{callee}() got an unexpected keyword argument {k.arg!r}"
+                                           f"{did_you_mean(k.arg or '', params)}")
                 slots[params.index(k.arg)] = self.expr(k.value, scope)
             while slots and slots[-1] == "undefined":
                 slots.pop()
@@ -695,7 +707,9 @@ class Translator:
             fields.append(f"{json.dumps(p)}: {self.expr(a, scope)}")
         for k in node.keywords:
             if k.arg not in params:
-                raise self.error(node, f"{name}() got an unexpected keyword argument {k.arg!r}")
+                from .errors import did_you_mean
+                raise self.error(node, f"{name}() got an unexpected keyword argument {k.arg!r}"
+                                       f"{did_you_mean(k.arg, params)}")
             fields.append(f"{json.dumps(k.arg)}: {self.expr(k.value, scope)}")
         caller = self.fn_stack[-1].name if self.fn_stack else "<expr>"
         self.ctx.rpc_calls.setdefault(name, set()).add(caller)

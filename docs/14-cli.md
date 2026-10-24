@@ -66,12 +66,38 @@ pyweb dts FILE.d.ts                  Python dataclasses from TypeScript declarat
 pyweb mcp                            MCP server over stdio for AI assistants (see AI assistants & MCP)
 pyweb mcp --http [--port 8765] [--token T]   the same over Streamable HTTP (127.0.0.1 only without a token)
 pyweb lsp                            language server over stdio for editors (see below)
-pyweb test [PATH]                    run pytest
+pyweb test [PATH]                    run pytest on PATH (a test file, a folder or app.pyweb's folder;
+                                     default: the current folder, where new apps keep test_app.py)
 pyweb fmt [PATH] / pyweb lint [PATH] run ruff format / ruff check (if installed)
 pyweb --version
 ```
 
 `python -m pyweb.cli ...` is equivalent to `pyweb ...`.
+
+## Error messages
+
+A compile error names the file and line, shows the line with a caret under
+the problem, suggests the name you probably meant, and links the docs page
+that explains it:
+
+```text
+error: app.pyweb:17: <Greeting> has no prop 'nme'; did you mean 'name'?
+
+  16 |         <h1>{count}</h1>
+> 17 |         <Greeting nme="x" />
+     |                   ^
+  18 |     </main>
+
+hint: Use one of the component's parameter names as the attribute.
+docs: https://maanavkrishna.github.io/PyWeb/language.html
+```
+
+The first line keeps the `file:line: message` shape, so editors and CI
+logs can jump to it. `pyweb check` also warns about kit props and motion
+values that won't work (`<Button variant="outlin">`). The `pyweb dev`
+overlay shows the same, and when page code raises, its error page starts
+with the frames in your own files and their source lines, before the full
+traceback.
 
 ## Exit codes
 

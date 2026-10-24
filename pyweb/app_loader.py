@@ -30,15 +30,37 @@ def _state_function(fn):
     Markup placeholders are dropped; an explicit ``return`` (e.g.
     ``return redirect("/login")``) still returns early.
     """
-    new = copy.deepcopy(fn)
+    new = copy.copy(fn)                           # only the kept statements need copies, not the markup
     new.name = STATE_PREFIX + fn.name
     new.decorator_list = []
-    body = [s for s in new.body if not is_ui_stmt(s)]
+    body = [copy.deepcopy(s) for s in fn.body if not is_ui_stmt(s)]
     ret = ast.Return(value=ast.Call(func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[]))
     body.append(ret)
     new.body = body
     ast.fix_missing_locations(new)
     return new
+
+
+_CODE: dict = {}                  # (file, source hash, page/component names) -> code object
+
+
+def _module_code(source, filename, infos):
+    """The Python code for a ``.pyweb`` module: its Python part plus a state function per page and
+    component. Cached by source, so reloading an app (or loading it again in tests) skips re-parsing
+    the files that didn't change, the UI kit's above all."""
+    import hashlib
+    key = (filename, hashlib.sha256(source.encode()).hexdigest(), tuple(getattr(i, "name", "") for i in infos))
+    code = _CODE.get(key)
+    if code is None:
+        py_source, _ui = P.split_sources(source)
+        tree = ast.parse(py_source, filename=filename)
+        for info in infos:
+            tree.body.append(_state_function(info.node))
+        code = compile(tree, filename, "exec")
+        if len(_CODE) > 256:
+            _CODE.clear()
+        _CODE[key] = code
+    return code
 
 
 def _kit_markup(path):
@@ -169,10 +191,7 @@ class LoadedApp:
 
     # ----------------------------------------------------------- module
     def _exec(self, source, filename, infos, module_name=None):
-        py_source, _ui = P.split_sources(source)
-        tree = ast.parse(py_source, filename=filename)
-        for info in infos:
-            tree.body.append(_state_function(info.node))
+        code = _module_code(source, filename, infos)
         stem = os.path.splitext(os.path.basename(filename))[0] or "app"
         mod = types.ModuleType(module_name or f"pyweb_app_{stem}")
         mod.__file__ = os.path.abspath(filename) if self.path else filename
@@ -191,7 +210,7 @@ class LoadedApp:
         if app_dir and app_dir not in sys.path:
             sys.path.insert(0, app_dir)
         sys.modules[mod.__name__] = mod
-        exec(compile(tree, filename, "exec"), mod.__dict__)  # noqa: S102 - the app itself
+        exec(code, mod.__dict__)  # noqa: S102 - the app itself
         return mod
 
     # -------------------------------------------------------- rendering

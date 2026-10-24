@@ -26,6 +26,14 @@ project uses [semantic versioning](https://semver.org).
   `pyweb upgrade` wants, a stale dev server link, tests, the port and the
   editor extension, each with a fix (`--production` adds the production
   settings, `--json` for CI). Assistants get it as the `pyweb_doctor` tool.
+- **Faster reloads and tests.** The UI kit is compiled once per process and
+  each file's Python code is reused until it changes: on the saas example a
+  `pyweb dev` reload after a save went from about 255 to 60 ms, a
+  `TestClient` from about 255 to 55 ms, and compiling from about 240 to
+  60 ms. The dev server notices a save within 0.1 s (was 0.4 s) and the
+  page asks for the new version every 0.25 s (was 0.6 s).
+  `python -m pyweb.bench --system` reports `reload_ms` and `test_client_ms`,
+  and CI's benchmark gate watches them.
 - `pyweb check` warns about kit props and motion values that won't work
   (`<Button variant="outlin">`), as the editor already did.
 

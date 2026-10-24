@@ -107,12 +107,22 @@ you use it in a browser.
 Profile against a copy of your real data. A page that's fast with ten
 rows can be slow with ten thousand.
 
+## Fast reloads and tests
+
+The UI kit is compiled once per process, and each `.pyweb` file's Python
+code is reused until the file changes. On the saas example that took a
+reload in `pyweb dev` from about 255 to 60 ms and creating a
+`TestClient` from about 255 to 55 ms; the dev server also notices a save
+within a tenth of a second. Compiled output is byte-for-byte what a fresh
+compile gives, and a test checks that.
+
 ## Benchmarks in CI
 
 `python -m pyweb.bench` reports compile time, shipped JavaScript and
 render time per page. `--system` measures the whole stack: requests per
 second over real sockets, a signed-in page with a database, start-up
-time, and live query hashing.
+time, live query hashing, and how long loading an app again takes (what
+`pyweb dev` does after a save, and what each `TestClient` does).
 
 PyWeb's CI runs `--compare` on every push and pull request. It checks out
 the commit before the change next to the new one and runs both five

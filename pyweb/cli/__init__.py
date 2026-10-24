@@ -429,7 +429,7 @@ def _watch_and_reload(state, Site):
     def poll():
         last = snapshot()
         while True:
-            time.sleep(0.4)
+            time.sleep(0.1)
             now = snapshot()
             if now != last:
                 last = now

@@ -96,7 +96,7 @@
       }
       version = now;
     } catch { /* the server is restarting */ }
-    setTimeout(poll, 600);
+    setTimeout(poll, 250);
   }
   poll();
 })();

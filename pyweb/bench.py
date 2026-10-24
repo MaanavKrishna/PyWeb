@@ -112,6 +112,8 @@ SYSTEM = {
     "import_ms": (False, 5.0),
     "cli_version_ms": (False, 8.0),
     "live_10k_ms": (False, 2.0),
+    "reload_ms": (False, 15.0),
+    "test_client_ms": (False, 15.0),
 }
 
 
@@ -225,6 +227,38 @@ def startup_ms(rounds=7):
             round(max(0.0, wall(["-m", "pyweb.cli", "--version"]) - floor), 1))
 
 
+def reload_ms(rounds=5):
+    """Loading the saas app again in a warm process (what ``pyweb dev`` does after a save) and creating a
+    ``TestClient`` for it, in milliseconds."""
+    import os
+    import shutil
+    import tempfile
+    from pyweb.hosting import Site
+    from pyweb.testing import TestClient
+    old = os.getcwd()
+    fixed = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bench", "apps", "saas")
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            if os.path.isdir(fixed):
+                shutil.copytree(fixed, os.path.join(tmp, "team"))
+            else:
+                from pyweb.mcp import scaffold
+                scaffold(os.path.join(tmp, "team"), template="saas")
+            os.chdir(os.path.join(tmp, "team"))
+            Site("app.pyweb")                                   # the first load fills the caches
+            reloads, clients = [], []
+            for _ in range(rounds):
+                t0 = time.perf_counter()
+                Site("app.pyweb")
+                reloads.append((time.perf_counter() - t0) * 1000)
+                t0 = time.perf_counter()
+                TestClient("app.pyweb")
+                clients.append((time.perf_counter() - t0) * 1000)
+            return round(_median(reloads), 1), round(_median(clients), 1)
+        finally:
+            os.chdir(old)
+
+
 def live_10k_ms():
     """Version hash plus row diff for a 10,000-row live query, in milliseconds."""
     from pyweb.livedata import _version, diff
@@ -244,8 +278,9 @@ def system():
     import os
     os.environ.setdefault("PYWEB_WORKER", "0")
     imp, cli = startup_ms()
+    reload, client = reload_ms()
     return {"network_rps": network_rps(), "saas_page_us": saas_page_us(), "import_ms": imp,
-            "cli_version_ms": cli, "live_10k_ms": live_10k_ms()}
+            "cli_version_ms": cli, "live_10k_ms": live_10k_ms(), "reload_ms": reload, "test_client_ms": client}
 
 
 def regressions(base, head, *, tolerance=0.15):

@@ -13,6 +13,7 @@ import builtins
 import hashlib
 import os
 import re
+import threading
 
 from . import parser as P
 from .codegen.ir import build_graph, to_text
@@ -106,6 +107,33 @@ def kit_index():
     return _kit_index_cache["index"]
 
 
+_KIT_LIBS: dict = {}          # path -> (mtime, Library, the kit files it imported)
+# What translating a component records on its file's context; reset to the just-compiled state each
+# time a cached kit library is reused, so one app's compile never shows in another's output.
+_USAGE = ("uses_motion", "helper_js", "helper_async", "used_consts", "used_helpers", "rpc_calls")
+
+
+def _usage(lib):
+    import copy
+    state = {a: copy.deepcopy(getattr(lib.ctx, a)) for a in _USAGE}
+    state["$component_js"] = dict(lib.emitter.component_js)
+    state["$tmp"] = lib.emitter.tr._tmp
+    return state
+
+
+def _reset(lib, usage):
+    """Put a cached library back as it was right after its own compile (its emitter caches component JS
+    and numbers temporaries, so it starts over too)."""
+    import copy
+
+    from .lower import Emitter
+    for a in _USAGE:
+        setattr(lib.ctx, a, copy.deepcopy(usage[a]))
+    lib.emitter = Emitter(lib.ctx)
+    lib.emitter.component_js = dict(usage["$component_js"])
+    lib.emitter.tr._tmp = usage["$tmp"]
+
+
 def _resolver(filename, libs, stack):
     """Find ``<module>.pyweb`` next to ``filename`` (and the UI kit's files) and compile it (once)."""
     local = bool(filename) and not filename.startswith("<") and os.path.isfile(filename)
@@ -116,9 +144,22 @@ def _resolver(filename, libs, stack):
         if path in stack:
             chain = " -> ".join(os.path.basename(p) for p in (*stack, path))
             raise CompileError(f"circular import between .pyweb files: {chain}", lineno, filename)
+        if path not in libs and path.startswith(KIT_DIR + os.sep):
+            cached = _KIT_LIBS.get(path)
+            stamp = os.path.getmtime(path)
+            if cached is not None and cached[0] == stamp:
+                lib, usage, subs = cached[1], cached[3], cached[2]   # the kit doesn't change: compile it once
+                _reset(lib, usage)
+                libs[path] = lib
+                for sub_path, (sub, sub_usage) in subs.items():
+                    if sub_path not in libs:
+                        _reset(sub, sub_usage)
+                        libs[sub_path] = sub
+                return libs[path]
         if path not in libs:
             with open(path, encoding="utf-8") as fh:
                 source = fh.read()
+            before = set(libs)
             compiled = compile_source(source, filename=path, _libs=libs, _stack=(*stack, path))
             if compiled["pages"]:
                 first = next(iter(compiled["pages"].values()))
@@ -126,6 +167,10 @@ def _resolver(filename, libs, stack):
                                    "define components, @server functions, helpers and constants",
                                    first["lineno"], path)
             libs[path] = Library(module, path, compiled, P.parse_source(source, path)[0])
+            if path.startswith(KIT_DIR + os.sep) and os.environ.get("PYWEB_NO_KIT_CACHE") != "1":
+                _KIT_LIBS[path] = (os.path.getmtime(path), libs[path],
+                                   {p: (libs[p], _usage(libs[p])) for p in set(libs) - before if p != path},
+                                   _usage(libs[path]))
         return libs[path]
 
     def resolve(module, lineno):
@@ -176,11 +221,16 @@ def _renderer(ctx, globals_=None, strict=False):
     return Renderer(globals_ or static_globals(ctx), component_state=component_state, strict=strict)
 
 
+# Cached kit libraries are reset and filled in during a compile, so one compile runs at a time.
+_COMPILE_LOCK = threading.RLock()
+
+
 def compile_source(source, filename="<pyweb>", route="/", title="PyWeb", *, _libs=None, _stack=None):
     try:
         if _stack is None and filename and not filename.startswith("<"):
             _stack = (os.path.abspath(filename),)
-        return _compile(source, filename, route, title, {} if _libs is None else _libs, _stack or ())
+        with _COMPILE_LOCK:
+            return _compile(source, filename, route, title, {} if _libs is None else _libs, _stack or ())
     except CompileError as exc:
         if not exc.filename or exc.filename == "<pyweb>":
             exc.with_file(filename)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- Released with PyWeb 0.6.1. Compile errors in the editor suggest the
+  name you meant ("did you mean 'name'?"), and the problems list now
+  matches `pyweb check` for kit variants and motion presets.
+
 ## 0.6.0
 
 - Completion for teams and security options: `tenant=True`, `org_role=`,

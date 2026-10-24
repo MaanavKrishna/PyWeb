@@ -6,6 +6,13 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.6.1]
+
+Better error messages, `pyweb doctor`, a `pyweb dev` that keeps your place
+when it reloads, much faster reloads and tests, and fixes found by
+installing 0.6.0 from PyPI and putting every template through every
+command. Nothing to change in your apps.
+
 ### Added
 - **Better error messages.** Compile errors show the line with a caret under
   the problem, suggest the name you meant (a prop, component, variable,

@@ -34,7 +34,9 @@ can decide up front whether they matter for your app.
   with Web Push, desktop windows and installers, a UI kit with themes and
   motion, Trusted Types, encrypted fields and a threat model, about 2.5×
   faster serving, Python 3.15 and free-threaded builds, and a much richer
-  MCP server.
+  MCP server. 0.6.1 added error messages with code frames and
+  suggestions, `pyweb doctor`, dev reloads that keep page state, and 4×
+  faster reloads and tests.
 - **0.5**: production apps. Models with relations and migrations, forms
   checked in the browser and on the server, an auth kit (passwords,
   passkeys, emailed links, OAuth, two-step sign-in, an admin), row-level

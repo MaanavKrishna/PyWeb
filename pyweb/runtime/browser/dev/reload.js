@@ -21,6 +21,7 @@
     const k = counts.get(name) || 0;
     counts.set(name, k + 1);
     const key = name + "#" + k;
+    s.$devKey = key;                  // the timeline records changes by this key
     kept.set(key, s);
     if (pending && key in pending) {
       const value = pending[key];

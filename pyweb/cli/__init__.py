@@ -256,7 +256,7 @@ def _dev_reload_js():
     """The dev scripts every page gets: hot reload, and the inspector (Alt-click to open the source)."""
     folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "dev")
     out = []
-    for name in ("reload.js", "inspect.js", "assist.js"):
+    for name in ("reload.js", "inspect.js", "assist.js", "timeline.js"):
         with open(os.path.join(folder, name), encoding="utf-8") as fh:
             out.append("<script>" + fh.read().replace("</", "<\\/") + "</script>")
     return "".join(out)

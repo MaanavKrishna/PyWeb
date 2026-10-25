@@ -164,7 +164,7 @@ pre{margin:4px 0;white-space:pre-wrap;color:#fca5a5}
 <div class="panel"><nav>
  <button data-tab="req" class="on">This page</button><button data-tab="all">Requests</button>
  <button data-tab="jobs">Jobs</button><button data-tab="mail">Emails</button>
- <button data-tab="theme">Theme</button><button data-tab="motion">Motion</button>
+ <button data-tab="theme">Theme</button><button data-tab="motion">Motion</button><button data-tab="time">Timeline</button>
  <button class="x" title="close">✕</button></nav><main></main></div>`;
 const pill = root.querySelector(".pill"), panel = root.querySelector(".panel"), main = root.querySelector("main");
 const page = window.__PYWEB_REQ__ || {};
@@ -209,6 +209,9 @@ async function poll() {
 }
 async function render() {
   root.querySelectorAll("nav [data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  const tl = window.__pywebTimeline;
+  if (tab === "time") { if (tl) tl.mount(main); else main.innerHTML = `<p class="muted">The timeline needs pyweb dev.</p>`; return; }
+  if (tl) tl.unmount();
   if (tab === "req") { main.innerHTML = detail(page); return; }
   if (tab === "all") {
     const rows = [page, ...seen].filter(r => r.id).reverse();

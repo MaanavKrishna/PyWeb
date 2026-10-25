@@ -90,11 +90,11 @@ export function signal(value, name) {
   const node = { value, observers: new Set() };
   function s(next) {
     if (arguments.length === 0) { track(node); return node.value; }
-    if (!Object.is(node.value, next)) { node.value = next; notify(node); }
+    if (!Object.is(node.value, next)) { node.value = next; notify(node); if (G.onset) G.onset(s); }
     return next;
   }
   s.peek = () => node.value;
-  s.touch = () => notify(node); // the value was changed in place (e.g. a library object)
+  s.touch = () => { notify(node); if (G.onset) G.onset(s); }; // changed in place (pyweb dev's timeline records it)
   s.set = (v) => s(v);
   s.update = (fn) => s(fn(node.value));
   s.subscribe = (cb) => effect(() => cb(s()));

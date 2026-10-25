@@ -1188,8 +1188,8 @@ class Emitter:
             if kind == SIGNAL:
                 if info.kind in ("page", "layout"):
                     lines.append(f"  const {js} = $signal({key} in $s ? $s[{key}] : {fallback}, {key});")
-                else:
-                    lines.append(f"  const {js} = $signal({fallback});")
+                else:                          # named so pyweb dev keeps component state across reloads
+                    lines.append(f"  const {js} = $signal({fallback}, {json.dumps(info.name + '.' + name)});")
             elif origin == "server":
                 lines.append(f"  const {js} = $s[{key}];")
             else:

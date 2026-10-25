@@ -298,6 +298,8 @@ class _DevState:
         self.site = None
         self.error = None
         self.version = 0
+        self.kind = "code"          # what the last change was: "code" (rebuilt) or "css" (stylesheets only)
+        self.css = []               # the stylesheet URLs a "css" change touched
 
 
 def _dev_load(state, Site):
@@ -338,6 +340,10 @@ class _DevSite:
         state = self.state
         if path == "/__pyweb/dev/version":
             return 200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], str(state.version).encode()
+        if path.split("?")[0] == "/__pyweb/dev/changes":
+            body = json.dumps({"version": state.version, "kind": state.kind, "css": state.css,
+                               "error": state.error is not None})
+            return 200, [("Content-Type", "application/json"), ("Cache-Control", "no-store")], body.encode()
         if self.link is not None:
             answer = self.link.handle(method, path, headers, client)
             if answer is not None:
@@ -432,7 +438,16 @@ def _watch_and_reload(state, Site):
             time.sleep(0.1)
             now = snapshot()
             if now != last:
+                changed = {p for p in set(now) | set(last) if now.get(p) != last.get(p)}
                 last = now
+                if changed and all(p.endswith(".css") for p in changed) and state.error is None:
+                    # Stylesheets only: nothing to rebuild; the page swaps them in place.
+                    state.css = ["/" + os.path.relpath(p, app_dir).replace(os.sep, "/") for p in sorted(changed)]
+                    state.kind = "css"
+                    state.version += 1
+                    print(f"styles changed: {', '.join(state.css)}", flush=True)
+                    continue
+                state.kind, state.css = "code", []
                 purge_local_modules()
                 _dev_load(state, Site)
                 if state.error is not None:

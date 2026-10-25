@@ -685,7 +685,7 @@ function start(name, page) {
   if (old) { G.disposers.delete(name); old(); }
   let mode = "rendered";
   let dispose = null;
-  if (host.firstChild && host !== document.body && !host.hasAttribute("data-pw-no-hydrate")) {
+  if (host.firstChild && host !== document.body && !host.hasAttribute("data-pw-no-hydrate") && !G.nohydrate) {
     batchDepth++; // effects queued while adopting run once it is complete
     try {
       root((d) => {
@@ -764,6 +764,7 @@ function startRouter() {
   const meta = document.querySelector('meta[name="pw-nav"]');
   if (meta && meta.content === "off") return;
   G.router = true;
+  G.navigate = navigate; // pyweb dev swaps pages in place after a save
   G.at = location.pathname + location.search;
   try { history.scrollRestoration = "manual"; } catch (e) { /* older browsers */ }
   const saved = history.state && history.state.pwScroll;

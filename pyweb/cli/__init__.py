@@ -378,6 +378,7 @@ class _DevSite:
 
 def cmd_dev(args):
     """Development server: compile on save, live reload, error overlay."""
+    os.environ.setdefault("PYWEB_CACHE", "1")     # parse results and module code on disk: a fast first start
     from pyweb.hosting import Site
     from pyweb.net import server as _net
 

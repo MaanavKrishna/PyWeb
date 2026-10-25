@@ -548,6 +548,24 @@ def parse_ui_block(lines: dict[int, str]):
 
 
 def parse_source(source, filename="<pyweb>"):
+    """Parse a .pyweb file into (Python AST, UI nodes, [(function node, its UI nodes)])."""
+    from . import diskcache
+    if not diskcache.enabled():
+        return _parse_source(source, filename)
+    import pickle
+    k = diskcache.key("parse", filename, source)
+    data = diskcache.get("parse", k)
+    if data is not None:
+        try:
+            return pickle.loads(data)
+        except Exception:  # noqa: BLE001 - a corrupt entry: parse again and rewrite it
+            pass
+    result = _parse_source(source, filename)
+    diskcache.put("parse", k, pickle.dumps(result, protocol=pickle.HIGHEST_PROTOCOL))
+    return result
+
+
+def _parse_source(source, filename):
     try:
         py_source, ui_lines = split_sources(source)
         ui = parse_ui_block(ui_lines) if ui_lines else []

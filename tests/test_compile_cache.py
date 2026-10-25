@@ -86,3 +86,64 @@ def test_reloading_an_app_reuses_module_code(tmp_path):
     from pyweb.testing import TestClient
     assert ">2<" in TestClient(str(path)).get("/").text.replace(" ", "")
     del site
+
+
+def test_disk_cache_gives_the_same_output_in_a_new_process(tmp_path):
+    """A second process reads parse results and module code from disk; its output matches exactly."""
+    import json
+    import subprocess
+    import sys
+    script = ("import json, sys\n"
+              "from pyweb.app_loader import LoadedApp\n"
+              "from pyweb.compiler import diskcache\n"
+              "out = {}\n"
+              "for p in sys.argv[1:]:\n"
+              "    a = LoadedApp(p)\n"
+              "    out[p] = {n: [pg['js'], pg['html']] for n, pg in a.compiled['pages'].items()}\n"
+              "print(json.dumps(out))\n")
+    apps = [p for p in APPS if "templates" not in p][:4]
+    env = {**os.environ, "PYWEB_CACHE": "1", "PYWEB_CACHE_DIR": str(tmp_path), "PYTHONPATH": ROOT}
+
+    def run(cache="1"):
+        res = subprocess.run([sys.executable, "-c", script, *apps], env={**env, "PYWEB_CACHE": cache},
+                             capture_output=True, text=True, cwd=ROOT, check=True)
+        return json.loads(res.stdout)
+
+    plain = run("0")
+    assert not list(tmp_path.iterdir())
+    first = run()
+    entries = list(tmp_path.rglob("*.bin"))
+    assert any(e.name.startswith("parse-") for e in entries) and any(e.name.startswith("code-") for e in entries)
+    assert run() == first == plain
+    for e in entries:                          # corrupt every entry: it recovers and rewrites them
+        e.write_bytes(b"garbage")
+    assert run() == plain
+    assert all(e.read_bytes() != b"garbage" for e in tmp_path.rglob("*.bin"))
+
+
+def test_disk_cache_is_keyed_by_version(tmp_path, monkeypatch):
+    from pyweb.compiler import diskcache
+    monkeypatch.setenv("PYWEB_CACHE", "1")
+    monkeypatch.setenv("PYWEB_CACHE_DIR", str(tmp_path))
+    diskcache.put("parse", "k", b"one")
+    assert diskcache.get("parse", "k") == b"one"
+    monkeypatch.setattr("pyweb.__version__", "0.0.0-other")
+    assert diskcache.get("parse", "k") is None
+
+
+def test_disk_cache_off_unless_asked(tmp_path, monkeypatch):
+    from pyweb.compiler import diskcache
+    monkeypatch.setenv("PYWEB_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("PYWEB_CACHE", "0")
+    diskcache.put("parse", "k", b"one")
+    assert diskcache.get("parse", "k") is None and not list(tmp_path.iterdir())
+
+
+def test_disk_cache_prunes_old_entries(tmp_path, monkeypatch):
+    from pyweb.compiler import diskcache
+    monkeypatch.setenv("PYWEB_CACHE", "1")
+    monkeypatch.setenv("PYWEB_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(diskcache, "KEEP", 5)
+    for i in range(9):
+        diskcache.put("parse", str(i), b"x")
+    assert len(list(tmp_path.rglob("*.bin"))) == 5

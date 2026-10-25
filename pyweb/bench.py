@@ -114,6 +114,7 @@ SYSTEM = {
     "live_10k_ms": (False, 2.0),
     "reload_ms": (False, 15.0),
     "test_client_ms": (False, 15.0),
+    "cold_dev_ms": (False, 25.0),
 }
 
 
@@ -259,6 +260,36 @@ def reload_ms(rounds=5):
             os.chdir(old)
 
 
+def cold_dev_ms(rounds=5):
+    """A fresh process loading the saas app the way ``pyweb dev`` does (on-disk cache warm), minus a bare
+    ``import pyweb``, in milliseconds."""
+    import os
+    import shutil
+    import subprocess
+    import sys
+    import tempfile
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    fixed = os.path.join(root, "bench", "apps", "saas")
+    with tempfile.TemporaryDirectory() as tmp:
+        app = os.path.join(tmp, "team")
+        if os.path.isdir(fixed):
+            shutil.copytree(fixed, app)
+        else:
+            from pyweb.mcp import scaffold
+            scaffold(app, template="saas")
+        env = {**os.environ, "PYWEB_CACHE": "1", "PYWEB_CACHE_DIR": os.path.join(tmp, "cache"),
+               "PYTHONPATH": root + os.pathsep + os.environ.get("PYTHONPATH", "")}
+
+        def wall(code):
+            t0 = time.perf_counter()
+            subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, cwd=app, env=env)
+            return (time.perf_counter() - t0) * 1000
+        load = "from pyweb.hosting import Site; Site('app.pyweb')"
+        wall(load)                                              # fills the on-disk cache
+        floor = _median([wall("import pyweb.hosting") for _ in range(rounds)])
+        return round(max(0.0, _median([wall(load) for _ in range(rounds)]) - floor), 1)
+
+
 def live_10k_ms():
     """Version hash plus row diff for a 10,000-row live query, in milliseconds."""
     from pyweb.livedata import _version, diff
@@ -280,7 +311,8 @@ def system():
     imp, cli = startup_ms()
     reload, client = reload_ms()
     return {"network_rps": network_rps(), "saas_page_us": saas_page_us(), "import_ms": imp,
-            "cli_version_ms": cli, "live_10k_ms": live_10k_ms(), "reload_ms": reload, "test_client_ms": client}
+            "cli_version_ms": cli, "live_10k_ms": live_10k_ms(), "reload_ms": reload, "test_client_ms": client,
+            "cold_dev_ms": cold_dev_ms()}
 
 
 def regressions(base, head, *, tolerance=0.15):

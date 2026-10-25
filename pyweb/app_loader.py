@@ -52,6 +52,8 @@ def _module_code(source, filename, infos):
     key = (filename, hashlib.sha256(source.encode()).hexdigest(), tuple(getattr(i, "name", "") for i in infos))
     code = _CODE.get(key)
     if code is None:
+        code = _disk_code(key)
+    if code is None:
         py_source, _ui = P.split_sources(source)
         tree = ast.parse(py_source, filename=filename)
         for info in infos:
@@ -60,7 +62,30 @@ def _module_code(source, filename, infos):
         if len(_CODE) > 256:
             _CODE.clear()
         _CODE[key] = code
+        _disk_code(key, code)
+    elif key not in _CODE:
+        _CODE[key] = code
     return code
+
+
+def _disk_code(key, code=None):
+    """Read (or with ``code``, write) a module's code object in the on-disk cache."""
+    import marshal
+
+    from .compiler import diskcache
+    if not diskcache.enabled():
+        return None
+    k = diskcache.key("code", key[0], key[1], *key[2])
+    if code is not None:
+        diskcache.put("code", k, marshal.dumps(code))
+        return code
+    data = diskcache.get("code", k)
+    if data is None:
+        return None
+    try:
+        return marshal.loads(data)
+    except Exception:  # noqa: BLE001 - a corrupt entry: compile again
+        return None
 
 
 def _kit_markup(path):

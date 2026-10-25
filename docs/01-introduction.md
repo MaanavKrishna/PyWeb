@@ -43,6 +43,10 @@ Around that core, PyWeb has what a product needs, in the same file:
   ([Installable apps](31-pwa-push.md), [Desktop apps](32-desktop.md))
 - **Webhooks and files**: signed webhooks in and out, and unused uploads
   cleaned up. ([Webhooks & files](33-webhooks-files.md))
+- **A dev loop that keeps up**: saves update the open page in place with
+  its state kept; Alt-click opens any element's source; Fix with AI and
+  Edit with AI; a time-travel timeline; `pyweb dev --share`.
+  ([The dev loop](35-dev-loop.md))
 - **Shipping**: `pyweb deploy` writes Docker, Compose, Kubernetes, Fly,
   Render or Railway files; logs, metrics and traces come built in.
   ([Scaling & deploying](25-scaling.md))

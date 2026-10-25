@@ -108,6 +108,7 @@ tool runs. Slow tools (tests, screenshots, profiling) report progress.
 | `pyweb_dev` | Whether `pyweb dev` is running for this app: its URL, whether the app compiles right now (with the error and traceback), its pages and recent 500 errors. |
 | `pyweb_doctor` | Project health, as `pyweb doctor`: each check with `status` (ok, warn, fail), `detail` and a `fix`; `production=true` adds the production settings. |
 | `pyweb_logs` | The dev server's log lines (warnings, errors with tracebacks, slow queries, job failures); `since` returns only newer ones. |
+| `pyweb_assist_requests` | What the developer asked for from the page (Fix with AI on an error page, Alt+Shift-click → Edit with AI) while no AI was set up to answer: the file, the error or the element's line, and the instruction. |
 
 When `pyweb dev` starts, it writes `.pyweb/dev.json` next to the app: its
 address and a random token, readable only by you (the folder has its own
@@ -149,6 +150,7 @@ Prompts are step-by-step workflows that name the tools to use:
 | `design_pass` | Kit components, a theme and motion, reviewed in light, dark and on a phone. |
 | `fix_failing_test` | Reproduce, find the cause in the app, fix, re-run. |
 | `debug_page` | Errors, logs, requests and a profile for one page. |
+| `fix_errors` | Check, fix and test in a loop until the app compiles cleanly and the tests pass; first does what was asked from the page. |
 
 ### What a session looks like
 
@@ -171,6 +173,24 @@ Prompts are step-by-step workflows that name the tools to use:
 7. You run `pyweb dev app.pyweb` and try it. If something breaks while you
    click around, the assistant reads the error with `pyweb_dev` and
    `pyweb_logs` and fixes it.
+
+### Fix with AI from the page (sampling)
+
+`pyweb dev` puts a **Fix with AI** button on error pages, and
+Alt+Shift-click asks for a change to any element (see
+[The dev loop](35-dev-loop.md#fix-with-ai-and-edit-with-ai)). When your
+assistant's app supports MCP **sampling** (the client lets a server ask
+its model a question, after you approve), `pyweb mcp` answers those
+requests with your assistant's own model: it notices the client offers
+sampling when it connects, finds the running `pyweb dev` through
+`.pyweb/dev.json`, and hands each request over. The page shows the
+answer as a diff to apply or discard. This works over stdio (`pyweb
+mcp`); set `PYWEB_APP` when the app file isn't `app.pyweb` in the folder
+the assistant starts in.
+
+Assistants without sampling see the same requests with
+`pyweb_assist_requests` and can do them with their own file tools; the
+`fix_errors` prompt starts there.
 
 `pyweb_render`, `pyweb_call`, `pyweb_screenshot`, `pyweb_review`,
 `pyweb_profile`, `pyweb_webhook_send`, `pyweb_jobs` and `pyweb_test` run

@@ -6,6 +6,65 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.6.2]
+
+The dev loop. Saves update the open page in place with every page and
+component keeping its state, any element opens its own line in your
+editor, error pages fix themselves with AI (your assistant's model through
+MCP, or your own key), a timeline steps back through every change, and
+`pyweb dev --share` gives someone a link to try what you're building. All
+of it lives in `pyweb dev`: production output is unchanged and there is
+nothing to change in your apps. See [The dev loop](docs/35-dev-loop.md).
+
+### Added
+- **Hot reload without a page load.** A save swaps the page in place
+  through client navigation: no reload, no flash. Page variables,
+  component variables (each instance keeps its own), form fields, scroll,
+  focus and the selection stay. A stylesheet-only save swaps just that
+  stylesheet. When the page changed too much to swap, it reloads with the
+  same state, also after a compile error is fixed.
+- **Click to source.** Hold Alt to see where any element comes from;
+  Alt-click opens that line in your editor (`PYWEB_EDITOR`, else VS Code,
+  Cursor, Windsurf, Zed or Sublime Text, else a `vscode://` link) and
+  shows the **inspector**: the components around it with their live
+  variables, which you can edit.
+- **Fix with AI and Edit with AI.** Compile error pages and dev 500 pages
+  have Fix with AI; Alt+Shift-click any element to ask for a change. The
+  answer is a compiled diff of one app file: Apply writes it (refused if
+  the file changed since) and Undo puts it back (`.pyweb/history/`). It is
+  answered by the assistant connected through `pyweb mcp` when its app
+  supports MCP sampling, else `ANTHROPIC_API_KEY` or
+  `OPENAI_API_KEY`/`OPENAI_BASE_URL`, else the page offers the prompt to
+  copy. Credentials in what's sent are replaced by placeholders and put
+  back in the answer.
+- **Time-travel timeline.** The toolbar's Timeline tab records every change
+  to the page's variables with its cause (a click, typing, a server call);
+  a slider steps back through them with the page paused, and Resume
+  returns to now.
+- **`pyweb dev --share`**: a temporary public link (cloudflared, else
+  localhost.run) with a QR code. The link's token sets a cookie that every
+  request through the tunnel needs; guests get the app and hot reload, not
+  your tools.
+- **A better first five minutes.** `pyweb new` with no name asks for the
+  name, a starter and a colour preset (`--theme` without asking); `pyweb
+  dev` opens the browser, prints the network URL with a QR code for a phone
+  with `--host 0.0.0.0`, and shows a one-time Welcome panel with what to
+  try and how to connect your assistant.
+- **A faster first start.** Parse results and compiled code are cached on
+  disk (`~/.cache/pyweb`; `PYWEB_CACHE=0` turns it off): loading the saas
+  example in a fresh process went from about 340 to 210 ms.
+  `pyweb.bench --system` reports `cold_dev_ms`.
+- MCP: the `pyweb_assist_requests` tool and the `fix_errors` prompt;
+  `pyweb mcp` answers the page's AI requests through sampling.
+
+### Changed
+- `pyweb dev`'s toolbar and its `/__pyweb/dev/` endpoints answer only the
+  person running it: a request from this machine to a loopback address.
+  Visitors from the network (`--host 0.0.0.0`) or a share link get hot
+  reload only.
+- The runtime is 25 bytes bigger (gzip) for the dev hooks; nothing runs
+  in production.
+
 ## [0.6.1]
 
 Better error messages, `pyweb doctor`, a `pyweb dev` that keeps your place

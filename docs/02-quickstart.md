@@ -20,8 +20,13 @@ pip install "pyweb-stack[all]"     # optional: Postgres, MySQL, Redis, argon2, O
 ```bash
 pyweb new hello
 cd hello
-pyweb dev app.pyweb          # http://localhost:8000, reloads on save
+pyweb dev app.pyweb          # opens http://localhost:8000; saves update the page in place
 ```
+
+(`pyweb new` with no name asks for one, a starter and colours.) Save a
+change and the open page updates without losing its state; hold Alt and
+click anything to open its line in your editor. [The dev loop](35-dev-loop.md)
+has the rest: Fix with AI, time travel and sharing with `--share`.
 
 `pyweb new` writes `app.pyweb`, a starter test (`test_app.py`) and
 `AGENTS.md`/`CLAUDE.md` (instructions for AI coding agents). Add
@@ -107,6 +112,7 @@ ships it. Then, depending on what you're building:
 - work that runs later or on a schedule: [Background jobs](24-jobs.md);
 - teams that share data: [Teams & organizations](30-teams.md);
 - components, a theme and animation: [UI kit & motion](34-ui-and-motion.md);
+- everything `pyweb dev` does for you: [The dev loop](35-dev-loop.md);
 - an app people install, or a desktop app: [Installable apps & push](31-pwa-push.md),
   [Desktop apps](32-desktop.md);
 - several pages with a shared header: [Layouts & navigation](19-layouts-navigation.md);

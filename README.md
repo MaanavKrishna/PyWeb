@@ -326,6 +326,17 @@ develop a toolbar on every page shows each request's queries and flags
 N+1 loops. [Scaling & deploying →](docs/25-scaling.md) ·
 [Logs, metrics & tracing →](docs/26-observability.md)
 
+### A dev loop that keeps up
+
+Save, and the open page changes in place: no reload, and every page and
+component keeps its state. Hold Alt and click any element to open its
+line in your editor; Alt+Shift-click to change it with AI, and error
+pages have **Fix with AI** (your assistant's model through MCP, or your
+own API key), with a diff to apply and Undo. The toolbar's timeline
+steps back through every change and what caused it, and
+`pyweb dev --share` gives someone a link to try what you're building.
+[The dev loop →](docs/35-dev-loop.md)
+
 ### Small, fast and boring to run
 
 - **Every page is server-rendered**: complete HTML on first paint, then
@@ -368,7 +379,7 @@ it runs the real PyWeb, server functions included, in your browser.
 pip install pyweb-stack
 pyweb new myapp --template saas      # saas | desktop | blank | counter | todo | blog | auth | chat | ai-chat
 cd myapp
-pyweb dev app.pyweb                  # edit app.pyweb; the page reloads on save
+pyweb dev app.pyweb                  # saves update the open page in place, state kept
 ```
 
 Then:
@@ -404,7 +415,7 @@ The [architecture overview](ARCHITECTURE.md) goes through each stage.
 
 ## Build it with AI
 
-PyWeb ships an MCP server with 30 tools, so AI assistants can do what
+PyWeb ships an MCP server with 31 tools, so AI assistants can do what
 you'd do: scaffold an app, search the docs, check each edit (errors come
 back as line numbers with fix hints), build with the UI kit and a theme,
 render pages and call server functions as any signed-in member, look at
@@ -492,7 +503,7 @@ Upgrade with `pip install -U pyweb-stack`.
 
 | Version | Highlights |
 |---|---|
-| 0.6 | Teams with roles, invitations and tenant-scoped Models (Postgres row-level security), API tokens and OpenAPI, webhooks, installable apps with Web Push, desktop windows and installers, a UI kit with themes and motion, Trusted Types, encrypted fields and a threat model, about 2.5× faster serving, Python 3.15 and free-threaded builds, a much richer MCP server; 0.6.1: error messages with code frames and suggestions, `pyweb doctor`, dev reloads that keep page state, 4× faster reloads and tests |
+| 0.6 | Teams with roles, invitations and tenant-scoped Models (Postgres row-level security), API tokens and OpenAPI, webhooks, installable apps with Web Push, desktop windows and installers, a UI kit with themes and motion, Trusted Types, encrypted fields and a threat model, about 2.5× faster serving, Python 3.15 and free-threaded builds, a much richer MCP server; 0.6.1: error messages with code frames and suggestions, `pyweb doctor`, dev reloads that keep page state, 4× faster reloads and tests; 0.6.2: the dev loop (hot reload in place with component state, Alt-click to source, Fix/Edit with AI, a time-travel timeline, `pyweb dev --share`, a guided `pyweb new`) |
 | 0.5 | Models with migrations, forms, auth kit with passkeys, OAuth and an admin, row-level live updates over WebSockets on PyWeb's own server, durable jobs and schedules, `pyweb deploy` for docker, compose, k8s, fly, render and railway, logs, metrics, tracing and a dev toolbar, data-aware editor and MCP tools, the `saas` template, `pyweb upgrade` |
 | 0.4 | npm packages without Node, layouts and client-side navigation, streaming server functions and `<Markdown>` for AI apps, live queries, page head tags, `.pyweb` error pages; 0.4.1: richer MCP tools; 0.4.2: VS Code run, new-app and MCP commands; 0.4.3: fixes, security hardening, gzip and caching; 0.4.4: key rotation, session revocation, typed arguments, Redis-shared limits, `check --production` |
 | 0.3 | Hydration, live updates (SSE), multi-file apps, language server + VS Code extension, browser playground, faster rendering, screenshot/test MCP tools |

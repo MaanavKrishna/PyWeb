@@ -1,15 +1,21 @@
 # Command line
 
 ```text
-pyweb new NAME [--template T]        create NAME/ with app.pyweb, test_app.py, AGENTS.md, CLAUDE.md, static/;
+pyweb new [NAME] [--template T] [--theme PRESET]
+                                     create NAME/ with app.pyweb, test_app.py, AGENTS.md, CLAUDE.md, static/;
                                      T = blank | counter (default) | todo | blog | saas | auth | chat | ai-chat | desktop
-                                     (apps with a database also get migrations/0001_initial.py and a README)
-pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload]
-                                     development server: recompile on save, live reload that keeps the
-                                     page's variables, form fields, scroll and focus (add ?fresh to
-                                     the URL to start over), error overlay,
-                                     the dev toolbar (requests, SQL, jobs, emails, theme and motion
-                                     editors), and background jobs in the same process; writes
+                                     (apps with a database also get migrations/0001_initial.py and a README);
+                                     PRESET = indigo | zinc | slate | rose | ocean | violet | emerald | amber
+                                     (written into App(theme=...)); with no NAME, in a terminal, it asks
+pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload] [--no-open] [--share]
+                                     development server (see The dev loop): saves update the open page
+                                     in place, keeping page and component state (?fresh starts over);
+                                     Alt-click opens an element's line in your editor, Alt+Shift-click
+                                     changes it with AI, error pages have Fix with AI; the dev toolbar
+                                     (requests, SQL, jobs, emails, theme, motion, a time-travel timeline);
+                                     background jobs in the same process; opens the browser (not in CI,
+                                     over SSH or with --no-open); --host 0.0.0.0 prints the network URL
+                                     with a QR code; --share prints a temporary public link; writes
                                      .pyweb/dev.json so `pyweb mcp` can see its errors and logs
 pyweb check FILE [--production] [--strict]
                                      compile, security and accessibility checks; --production also checks

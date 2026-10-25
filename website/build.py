@@ -41,6 +41,7 @@ DOCS = [
     ("02-quickstart.md", "quickstart", "Quickstart", "Start"),
     ("03-tutorial.md", "tutorial", "Tutorial", "Start"),
     ("28-saas-tutorial.md", "saas-tutorial", "Tutorial: a SaaS in an hour", "Start"),
+    ("35-dev-loop.md", "dev-loop", "The dev loop", "Start"),
     ("17-ai-assistants.md", "ai-assistants", "AI assistants & MCP", "Start"),
     ("04-pyweb-files.md", "language", "The .pyweb language", "Language"),
     ("05-reactivity.md", "reactivity", "State & reactivity", "Language"),
@@ -816,6 +817,11 @@ def landing(bench, demo_gz):
          "fields, rate limits per function, an SSRF-safe <code>fetch</code>, signed webhooks and secret scanning; "
          "a <a href=\"https://github.com/MaanavKrishna/PyWeb/blob/main/THREAT_MODEL.md\">threat model</a> lists "
          "every threat with its test."),
+        ("edit", "both", "A dev loop that keeps up",
+         "Save and the open page changes in place, every component keeping its state. Alt-click any element to "
+         "open its line in your editor; Fix with AI on error pages, a timeline to step back through every change, "
+         "and <code>pyweb dev --share</code> for a link someone else can try. "
+         "<a href=\"dev-loop.html\">The dev loop</a>"),
         ("box", "browser", "npm without Node",
          "<code>pyweb add chart.js/auto</code> vendors a package for browser code, pinned in "
          "<code>pyweb.lock</code>. No <code>node_modules</code>, no bundler."),
@@ -932,7 +938,7 @@ def landing(bench, demo_gz):
   <div class="band-text reveal"><div class="kicker">AI assistants</div>
     <h2>Built for building with AI</h2>
     <p>One file, plain Python, and a compiler that answers mistakes with a line number and a fix. The built-in MCP
-    server gives Claude Code, Cursor and other assistants 30 tools: scaffold and check apps, search the docs, build
+    server gives Claude Code, Cursor and other assistants 31 tools: scaffold and check apps, search the docs, build
     with the UI kit, render pages and call server functions as any signed-in member, review pages in light, dark
     and on a phone with an accessibility audit, profile them, run the tests, read the schema and data, and check
     security and the deploy plan. While you run <code>pyweb dev</code>, they see its live errors and logs.</p>

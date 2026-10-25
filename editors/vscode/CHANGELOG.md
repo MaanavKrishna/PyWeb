@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2
+
+- Released with PyWeb 0.6.2 (the dev loop: in-place hot reload,
+  Alt-click to open an element's line in VS Code, Fix with AI, a
+  time-travel timeline, `pyweb dev --share`). The extension's diagnostics
+  and completions are unchanged.
+
 ## 0.6.1
 
 - Released with PyWeb 0.6.1. Compile errors in the editor suggest the

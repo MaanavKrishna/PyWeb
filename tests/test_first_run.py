@@ -107,3 +107,13 @@ def test_welcome_shows_until_dismissed(tmp_path):
     assert status == 200 and json.loads(body)["ok"]
     assert "__PYWEB_WELCOME__={" not in page()
     assert os.path.exists(tmp_path / ".pyweb" / "welcomed")
+
+
+def test_the_cli_knows_every_theme_preset_without_importing_the_kit():
+    from pyweb._templates import THEME_PRESETS
+    from pyweb.ui.theme import PRESETS
+    assert list(THEME_PRESETS) == list(PRESETS)
+    import subprocess
+    out = subprocess.run([sys.executable, "-X", "importtime", "-m", "pyweb.cli", "--version"], capture_output=True,
+                         text=True, check=True).stderr
+    assert "pyweb.ui.theme" not in out and "pyweb.share" not in out and "pyweb.qr" not in out

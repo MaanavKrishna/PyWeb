@@ -2,6 +2,9 @@
 
 TEMPLATES = ("blank", "counter", "todo", "blog", "saas", "auth", "chat", "ai-chat", "desktop")
 
+# The colour presets `pyweb new --theme` offers (pyweb.ui.theme.PRESETS has their values; a test keeps the two in step).
+THEME_PRESETS = ("indigo", "zinc", "slate", "rose", "ocean", "violet", "emerald", "amber")
+
 DESCRIPTIONS = {
     "blank": "one empty page",
     "counter": "a page with a button: the smallest app with state",

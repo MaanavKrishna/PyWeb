@@ -1281,7 +1281,7 @@ def main(argv=None):
     p = sub.add_parser("new", help="create an app (with no name, in a terminal, it asks)")
     p.add_argument("name", nargs="?", default=None)
     p.add_argument("--template", default=None, choices=list(__import__("pyweb._templates", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (default counter; saas: teams, accounts, data, jobs, admin; desktop: a notes app in its own window)")
-    p.add_argument("--theme", default=None, choices=list(__import__("pyweb.ui.theme", fromlist=["PRESETS"]).PRESETS), help="a colour preset written into App(theme=...)")
+    p.add_argument("--theme", default=None, choices=list(__import__("pyweb._templates", fromlist=["THEME_PRESETS"]).THEME_PRESETS), help="a colour preset written into App(theme=...)")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server for AI assistants (stdio, or --http)")
     p.add_argument("--http", action="store_true", help="serve Streamable HTTP instead of stdio")

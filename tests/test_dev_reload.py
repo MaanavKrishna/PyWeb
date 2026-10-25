@@ -48,6 +48,8 @@ def test_the_runtime_registers_named_signals_only_when_the_dev_script_asks():
 
 def test_the_dev_script_is_inline_safe():
     from pyweb.cli import DEV_RELOAD_JS
-    body = DEV_RELOAD_JS[len("<script>"):-len("</script>")]
-    assert DEV_RELOAD_JS.startswith("<script>") and "</" not in body
-    assert "sessionStorage" in body and "G.keep" in body and "fresh" in body
+    assert DEV_RELOAD_JS.startswith("<script>") and DEV_RELOAD_JS.endswith("</script>")
+    bodies = DEV_RELOAD_JS[len("<script>"):-len("</script>")].split("</script><script>")
+    assert len(bodies) == 2 and all("</" not in b for b in bodies)     # reload.js and inspect.js
+    assert "sessionStorage" in bodies[0] and "G.keep" in bodies[0] and "fresh" in bodies[0]
+    assert "/__pyweb/dev/open" in bodies[1]

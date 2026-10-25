@@ -553,7 +553,7 @@ def parse_source(source, filename="<pyweb>"):
     if not diskcache.enabled():
         return _parse_source(source, filename)
     import pickle
-    k = diskcache.key("parse", filename, source)
+    k = diskcache.key("parse", filename, source, "src" if dev_source() else "")
     data = diskcache.get("parse", k)
     if data is not None:
         try:
@@ -563,6 +563,42 @@ def parse_source(source, filename="<pyweb>"):
     result = _parse_source(source, filename)
     diskcache.put("parse", k, pickle.dumps(result, protocol=pickle.HIGHEST_PROTOCOL))
     return result
+
+
+def dev_source():
+    """Is a ``pyweb dev`` build running? It marks every element with the file and line it came from."""
+    from . import pipeline
+    return pipeline._DEV
+
+
+_NO_SRC = {"html", "head", "body", "meta", "link", "title", "script", "style", "base", "template", "slot"}
+
+
+def _mark_sources(ui, pages, filename):
+    """Add ``data-pw-src="file:line"`` to each HTML element and ``data-pw-comp`` to the elements a page,
+    layout or component returns (dev only; the server-rendered and browser-built DOM both carry them)."""
+    def walk(nodes):
+        for n in nodes:
+            if isinstance(n, Element):
+                if n.tag[:1].islower() and n.tag.lower() not in _NO_SRC and "data-pw-src" not in n.attrs:
+                    n.attrs["data-pw-src"] = ("lit", f"{filename}:{n.line}", n.line)
+                walk(n.children)
+            elif isinstance(n, ControlFor):
+                walk(n.body)
+            elif isinstance(n, ControlIf):
+                walk(n.body)
+                walk(n.orelse)
+    walk(ui)
+    for fn, roots in pages:
+        stack = list(roots)
+        while stack:
+            n = stack.pop()
+            if isinstance(n, Element) and n.tag[:1].islower() and n.tag.lower() not in _NO_SRC:
+                n.attrs.setdefault("data-pw-comp", ("lit", fn.name, n.line))
+            elif isinstance(n, ControlFor):
+                stack.extend(n.body)
+            elif isinstance(n, ControlIf):
+                stack.extend(n.body + n.orelse)
 
 
 def _parse_source(source, filename):
@@ -582,6 +618,8 @@ def _parse_source(source, filename):
             span = (node.lineno, getattr(node, "end_lineno", node.lineno))
             body_ui = [x for x in ui if span[0] <= getattr(x, "line", 0) <= span[1]]
             pages.append((node, body_ui))
+    if dev_source():
+        _mark_sources(ui, pages, filename)
     return tree, ui, pages
 
 

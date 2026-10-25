@@ -253,12 +253,13 @@ def _as_tuple(resp):
 class Site:
     """Serve an app from source (``app.pyweb``) or from a built ``dist/``."""
 
-    def __init__(self, target, *, debug=False, max_body=1_048_576, **server_kwargs):
+    def __init__(self, target, *, debug=False, max_body=1_048_576, dev=False, **server_kwargs):
         from . import config
         from .app_loader import LoadedApp
         from .serve import DEFAULT_CSP, load_dist
         config.startup()
         self.debug = debug
+        self.dev = dev                     # `pyweb dev`: elements carry their source line (click to source)
         self.max_body = max_body
         self.started = time.time()
         self.csp = os.environ.get("PYWEB_CSP", DEFAULT_CSP)
@@ -286,7 +287,7 @@ class Site:
             self.app_path = target
             self.static_dirs = [os.path.join(os.path.dirname(os.path.abspath(target)), "static")]
             self.source_mode = True
-            self.app = LoadedApp(target)
+            self.app = LoadedApp(target, dev=dev)
             self._index_memory_js()
         self.server = Server(app=self.app, debug=debug, max_body=max_body, **self.server_kwargs)
         self.trust_proxy = config.settings().trust_proxy > 0
@@ -299,7 +300,7 @@ class Site:
     def reload(self):
         """Re-load the app from source (dev hot reload)."""
         from .app_loader import LoadedApp
-        app = LoadedApp(self.app_path)
+        app = LoadedApp(self.app_path, dev=self.dev)
         self.app = app
         self._index_memory_js()
         self.server = Server(app=app, debug=self.debug, max_body=self.max_body, **self.server_kwargs)

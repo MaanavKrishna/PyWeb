@@ -18,6 +18,8 @@ SINKS = re.compile(r"\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.wr
 def test_the_runtime_only_reaches_html_sinks_through_its_policies():
     found = []
     for folder, _dirs, files in os.walk(RUNTIME):        # the runtime and the UI kit's modules
+        if os.path.basename(folder) == "dev":
+            continue                                       # `pyweb dev` only, served without a CSP
         for name in sorted(files):
             if name.endswith(".js"):
                 for n, line in enumerate(open(os.path.join(folder, name), encoding="utf-8"), 1):
@@ -93,3 +95,9 @@ def test_log_lines_are_capped(monkeypatch, caplog):
         for _ in range(10):
             csp_report.handle("POST", {"content-type": "application/csp-report"}, json.dumps(REPORT_URI).encode())
     assert caplog.text.count("CSP blocked") == 3
+
+
+def test_dev_scripts_never_ship_in_built_pages(tmp_path):
+    (tmp_path / "app.pyweb").write_text('from pyweb import App\napp = App()\n\n@app.page("/")\ndef Home():\n    <p>hi</p>\n')
+    html = TestClient(str(tmp_path / "app.pyweb")).get("/").text
+    assert "/__pyweb/dev/open" not in html and "pyweb-inspect" not in html

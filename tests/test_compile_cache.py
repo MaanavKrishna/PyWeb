@@ -64,7 +64,7 @@ def test_a_changed_kit_file_is_compiled_again(tmp_path, monkeypatch):
         output(APPS[0])
         first = next(iter(pipeline._KIT_LIBS))
     stamp, lib = pipeline._KIT_LIBS[first][0], pipeline._KIT_LIBS[first][1]
-    monkeypatch.setattr(os.path, "getmtime", lambda p, _real=os.path.getmtime: stamp + 1 if p == first else _real(p))
+    monkeypatch.setattr(os.path, "getmtime", lambda p, _real=os.path.getmtime: stamp[0] + 1 if p == first else _real(p))
     for path in APPS:
         output(path)
     assert pipeline._KIT_LIBS[first][1] is not lib

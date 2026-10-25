@@ -146,7 +146,7 @@ def _resolver(filename, libs, stack):
             raise CompileError(f"circular import between .pyweb files: {chain}", lineno, filename)
         if path not in libs and path.startswith(KIT_DIR + os.sep):
             cached = _KIT_LIBS.get(path)
-            stamp = os.path.getmtime(path)
+            stamp = (os.path.getmtime(path), P.dev_source())
             if cached is not None and cached[0] == stamp:
                 lib, usage, subs = cached[1], cached[3], cached[2]   # the kit doesn't change: compile it once
                 _reset(lib, usage)
@@ -168,7 +168,7 @@ def _resolver(filename, libs, stack):
                                    first["lineno"], path)
             libs[path] = Library(module, path, compiled, P.parse_source(source, path)[0])
             if path.startswith(KIT_DIR + os.sep) and os.environ.get("PYWEB_NO_KIT_CACHE") != "1":
-                _KIT_LIBS[path] = (os.path.getmtime(path), libs[path],
+                _KIT_LIBS[path] = ((os.path.getmtime(path), P.dev_source()), libs[path],
                                    {p: (libs[p], _usage(libs[p])) for p in set(libs) - before if p != path},
                                    _usage(libs[path]))
         return libs[path]
@@ -225,12 +225,24 @@ def _renderer(ctx, globals_=None, strict=False):
 _COMPILE_LOCK = threading.RLock()
 
 
-def compile_source(source, filename="<pyweb>", route="/", title="PyWeb", *, _libs=None, _stack=None):
+# A dev build (``pyweb dev``) marks each element with its file and line. Set only while a compile holds
+# the lock, so the files it imports are built the same way and other compiles never see it.
+_DEV = False
+
+
+def compile_source(source, filename="<pyweb>", route="/", title="PyWeb", *, dev=None, _libs=None, _stack=None):
+    global _DEV
     try:
         if _stack is None and filename and not filename.startswith("<"):
             _stack = (os.path.abspath(filename),)
         with _COMPILE_LOCK:
-            return _compile(source, filename, route, title, {} if _libs is None else _libs, _stack or ())
+            outer = _DEV
+            if dev is not None:
+                _DEV = bool(dev)
+            try:
+                return _compile(source, filename, route, title, {} if _libs is None else _libs, _stack or ())
+            finally:
+                _DEV = outer
     except CompileError as exc:
         if not exc.filename or exc.filename == "<pyweb>":
             exc.with_file(filename)

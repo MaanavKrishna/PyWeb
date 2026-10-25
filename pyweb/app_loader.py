@@ -100,7 +100,7 @@ def _kit_markup(path):
 
 class LoadedApp:
     def __init__(self, path=None, *, source=None, filename=None, asset_urls=None,
-                 stylesheets=None):
+                 stylesheets=None, dev=False):
         if source is None:
             with open(path, encoding="utf-8") as fh:
                 source = fh.read()
@@ -109,7 +109,7 @@ class LoadedApp:
         self.source = source
         self.asset_urls = dict(asset_urls or {})
         self.extra_stylesheets = list(stylesheets or [])
-        self.compiled = compile_source(source, filename=self.filename)
+        self.compiled = compile_source(source, filename=self.filename, dev=dev)
         self.ctx = self.compiled["context"]
         # Other .pyweb files the app imports run as real modules, registered
         # under their import name so `from widgets import Card` works.

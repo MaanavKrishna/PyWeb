@@ -253,10 +253,13 @@ def cmd_build(args):
 
 
 def _dev_reload_js():
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "dev",
-                        "reload.js")
-    with open(path, encoding="utf-8") as fh:
-        return "<script>" + fh.read().replace("</", "<\\/") + "</script>"
+    """The dev scripts every page gets: hot reload, and the inspector (Alt-click to open the source)."""
+    folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "dev")
+    out = []
+    for name in ("reload.js", "inspect.js"):
+        with open(os.path.join(folder, name), encoding="utf-8") as fh:
+            out.append("<script>" + fh.read().replace("</", "<\\/") + "</script>")
+    return "".join(out)
 
 
 DEV_RELOAD_JS = _dev_reload_js()
@@ -292,6 +295,14 @@ def _error_overlay(exc, path):
             + "<p>Fix the file and save: this page reloads automatically.</p></main>" + DEV_RELOAD_JS)
 
 
+def _local(client, headers):
+    """A request from this machine, to a loopback address (not through a tunnel or the LAN)."""
+    host = client[0] if isinstance(client, (tuple, list)) else (client or "127.0.0.1")
+    name = next((v for k, v in (headers or {}).items() if k.lower() == "host"), "localhost")
+    name = name.rsplit(":", 1)[0] if not name.startswith("[") else name[1:].split("]")[0]
+    return host in ("127.0.0.1", "::1", "localhost") and name in ("127.0.0.1", "::1", "localhost")
+
+
 class _DevState:
     def __init__(self, path):
         self.path = path
@@ -305,7 +316,7 @@ class _DevState:
 def _dev_load(state, Site):
     try:
         if state.site is None:
-            state.site = Site(state.path, debug=True)
+            state.site = Site(state.path, debug=True, dev=True)   # dev: elements know their source line
         else:
             state.site.reload()
         state.error = None
@@ -344,6 +355,8 @@ class _DevSite:
             body = json.dumps({"version": state.version, "kind": state.kind, "css": state.css,
                                "error": state.error is not None})
             return 200, [("Content-Type", "application/json"), ("Cache-Control", "no-store")], body.encode()
+        if path.split("?")[0] == "/__pyweb/dev/open":
+            return self._open(method, headers, body, client)
         if self.link is not None:
             answer = self.link.handle(method, path, headers, client)
             if answer is not None:
@@ -369,6 +382,22 @@ class _DevSite:
                 raw = devtools.inject(raw, summary)
             hdrs = [(k, v) for k, v in hdrs if k.lower() != "content-length"]
         return status, hdrs, raw
+
+    def _open(self, method, headers, body, client):
+        """``POST /__pyweb/dev/open {"chain": ["file:line", ...]}``: open the source in your editor."""
+        from pyweb import devopen
+        from pyweb.telemetry.devtools import _json, _same_origin
+        if method != "POST" or not _same_origin(headers) or not _local(client, headers):
+            return _json({"error": "POST from this page on this machine only"}, 403)
+        try:
+            chain = json.loads(body or b"{}").get("chain")
+        except (ValueError, AttributeError):
+            chain = None
+        if not isinstance(chain, list):
+            return _json({"error": "send {\"chain\": [\"file:line\", ...]}"}, 400)
+        app_dir = os.path.dirname(os.path.abspath(self.state.path))
+        out = devopen.open_source(chain, app_dir)
+        return _json(out, 404 if "file" not in out else 200)
 
     def websocket(self, path, headers, client=None):
         if self.state.site is None:

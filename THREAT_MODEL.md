@@ -177,6 +177,21 @@ websites in the user's browser.
 | T | An assistant's "read-only" SQL changing data | One statement, write keywords refused (even in a CTE), a read-only transaction that is rolled back; secrets redacted | `test_dx_v5.py::test_mcp_data_tools` |
 | T | Malformed tool arguments reaching app code | Arguments are checked against each tool's schema before it runs | `test_mcp_v6.py::test_arguments_are_checked_before_the_tool_runs` |
 
+## 7d. The dev loop: sharing, AI help, open in editor
+
+`pyweb dev` only. Its tools change files, open programs and show request data, so they are for the
+person running it, on that machine: a request must come from a loopback address and name a loopback
+`Host` (a tunnel's or the LAN's requests don't), and writes must be same-origin.
+
+| | Threat | Mitigation | Proof |
+|---|---|---|---|
+| S | Someone who learns the `--share` address (or guesses the tunnel name) using the app | Every request through the tunnel needs a cookie (`HttpOnly`, `Secure`, `SameSite=Lax`) set by the printed link's random token; forged cookies are refused | `test_share.py::test_the_link_sets_a_cookie_and_nothing_else_gets_in`, `test_share.py::test_pyweb_dev_share_end_to_end` |
+| E/I | A share-link guest (or someone on the LAN) using the developer's tools: the toolbar's SQL and requests, the agent endpoints, AI fixes, opening files, saving the theme | Guests get the app and hot reload only; every `/__pyweb/dev/` endpoint but change polling answers 403 to them, and their pages carry no toolbar or tool scripts | `test_share.py::test_guests_get_the_app_and_hot_reload_only`, `test_share.py::test_you_still_get_everything_and_the_lan_gets_hot_reload`, `test_share.py::test_a_compile_error_page_for_guests_has_no_tools` |
+| T | A web page making "Fix with AI" or "Edit with AI" write to the app | Same-origin, loopback-only POSTs; the answer is compiled first, applied only on Apply, only to `.pyweb` files in the app, refused if the file changed since; the old version is kept for Undo | `test_assist.py::test_endpoints_refuse_other_sites_and_other_machines`, `test_assist.py::test_a_change_that_does_not_compile_is_refused`, `test_assist.py::test_apply_refuses_when_the_file_changed_since`, `test_assist.py::test_only_app_files_are_targets` |
+| I | Credentials in the app's source sent to a model | Known key formats and random-looking secret values are replaced by placeholders before sending and put back in the answer | `test_assist.py::test_secrets_are_replaced_before_sending_and_put_back`, `test_assist.py::test_the_connected_assistant_answers_through_mcp_sampling` |
+| E | Alt-click "open in editor" used to open arbitrary files or run commands | Only `.pyweb` files inside the app folder or the UI kit; the editor gets an argument list, never a shell; same-origin and loopback only | `test_devopen.py::test_only_app_and_kit_files_resolve`, `e2e/test_dev_inspect_browser.py::test_open_refuses_cross_site_and_outside_files` |
+| I | Dev-only markers or scripts in production pages | `data-pw-src` markers come from dev compiles only; the dev scripts are added by the dev server only | `test_devopen.py::test_other_builds_have_no_marks`, `test_trusted_types.py::test_dev_scripts_never_ship_in_built_pages` |
+
 ## 8. The release
 
 | | Threat | Mitigation | Proof |

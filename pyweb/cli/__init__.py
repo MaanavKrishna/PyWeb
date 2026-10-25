@@ -252,20 +252,22 @@ def cmd_build(args):
         raise SystemExit(2)
 
 
-def _dev_reload_js():
-    """The dev scripts every page gets: hot reload, and the inspector (Alt-click to open the source)."""
+def _dev_reload_js(names=("reload.js", "inspect.js", "assist.js", "timeline.js", "welcome.js")):
+    """The dev scripts pages get: hot reload, and (for you, on this machine) the inspector, AI help,
+    the timeline and the welcome panel."""
     folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "dev")
     out = []
-    for name in ("reload.js", "inspect.js", "assist.js", "timeline.js", "welcome.js"):
+    for name in names:
         with open(os.path.join(folder, name), encoding="utf-8") as fh:
             out.append("<script>" + fh.read().replace("</", "<\\/") + "</script>")
     return "".join(out)
 
 
 DEV_RELOAD_JS = _dev_reload_js()
+DEV_GUEST_JS = _dev_reload_js(("reload.js",))   # someone else (a share link, the LAN): hot reload only
 
 
-def _error_overlay(exc, path):
+def _error_overlay(exc, path, scripts=None):
     """HTML page shown in the browser while the app has a compile error."""
     import html as _h
     from pyweb.compiler.errors import describe
@@ -292,7 +294,8 @@ def _error_overlay(exc, path):
             ".code{border-left:3px solid #ff6b6b}.where{color:#aaa;margin:0}a{color:#8ab4ff}"
             ".hint{background:#26262c;padding:10px 14px;border-radius:8px}</style><main data-pw-error=compile>"
             + "".join(parts)
-            + "<p>Fix the file and save: this page reloads automatically.</p></main>" + DEV_RELOAD_JS)
+            + "<p>Fix the file and save: this page reloads automatically.</p></main>"
+            + (DEV_RELOAD_JS if scripts is None else scripts))
 
 
 def _local(client, headers):
@@ -334,9 +337,10 @@ class _DevSite:
     """What the server serves while developing: the current build of the app, the error
     overlay while it doesn't compile, and a script that reloads pages after a change."""
 
-    def __init__(self, state, link=None):
+    def __init__(self, state, link=None, share=None):
         self.state = state
         self.link = link
+        self.share = share          # pyweb dev --share: the gate for requests through the tunnel
 
     @property
     def max_body(self):
@@ -354,6 +358,18 @@ class _DevSite:
 
     def respond(self, method, path, headers, body=b"", client=None):
         state = self.state
+        guest = False
+        if self.share is not None:
+            refused = self.share.check(method, path, headers)
+            if refused is not None:
+                return refused
+            guest = self.share.guest(headers)
+        bare = path.split("?")[0]
+        mine = _local(client, headers)         # the developer, on this machine (not a share link or the LAN)
+        if path.startswith("/__pyweb/dev/") and bare not in ("/__pyweb/dev/version", "/__pyweb/dev/changes") \
+                and (guest or (not mine and not bare.startswith("/__pyweb/dev/agent/"))):
+            from pyweb.telemetry.devtools import _json
+            return _json({"error": "the dev tools are for the person running pyweb dev, on that machine"}, 403)
         if path == "/__pyweb/dev/version":
             return 200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], str(state.version).encode()
         if path.split("?")[0] == "/__pyweb/dev/changes":
@@ -382,7 +398,8 @@ class _DevSite:
             if answer is not None:
                 return answer
         if state.error is not None or state.site is None:
-            return 500, [("Content-Type", "text/html; charset=utf-8")], _error_overlay(state.error, state.path).encode()
+            overlay = _error_overlay(state.error, state.path, None if mine else DEV_GUEST_JS)
+            return 500, [("Content-Type", "text/html; charset=utf-8")], overlay.encode()
         from pyweb.telemetry import RECENT, devtools
         if path.startswith(devtools.PREFIX):
             loaded = getattr(state.site, "app", None)
@@ -395,12 +412,12 @@ class _DevSite:
         status, hdrs, raw = state.site.respond(method, path, headers, body, client=client)
         ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
         if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
-            dev_js = DEV_RELOAD_JS
-            if state.welcome and _local(client, headers):
+            dev_js = DEV_RELOAD_JS if mine else DEV_GUEST_JS
+            if state.welcome and mine:
                 info = json.dumps({"file": os.path.basename(state.path)}).replace("</", "<\\/")
                 dev_js = f"<script>window.__PYWEB_WELCOME__={info};</script>" + dev_js
             raw = raw.replace(b"</body>", dev_js.encode() + b"</body>", 1)
-            if not os.environ.get("PYWEB_DEVTOOLS", "1").lower() in ("0", "false", "off"):
+            if mine and not os.environ.get("PYWEB_DEVTOOLS", "1").lower() in ("0", "false", "off"):
                 rid = next((v for k, v in hdrs if k.lower() == "x-request-id"), None)
                 summary = next((r for r in reversed(RECENT) if r["id"] == rid), None)
                 raw = devtools.inject(raw, summary)
@@ -491,6 +508,8 @@ class _DevSite:
         return assist.ask_for("fix", path, rel, text, assist.fix_prompt(rel, text, error), self.proposals)
 
     def websocket(self, path, headers, client=None):
+        if self.share is not None and self.share.check("GET", path, headers) is not None:
+            return 403, "open the share link first"
         if self.state.site is None:
             return 503, "the app doesn't compile"
         return self.state.site.websocket(path, headers, client)
@@ -551,19 +570,26 @@ def cmd_dev(args):
     if state.error is not None:
         print("error: " + _pretty_error(state.error, state.path), file=sys.stderr)
     host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
+    share = None
+    if getattr(args, "share", False):
+        from pyweb.share import Share
+        share = Share()
 
     def ready(port):
         local = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
         url = f"http://{'localhost' if local in ('127.0.0.1', '::1') else local}:{port}/"
         print(f"PyWeb dev server: {url}  ({args.file})", flush=True)
         _announce(host, port, url, open_browser=not getattr(args, "no_open", False))
+        if share is not None:
+            from pyweb.share import wait_and_print
+            wait_and_print(share, port, sys.stdout)
         link.publish(f"http://{local}:{port}/")             # for `pyweb mcp` (.pyweb/dev.json, token only)
         if not getattr(args, "no_reload", False):
             _watch_and_reload(state, Site)
         from pyweb import jobs
         jobs.start_embedded()
 
-    _net.run(lambda: _DevSite(state, link), host=host, port=args.port, ready=ready)
+    _net.run(lambda: _DevSite(state, link, share), host=host, port=args.port, ready=ready)
 
 
 def _watch_and_reload(state, Site):
@@ -1168,7 +1194,7 @@ def main(argv=None):
     p.add_argument("--requires", action="append", default=[], help="with --desktop: another package the app needs")
     p.add_argument("--pyweb", default=None, help="with --desktop: the PyWeb requirement (default: this version)")
     p.set_defaults(fn=cmd_build)
-    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.add_argument("--no-open", action="store_true", help="don't open the browser"); p.set_defaults(fn=cmd_dev)
+    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.add_argument("--no-open", action="store_true", help="don't open the browser"); p.add_argument("--share", action="store_true", help="a temporary public link (cloudflared or localhost.run) for someone else to try the app; your dev tools stay on this machine"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("profile", help="serve the app and show where its time goes (a flame graph on Python 3.15+)")
     p.add_argument("file", nargs="?", default="app.pyweb")
     p.add_argument("--seconds", type=float, default=15.0, help="how long to sample (default 15)")

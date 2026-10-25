@@ -1013,7 +1013,9 @@ class Server:
             if self.logger is not None:
                 self.logger.error(f"page {name} failed: {exc}", request_id=req.id, page=name)
             if self.debug:
+                from pyweb import assist
                 from pyweb.compiler.errors import explain_exception
+                assist.note_exception(exc, getattr(req, "id", None))     # for "Fix with AI" in pyweb dev
                 return self.error_page(500, req, title=f"{type(exc).__name__} in {name}()",
                                        message=explain_exception(exc))
             return self.error_page(500, req)

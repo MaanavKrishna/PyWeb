@@ -1032,6 +1032,10 @@ PROMPTS = [
     {"name": "fix_failing_test", "title": "Fix a failing test",
      "description": "Find out why a test fails and fix the app (not the test, unless the test is wrong).",
      "arguments": [_PATH_ARG, _arg("test", "The test's name or a -k expression (default: every test).")]},
+    {"name": "fix_errors", "title": "Fix every error",
+     "description": "Check, fix and test the app in a loop until it compiles cleanly and the tests pass; also "
+                    "does what was asked from the page (Fix with AI / Edit with AI) when nothing answered it.",
+     "arguments": [_PATH_ARG]},
     {"name": "debug_page", "title": "Debug a page",
      "description": "Find out why a page errors, looks wrong or is slow, using the running dev server when "
                     "there is one.",
@@ -1156,6 +1160,16 @@ def _prompt_text(name, args):
             "Find the cause in the app (pyweb_explain on the line, pyweb_inspect for where things run). Fix the "
             "app; change the test only if it asserts something wrong.",
             "Call pyweb_check, then pyweb_test until everything passes.")
+    if name == "fix_errors":
+        return _steps(
+            f"Make the PyWeb app at `{path}` compile cleanly and pass its tests.",
+            "Call pyweb_assist_requests: if the developer asked for a fix or a change from the page, do those first "
+            "(each names the file, the error or the element's line, and what to change).",
+            "Call pyweb_check. For each error, read the hint, fix the cause in the file and call pyweb_check again "
+            "until ok is true and no errors are left.",
+            "Call pyweb_dev: if the dev server shows recent 500 errors, pyweb_render those pages and fix them.",
+            "Run pyweb_test; fix the app (not the tests, unless a test is wrong) until everything passes.",
+            "Say what you changed, file by file.")
     if name == "debug_page":
         url = args.get("url") or "/"
         problem = (args.get("problem") or "").strip()
@@ -1465,6 +1479,60 @@ class Server:
         self.log_level = "info"
         self._send = send
         self._lock = threading.Lock()
+        self.client_caps = {}
+        self.can_request = False          # stdio: this server may send requests to the client (sampling)
+        self._pending = {}                # request id -> [Event, response]
+        self._next_id = 0
+        self._assisting = False
+
+    def request(self, method, params, timeout=300):
+        """Send a request to the client and wait for its answer (needs a transport that reads while it waits)."""
+        with self._lock:
+            self._next_id += 1
+            rid = f"pyweb-{self._next_id}"
+            slot = self._pending[rid] = [threading.Event(), None]
+        self.send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        try:
+            if not slot[0].wait(timeout):
+                raise TimeoutError(f"the client didn't answer {method}")
+        finally:
+            self._pending.pop(rid, None)
+        resp = slot[1]
+        if "error" in resp:
+            raise RuntimeError((resp["error"] or {}).get("message") or "the client refused")
+        return resp.get("result") or {}
+
+    def _assist_loop(self, app_path):
+        """Do the dev server's "Fix/Edit with AI" requests with the client's model (MCP sampling)."""
+        import time as _time
+
+        from . import devlink
+        while True:
+            info = devlink.find(app_path)
+            if info is None:
+                _time.sleep(3)
+                continue
+            try:
+                job = devlink.get(info, "assist?wait=5", timeout=15).get("job")
+            except Exception:  # noqa: BLE001 - the dev server restarted: look for it again
+                _time.sleep(2)
+                continue
+            if not job:
+                continue
+            try:
+                result = self.request("sampling/createMessage", {
+                    "messages": [{"role": "user", "content": {"type": "text", "text": job["user"]}}],
+                    "systemPrompt": job["system"], "maxTokens": 16000, "includeContext": "none",
+                    "modelPreferences": {"intelligencePriority": 0.9, "speedPriority": 0.3}})
+                content = result.get("content") or {}
+                parts = content if isinstance(content, list) else [content]
+                answer = {"text": "".join(p.get("text", "") for p in parts if p.get("type") == "text")}
+            except Exception as exc:  # noqa: BLE001 - declined or failed: the page shows why
+                answer = {"error": str(exc) or type(exc).__name__}
+            try:
+                devlink.get(info, "assist/" + job["id"], data=answer)
+            except Exception:  # noqa: BLE001
+                pass
 
     def send(self, msg):
         if self._send is not None:
@@ -1484,6 +1552,12 @@ class Server:
         mid = msg.get("id")
         method = msg.get("method")
         params = msg.get("params") or {}
+        if method is None and mid is not None and ("result" in msg or "error" in msg):
+            slot = self._pending.get(mid)         # the client answering one of our requests
+            if slot is not None:
+                slot[1] = msg
+                slot[0].set()
+            return None
         if mid is None:  # notifications (initialized, cancelled, ...) and responses need no answer
             return None
         try:
@@ -1498,6 +1572,11 @@ class Server:
         if method == "initialize":
             requested = params.get("protocolVersion")
             self.protocol = requested if requested in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
+            self.client_caps = params.get("capabilities") or {}
+            if self.can_request and "sampling" in self.client_caps and not self._assisting:
+                self._assisting = True
+                threading.Thread(target=self._assist_loop, args=(os.environ.get("PYWEB_APP", "app.pyweb"),),
+                                 daemon=True, name="pyweb-assist").start()
             return {"protocolVersion": self.protocol,
                     "capabilities": {"tools": {"listChanged": False},
                                      "resources": {"listChanged": False, "subscribe": False},
@@ -1606,6 +1685,7 @@ def serve_stdio(stdin=None, stdout=None):
         stdout.flush()
 
     server = Server(send=write)
+    server.can_request = True
     for line in stdin:
         line = line.strip()
         if not line:

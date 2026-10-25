@@ -45,7 +45,7 @@ def test_initialize_and_listing(server):
                      "pyweb_screenshot", "pyweb_db_schema", "pyweb_db_query", "pyweb_migrations",
                      "pyweb_jobs", "pyweb_requests", "pyweb_test", "pyweb_docs", "pyweb_ui", "pyweb_review",
                      "pyweb_upgrade", "pyweb_deploy_plan", "pyweb_webhook_send", "pyweb_profile", "pyweb_explain",
-                     "pyweb_teams", "pyweb_dev", "pyweb_logs", "pyweb_doctor"]
+                     "pyweb_teams", "pyweb_dev", "pyweb_assist_requests", "pyweb_logs", "pyweb_doctor"]
     uris = [r["uri"] for r in call(server, "resources/list")["resources"]]
     assert "pyweb://guide" in uris and "pyweb://templates/todo" in uris
     assert call(server, "prompts/list")["prompts"][0]["name"] == "build_pyweb_app"

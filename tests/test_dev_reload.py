@@ -50,6 +50,6 @@ def test_the_dev_script_is_inline_safe():
     from pyweb.cli import DEV_RELOAD_JS
     assert DEV_RELOAD_JS.startswith("<script>") and DEV_RELOAD_JS.endswith("</script>")
     bodies = DEV_RELOAD_JS[len("<script>"):-len("</script>")].split("</script><script>")
-    assert len(bodies) == 2 and all("</" not in b for b in bodies)     # reload.js and inspect.js
+    assert len(bodies) == 3 and all("</" not in b for b in bodies)     # reload.js, inspect.js, assist.js
     assert "sessionStorage" in bodies[0] and "G.keep" in bodies[0] and "fresh" in bodies[0]
-    assert "/__pyweb/dev/open" in bodies[1]
+    assert "/__pyweb/dev/open" in bodies[1] and "/__pyweb/dev/ai/" in bodies[2]

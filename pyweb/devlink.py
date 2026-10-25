@@ -90,7 +90,7 @@ class Link:
         except (OSError, ValueError, TypeError):
             pass
 
-    def handle(self, method, path, headers, client=None):
+    def handle(self, method, path, headers, client=None, body=b""):
         """Answer ``/__pyweb/dev/agent/...``, or None for other paths."""
         if not path.startswith(PREFIX):
             return None
@@ -102,6 +102,20 @@ class Link:
         params = dict(p.partition("=")[::2] for p in query.split("&") if p)
         if what == "status":
             return _json(self.status())
+        if what == "assist" and method == "GET":         # pyweb mcp, for a client that offers sampling
+            from . import assist
+            # short polls: a waiting request holds a server thread, and Ctrl+C waits for it
+            return _json({"job": assist.SAMPLING.next(min(float(params.get("wait") or 5), 5.0))})
+        if what.startswith("assist/") and method == "POST":
+            from . import assist
+            try:
+                data = json.loads(body or b"{}")
+            except ValueError:
+                data = {"error": "bad answer"}
+            return _json({"ok": assist.SAMPLING.answer(what[len("assist/"):], data)})
+        if what == "requests-pending":
+            from . import assist
+            return _json({"requests": list(assist.PENDING)})
         if what == "logs":
             since = int(params.get("since") or 0)
             level = params.get("level") or "debug"
@@ -164,9 +178,11 @@ def find(app_path="app.pyweb"):
     return info
 
 
-def get(info, what, timeout=10):
+def get(info, what, timeout=10, data=None):
     import urllib.request
-    req = urllib.request.Request(info["url"].rstrip("/") + PREFIX + what, headers={HEADER: info["token"]})
+    body = None if data is None else json.dumps(data).encode()
+    req = urllib.request.Request(info["url"].rstrip("/") + PREFIX + what, data=body,
+                                 headers={HEADER: info["token"], "Content-Type": "application/json"})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # it's on loopback: no proxy
     with opener.open(req, timeout=timeout) as resp:
         return json.loads(resp.read())
@@ -213,6 +229,17 @@ def dev_jobs(path):
     return None if info is None else get(info, "jobs")
 
 
+def tool_assist_requests(args):
+    """What the developer asked for from the page ("Fix with AI" / "Edit with AI") that no AI answered."""
+    path, info = _need(args)
+    if info is None:
+        return {"running": False, "requests": [], "hint": f"start `pyweb dev {path}` first"}
+    reqs = get(info, "requests-pending")["requests"]
+    return {"running": True, "requests": reqs,
+            "hint": "Do each one by editing the file named (pyweb_check after); the page updates by itself." if reqs
+            else "Nothing was asked from the page."}
+
+
 _S, _I, _B, _A, _O = {"type": "string"}, {"type": "integer"}, {"type": "boolean"}, {"type": "array"}, {"type": "object"}
 _PATH = {"type": "string", "description": "Path to the .pyweb file (default: app.pyweb)."}
 
@@ -224,6 +251,13 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"path": _PATH}},
      "output": {"type": "object", "required": ["running"], "properties": {
          "running": _B, "url": _S, "compiles": _B, "error": {}, "pages": _A, "recent_failures": _A, "hint": _S}}},
+    {"name": "pyweb_assist_requests", "fn": tool_assist_requests, "readOnly": True, "title": "Requests from the page",
+     "description": "Fixes and changes the developer asked for in the browser (Fix with AI on an error page, "
+                    "Alt+Shift-click → Edit with AI) while no AI was set up to answer them: each has the file, the "
+                    "error or the element's line, and the instruction. Do them by editing the file.",
+     "inputSchema": {"type": "object", "properties": {"path": _PATH}},
+     "output": {"type": "object", "required": ["running", "requests"], "properties": {
+         "running": _B, "requests": _A, "hint": _S}}},
     {"name": "pyweb_logs", "fn": tool_logs, "readOnly": True, "title": "Dev server logs",
      "description": "Log lines from the running `pyweb dev` (what the terminal shows: warnings, errors with "
                     "tracebacks, slow queries, job failures). since=<last> returns only newer lines.",

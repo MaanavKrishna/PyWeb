@@ -256,7 +256,7 @@ def _dev_reload_js():
     """The dev scripts every page gets: hot reload, and the inspector (Alt-click to open the source)."""
     folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "dev")
     out = []
-    for name in ("reload.js", "inspect.js"):
+    for name in ("reload.js", "inspect.js", "assist.js"):
         with open(os.path.join(folder, name), encoding="utf-8") as fh:
             out.append("<script>" + fh.read().replace("</", "<\\/") + "</script>")
     return "".join(out)
@@ -290,7 +290,7 @@ def _error_overlay(exc, path):
             "main{max-width:880px;margin:8vh auto;padding:0 24px}h1{color:#ff6b6b;font-size:20px}"
             "pre{background:#0f0f12;padding:16px;border-radius:8px;overflow:auto;font-size:13px}"
             ".code{border-left:3px solid #ff6b6b}.where{color:#aaa;margin:0}a{color:#8ab4ff}"
-            ".hint{background:#26262c;padding:10px 14px;border-radius:8px}</style><main>"
+            ".hint{background:#26262c;padding:10px 14px;border-radius:8px}</style><main data-pw-error=compile>"
             + "".join(parts)
             + "<p>Fix the file and save: this page reloads automatically.</p></main>" + DEV_RELOAD_JS)
 
@@ -357,8 +357,10 @@ class _DevSite:
             return 200, [("Content-Type", "application/json"), ("Cache-Control", "no-store")], body.encode()
         if path.split("?")[0] == "/__pyweb/dev/open":
             return self._open(method, headers, body, client)
+        if path.startswith("/__pyweb/dev/ai/"):
+            return self._ai(method, path, headers, body, client)
         if self.link is not None:
-            answer = self.link.handle(method, path, headers, client)
+            answer = self.link.handle(method, path, headers, client, body=body)
             if answer is not None:
                 return answer
         if state.error is not None or state.site is None:
@@ -398,6 +400,73 @@ class _DevSite:
         app_dir = os.path.dirname(os.path.abspath(self.state.path))
         out = devopen.open_source(chain, app_dir)
         return _json(out, 404 if "file" not in out else 200)
+
+    def _ai(self, method, path, headers, body, client):
+        """``/__pyweb/dev/ai/{status,fix,edit,apply,undo}``: Fix with AI and Edit with AI (see pyweb.assist)."""
+        from pyweb import assist, devopen
+        from pyweb.telemetry.devtools import _json, _same_origin
+        what = path.split("?")[0][len("/__pyweb/dev/ai/"):]
+        if not _local(client, headers):
+            return _json({"error": "AI help is for the person running pyweb dev, on this machine"}, 403)
+        app_dir = os.path.dirname(os.path.abspath(self.state.path))
+        if what == "status":
+            return _json({"provider": assist.describe_provider(), "ready": assist.provider() is not None})
+        if method != "POST" or not _same_origin(headers):
+            return _json({"error": "POST from this page only"}, 403)
+        if getattr(self.state, "proposals", None) is None:
+            self.state.proposals = assist.Proposals(app_dir)    # shared by every connection
+        self.proposals = self.state.proposals
+        try:
+            data = json.loads(body or b"{}")
+            if not isinstance(data, dict):
+                raise ValueError
+        except ValueError:
+            return _json({"error": "send a JSON object"}, 400)
+        try:
+            if what == "fix":
+                return _json(self._ai_fix(data))
+            if what == "edit":
+                instruction = str(data.get("instruction") or "").strip()[:2000]
+                hit = devopen.pick(data.get("chain") if isinstance(data.get("chain"), list) else [], app_dir)
+                if not instruction:
+                    return _json({"error": "say what to change"}, 400)
+                if hit is None or not hit[2]:
+                    return _json({"error": "that element isn't from a file in this app"}, 400)
+                file, line, _mine = hit
+                text = _load(file)
+                rel = os.path.relpath(file, app_dir)
+                return _json(assist.ask_for("edit", file, rel, text, assist.edit_prompt(rel, text, line, instruction),
+                                            self.proposals))
+            if what == "apply":
+                return _json(self.proposals.apply(str(data.get("id"))))
+            if what == "undo":
+                return _json(self.proposals.undo(str(data.get("id"))))
+        except assist.AssistError as exc:
+            return _json({"error": str(exc)}, 409)
+        return _json({"error": f"unknown: {what}"}, 404)
+
+    def _ai_fix(self, data):
+        from pyweb import assist
+        from pyweb.compiler.errors import pretty
+        state = self.state
+        if state.error is not None:
+            exc = state.error
+            file = getattr(exc, "filename", None) or state.path
+            try:
+                path = self.proposals.target(file)
+            except assist.AssistError:
+                path = self.proposals.target(state.path)
+            text = _load(path)
+            error = pretty(exc, text, path)
+        else:
+            found = assist.last_exception(data.get("request_id") or None) or assist.last_exception()
+            if found is None:
+                raise assist.AssistError("there's no error to fix right now")
+            path = self.proposals.target(found["file"] or state.path)
+            text = _load(path)
+            error = found["text"]
+        rel = os.path.relpath(path, self.proposals.app_dir)
+        return assist.ask_for("fix", path, rel, text, assist.fix_prompt(rel, text, error), self.proposals)
 
     def websocket(self, path, headers, client=None):
         if self.state.site is None:

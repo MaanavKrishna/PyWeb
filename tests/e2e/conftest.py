@@ -12,6 +12,7 @@ import pytest
 pw = pytest.importorskip("playwright.sync_api")
 
 ENGINE = os.environ.get("PYWEB_BROWSER", "chromium")
+os.environ.setdefault("PYWEB_WELCOME", "0")     # dev servers started by the tests skip the first-run panel
 
 
 def pytest_configure(config):

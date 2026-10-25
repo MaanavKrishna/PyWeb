@@ -256,7 +256,7 @@ def _dev_reload_js():
     """The dev scripts every page gets: hot reload, and the inspector (Alt-click to open the source)."""
     folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "browser", "dev")
     out = []
-    for name in ("reload.js", "inspect.js", "assist.js", "timeline.js"):
+    for name in ("reload.js", "inspect.js", "assist.js", "timeline.js", "welcome.js"):
         with open(os.path.join(folder, name), encoding="utf-8") as fh:
             out.append("<script>" + fh.read().replace("</", "<\\/") + "</script>")
     return "".join(out)
@@ -303,6 +303,10 @@ def _local(client, headers):
     return host in ("127.0.0.1", "::1", "localhost") and name in ("127.0.0.1", "::1", "localhost")
 
 
+def _welcome_marker(app_path):
+    return os.path.join(os.path.dirname(os.path.abspath(app_path)), ".pyweb", "welcomed")
+
+
 class _DevState:
     def __init__(self, path):
         self.path = path
@@ -311,6 +315,7 @@ class _DevState:
         self.version = 0
         self.kind = "code"          # what the last change was: "code" (rebuilt) or "css" (stylesheets only)
         self.css = []               # the stylesheet URLs a "css" change touched
+        self.welcome = False        # show the first-run welcome panel (pyweb dev sets it)
 
 
 def _dev_load(state, Site):
@@ -359,6 +364,19 @@ class _DevSite:
             return self._open(method, headers, body, client)
         if path.startswith("/__pyweb/dev/ai/"):
             return self._ai(method, path, headers, body, client)
+        if path == "/__pyweb/dev/welcome":
+            from pyweb.telemetry.devtools import _json, _same_origin
+            if method != "POST" or not _same_origin(headers) or not _local(client, headers):
+                return _json({"error": "POST from this page on this machine only"}, 403)
+            state.welcome = False
+            try:
+                marker = _welcome_marker(state.path)
+                os.makedirs(os.path.dirname(marker), exist_ok=True)
+                with open(marker, "w", encoding="utf-8") as fh:
+                    fh.write("shown\n")
+            except OSError:
+                pass
+            return _json({"ok": True})
         if self.link is not None:
             answer = self.link.handle(method, path, headers, client, body=body)
             if answer is not None:
@@ -377,7 +395,11 @@ class _DevSite:
         status, hdrs, raw = state.site.respond(method, path, headers, body, client=client)
         ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
         if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
-            raw = raw.replace(b"</body>", DEV_RELOAD_JS.encode() + b"</body>", 1)
+            dev_js = DEV_RELOAD_JS
+            if state.welcome and _local(client, headers):
+                info = json.dumps({"file": os.path.basename(state.path)}).replace("</", "<\\/")
+                dev_js = f"<script>window.__PYWEB_WELCOME__={info};</script>" + dev_js
+            raw = raw.replace(b"</body>", dev_js.encode() + b"</body>", 1)
             if not os.environ.get("PYWEB_DEVTOOLS", "1").lower() in ("0", "false", "off"):
                 rid = next((v for k, v in hdrs if k.lower() == "x-request-id"), None)
                 summary = next((r for r in reversed(RECENT) if r["id"] == rid), None)
@@ -474,6 +496,47 @@ class _DevSite:
         return self.state.site.websocket(path, headers, client)
 
 
+def _lan_address():
+    """This machine's address on the local network (no traffic is sent), or None."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            ip = s.getsockname()[0]
+    except OSError:
+        return None
+    return None if ip.startswith("127.") else ip
+
+
+def _can_open_browser():
+    env = os.environ
+    if env.get("CI") or env.get("SSH_CONNECTION") or env.get("SSH_TTY") or env.get("PYWEB_NO_OPEN"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    return sys.platform in ("darwin", "win32") or bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
+
+
+def _announce(host, port, url, open_browser=True, out=None):
+    """After the dev server starts: the network URL with a QR code for a phone, and open the browser."""
+    out = out or sys.stdout
+    if host in ("0.0.0.0", "::", ""):
+        ip = _lan_address()
+        if ip:
+            lan = f"http://{ip}:{port}/"
+            print(f"On your network: {lan}", file=out)
+            if out.isatty():
+                from pyweb import qr
+                print(qr.terminal(lan), file=out)
+    elif out.isatty():
+        print("On a phone: pyweb dev --host 0.0.0.0 (same Wi-Fi) shows a QR code to scan", file=out)
+    out.flush()
+    if open_browser and _can_open_browser():
+        import threading
+        import webbrowser
+        threading.Timer(0.3, lambda: webbrowser.open(url)).start()
+
+
 def cmd_dev(args):
     """Development server: compile on save, live reload, error overlay."""
     os.environ.setdefault("PYWEB_CACHE", "1")     # parse results and module code on disk: a fast first start
@@ -482,6 +545,7 @@ def cmd_dev(args):
 
     from pyweb.devlink import Link
     state = _DevState(args.file)
+    state.welcome = os.environ.get("PYWEB_WELCOME", "1") != "0" and not os.path.exists(_welcome_marker(args.file))
     link = Link(state)
     _dev_load(state, Site)
     if state.error is not None:
@@ -489,8 +553,10 @@ def cmd_dev(args):
     host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
 
     def ready(port):
-        print(f"PyWeb dev server: http://{host}:{port}/  ({args.file})", flush=True)
         local = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+        url = f"http://{'localhost' if local in ('127.0.0.1', '::1') else local}:{port}/"
+        print(f"PyWeb dev server: {url}  ({args.file})", flush=True)
+        _announce(host, port, url, open_browser=not getattr(args, "no_open", False))
         link.publish(f"http://{local}:{port}/")             # for `pyweb mcp` (.pyweb/dev.json, token only)
         if not getattr(args, "no_reload", False):
             _watch_and_reload(state, Site)
@@ -987,15 +1053,67 @@ def _parse_budget(spec):
     return int(float(spec))
 
 
+def _ask(question, default=None, choices=None):
+    """Ask in the terminal until the answer is one of ``choices`` (a number or a name), else ``default``."""
+    while True:
+        hint = f" [{default}]" if default else ""
+        try:
+            answer = input(f"{question}{hint}: ").strip()
+        except EOFError:
+            answer = ""
+        answer = answer or (default or "")
+        if choices is None:
+            if answer:
+                return answer
+            continue
+        if answer.isdigit() and 1 <= int(answer) <= len(choices):
+            return choices[int(answer) - 1]
+        if answer in choices:
+            return answer
+        print(f"  pick a number from 1 to {len(choices)}, or a name")
+
+
+def _new_interactively():
+    """``pyweb new`` with no name, in a terminal: ask for the name, the template and the colours."""
+    from pyweb._templates import DESCRIPTIONS, TEMPLATES
+    from pyweb.ui.theme import PRESETS
+    print("New PyWeb app\n")
+    name = _ask("Name (a new folder)", "my-app")
+    print("\nStarter:")
+    for i, t in enumerate(TEMPLATES, 1):
+        print(f"  {i:>2}. {t:<8} {DESCRIPTIONS.get(t, '')}")
+    template = _ask("Pick one", "counter", list(TEMPLATES))
+    themes = ["default", *PRESETS]
+    print("\nColours:")
+    for i, t in enumerate(themes, 1):
+        swatch = PRESETS.get(t, {}).get("accent", "#6366f1")
+        r, g, b = (int(swatch[k:k + 2], 16) for k in (1, 3, 5))
+        print(f"  {i:>2}. \x1b[38;2;{r};{g};{b}m██\x1b[0m {t}")
+    theme = _ask("Pick one", "default", themes)
+    print()
+    return name, template, None if theme == "default" else theme
+
+
 def cmd_new(args):
     from pyweb.mcp import scaffold
+    name, template, theme = args.name, args.template or "counter", args.theme
+    if name is None:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            raise SystemExit("error: give the app a name: pyweb new <name> [--template counter]")
+        name, template, theme = _new_interactively()
     try:
-        files = scaffold(args.name, template=args.template)
+        files = scaffold(name, template=template)
     except (FileExistsError, ValueError) as exc:
         raise SystemExit(f"error: {exc}")
     for f in files:
         print(f"created {f}")
-    print(f"next: cd {args.name} && pyweb dev app.pyweb")
+    if theme:
+        from pyweb.ui.source_edit import FIELDS, save_theme
+        from pyweb.ui.theme import PRESETS
+        app_file = os.path.join(name, "app.pyweb")
+        code = save_theme(app_file, {k: PRESETS[theme].get(k) for k in FIELDS})
+        print(f"theme {app_file}: {code}")
+    print(f"next: cd {name} && pyweb dev app.pyweb")
 
 
 def cmd_upgrade(args):
@@ -1050,7 +1168,7 @@ def main(argv=None):
     p.add_argument("--requires", action="append", default=[], help="with --desktop: another package the app needs")
     p.add_argument("--pyweb", default=None, help="with --desktop: the PyWeb requirement (default: this version)")
     p.set_defaults(fn=cmd_build)
-    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.set_defaults(fn=cmd_dev)
+    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.add_argument("--no-open", action="store_true", help="don't open the browser"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("profile", help="serve the app and show where its time goes (a flame graph on Python 3.15+)")
     p.add_argument("file", nargs="?", default="app.pyweb")
     p.add_argument("--seconds", type=float, default=15.0, help="how long to sample (default 15)")
@@ -1134,7 +1252,11 @@ def main(argv=None):
     p.add_argument("--days", type=float, default=7, help="purge: finished more than this many days ago")
     p.add_argument("--timeout", type=float, default=60, help="run: give up after this many seconds")
     p.set_defaults(fn=cmd_jobs)
-    p = sub.add_parser("new"); p.add_argument("name"); p.add_argument("--template", default="counter", choices=list(__import__("pyweb._templates", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (saas: teams, accounts, data, jobs, admin; desktop: a notes app in its own window)"); p.set_defaults(fn=cmd_new)
+    p = sub.add_parser("new", help="create an app (with no name, in a terminal, it asks)")
+    p.add_argument("name", nargs="?", default=None)
+    p.add_argument("--template", default=None, choices=list(__import__("pyweb._templates", fromlist=["TEMPLATES"]).TEMPLATES), help="starter app (default counter; saas: teams, accounts, data, jobs, admin; desktop: a notes app in its own window)")
+    p.add_argument("--theme", default=None, choices=list(__import__("pyweb.ui.theme", fromlist=["PRESETS"]).PRESETS), help="a colour preset written into App(theme=...)")
+    p.set_defaults(fn=cmd_new)
     p = sub.add_parser("mcp", help="run the MCP server for AI assistants (stdio, or --http)")
     p.add_argument("--http", action="store_true", help="serve Streamable HTTP instead of stdio")
     p.add_argument("--host", default="127.0.0.1", help="--http: address (default 127.0.0.1; others need --token)")

@@ -136,7 +136,8 @@ def cmd_build(args):
     production = getattr(args, "production", False)
     try:
         manifest = _build(out, args.out, source=src, production=production,
-                          app_dir=os.path.dirname(os.path.abspath(args.file)))
+                          app_dir=os.path.dirname(os.path.abspath(args.file)),
+                          sourcemaps=getattr(args, "sourcemaps", False), source_name=os.path.basename(args.file))
     except RuntimeError as exc:
         print(f"build failed: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
@@ -205,6 +206,20 @@ def _announce(host, port, url, open_browser=True, out=None):
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
 
 
+def start_debugger(port=5678, *, wait=False):
+    """``pyweb dev --debug``: debugpy listens on 127.0.0.1:``port`` so an editor can attach. Breakpoints
+    in ``.pyweb`` files work: their server code runs with its own line numbers."""
+    try:
+        import debugpy
+    except ImportError:
+        raise SystemExit("pyweb dev --debug needs debugpy: pip install debugpy") from None
+    debugpy.listen(("127.0.0.1", port))
+    print(f"debugger: attach to 127.0.0.1:{port} (VS Code: \"Python Debugger: Remote Attach\")", flush=True)
+    if wait:
+        print("waiting for the debugger to attach...", flush=True)
+        debugpy.wait_for_client()
+
+
 def cmd_dev(args):
     """Development server: compile on save, live reload, error overlay."""
     os.environ.setdefault("PYWEB_CACHE", "1")     # parse results and module code on disk: a fast first start
@@ -212,6 +227,8 @@ def cmd_dev(args):
     from pyweb.net import server as _net
 
     from pyweb.devlink import Link
+    if getattr(args, "debug", False):
+        start_debugger(args.debug_port, wait=getattr(args, "wait", False))
     state = _DevState(args.file)
     state.welcome = os.environ.get("PYWEB_WELCOME", "1") != "0" and not os.path.exists(_welcome_marker(args.file))
     link = Link(state)
@@ -778,7 +795,7 @@ def main(argv=None):
                     help="print the PyWeb version and exit")
     sub = ap.add_subparsers(dest="cmd", required=False)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.add_argument("--security", action="store_true", help="include security findings"); p.set_defaults(fn=cmd_inspect)
-    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS")
+    p = sub.add_parser("build"); p.add_argument("file"); p.add_argument("--out", default="dist"); p.add_argument("--budget", action="append", default=[]); p.add_argument("--production", action="store_true", help="hashed assets, minified JS, split bundles, extracted CSS"); p.add_argument("--sourcemaps", action="store_true", help="link each page module to its source map (browser stack traces name .pyweb lines)")
     p.add_argument("--desktop", action="store_true", help="a desktop app project (Briefcase) in dist-desktop/")
     p.add_argument("--package", action="store_true", help="with --desktop: also build the installer for this OS")
     p.add_argument("--bundle", default="com.example", help="with --desktop: reversed domain (com.example)")
@@ -788,7 +805,7 @@ def main(argv=None):
     p.add_argument("--requires", action="append", default=[], help="with --desktop: another package the app needs")
     p.add_argument("--pyweb", default=None, help="with --desktop: the PyWeb requirement (default: this version)")
     p.set_defaults(fn=cmd_build)
-    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.add_argument("--no-open", action="store_true", help="don't open the browser"); p.add_argument("--share", action="store_true", help="a temporary public link (cloudflared or localhost.run) for someone else to try the app; your dev tools stay on this machine"); p.set_defaults(fn=cmd_dev)
+    p = sub.add_parser("dev"); p.add_argument("file"); p.add_argument("--port", type=int, default=8000); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--no-reload", action="store_true", help="disable hot-reload watcher"); p.add_argument("--no-open", action="store_true", help="don't open the browser"); p.add_argument("--share", action="store_true", help="a temporary public link (cloudflared or localhost.run) for someone else to try the app; your dev tools stay on this machine"); p.add_argument("--debug", action="store_true", help="let a debugger attach (VS Code, PyCharm: debugpy on --debug-port)"); p.add_argument("--debug-port", type=int, default=5678); p.add_argument("--wait", action="store_true", help="with --debug: wait for the debugger before serving"); p.set_defaults(fn=cmd_dev)
     p = sub.add_parser("profile", help="serve the app and show where its time goes (a flame graph on Python 3.15+)")
     p.add_argument("file", nargs="?", default="app.pyweb")
     p.add_argument("--seconds", type=float, default=15.0, help="how long to sample (default 15)")

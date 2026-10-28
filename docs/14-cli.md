@@ -7,7 +7,7 @@ pyweb new [NAME] [--template T] [--theme PRESET]
                                      (apps with a database also get migrations/0001_initial.py and a README);
                                      PRESET = indigo | zinc | slate | rose | ocean | violet | emerald | amber
                                      (written into App(theme=...)); with no NAME, in a terminal, it asks
-pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload] [--no-open] [--share]
+pyweb dev FILE [--port 8000] [--host 127.0.0.1] [--no-reload] [--no-open] [--share] [--debug [--debug-port 5678] [--wait]]
                                      development server (see The dev loop): saves update the open page
                                      in place, keeping page and component state (?fresh starts over);
                                      Alt-click opens an element's line in your editor, Alt+Shift-click
@@ -28,7 +28,7 @@ pyweb doctor [FILE] [--production] [--json] [--port 8000]
 pyweb upgrade [FILE] [--fix]         what to change for this PyWeb version (file and line); --fix applies
                                      the safe rewrites
 pyweb inspect FILE [--security]      where every name runs and why; RPC table; findings
-pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
+pyweb build FILE [--out dist] [--production] [--sourcemaps] [--budget PATH=SIZE ...]
                                      self-contained dist/; --production hashes and minifies
 pyweb serve [DIR] [--host 0.0.0.0] [--port $PORT|8000] [--workers N] [--migrate]
                                      production server for a built dist/ (N processes);

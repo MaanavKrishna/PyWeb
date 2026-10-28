@@ -151,6 +151,46 @@ def Broken(request_id):
   traceback for 500s; `pyweb serve` shows your page.
 - If an error page itself fails, the built-in page is used.
 
+### One broken part, not a broken page
+
+Wrap a part that may fail (a chart from a flaky service, a widget with complex logic) in
+`<ErrorBoundary>`:
+
+```pyweb
+from pyweb import App, ErrorBoundary
+
+app = App()
+
+
+def RevenueChart(data: list):
+    <ol class="chart">
+        for point in data:
+            <li style={{"--v": point["value"]}}>{point["label"]}</li>
+    </ol>
+
+
+def load_stats():
+    return {"revenue": [{"label": "May", "value": 12}, {"label": "June", "value": 15}]}
+
+
+@app.page("/dashboard")
+def Dashboard():
+    stats = load_stats()
+    <h1>Dashboard</h1>
+    <ErrorBoundary fallback="The revenue chart couldn't load.">
+        <RevenueChart data={stats["revenue"]} />
+    </ErrorBoundary>
+    <p>Orders and the rest of the page keep working if the chart fails.</p>
+```
+
+- On the server, if rendering what's inside raises, the page is sent with the fallback in its place
+  (and the error is reported like any page error).
+- In the browser, if code inside throws (while the page starts, or in a click or input handler and
+  what it changes), that part is replaced by the fallback and a Reload button; the rest of the page
+  keeps working.
+- `NotFound` and bad query parameters still answer for the whole page. The code that runs before the
+  markup (`stats = load_stats()` above) isn't inside the boundary: catch errors there yourself.
+
 ## Responses other than HTML
 
 Return `redirect(url)` from a page to send `303 See Other`. Raise

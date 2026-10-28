@@ -52,7 +52,7 @@ PAGE_DECORATOR_ATTRS = ("page",)
 LAYOUT_DECORATOR = "layout"
 FORM_TAGS = ("Form", "Submit", "FormError", "Input", "Textarea", "Select", "Checkbox", "FileInput")
 FIELD_TAGS = ("Input", "Textarea", "Select", "Checkbox", "FileInput")
-BUILTIN_COMPONENTS = ("Markdown",) + FORM_TAGS
+BUILTIN_COMPONENTS = ("Markdown", "ErrorBoundary") + FORM_TAGS
 FORMS_VAR = "__pw_forms__"
 FORMS_FN = "__pw_form_specs__"
 ERROR_DECORATOR = "error"
@@ -519,6 +519,8 @@ def _builtins(nodes, ctx, filename, info=None, form=None):
             kind = ctx.builtin_components[n.tag]
             if kind == "Markdown":
                 out.append(_markdown_node(n, filename))
+            elif kind == "ErrorBoundary":
+                out.append(_boundary(n, ctx, filename, info, form))
             else:
                 out.extend(_form_builtin(kind, n, ctx, filename, info, form))
             continue
@@ -531,6 +533,22 @@ def _builtins(nodes, ctx, filename, info=None, form=None):
             n.orelse = _builtins(n.orelse, ctx, filename, info, form)
         out.append(n)
     return out
+
+
+def _boundary(n, ctx, filename, info, form):
+    """``<ErrorBoundary fallback="...">children</ErrorBoundary>``: a ``<div data-pw-boundary>`` the
+    server renders with its fallback if the children raise, and the browser swaps for the fallback
+    when code inside it throws (``boundary.js``)."""
+    bad = [k for k in n.attrs if k not in ("fallback", "class", "id", "style")]
+    if bad:
+        raise CompileError(f"<{n.tag}> takes fallback=\"...\" (and class/id/style), not {bad[0]}=", n.line, filename)
+    fallback = n.attrs.get("fallback", ("lit", "Something went wrong here.", n.line))
+    if fallback is True:
+        raise CompileError(f"<{n.tag} fallback=...> needs the text to show", n.line, filename)
+    attrs = {k: v for k, v in n.attrs.items() if k != "fallback"}
+    attrs["data-pw-boundary"] = ("lit", "", n.line)
+    attrs["data-fallback"] = fallback
+    return Element("div", attrs, _builtins(n.children, ctx, filename, info, form), n.line)
 
 
 def _markdown_node(n, filename):
@@ -1120,6 +1138,8 @@ class Emitter:
         imports = [RUNTIME_IMPORT]
         if "$markdown(" in body:
             imports.append(MARKDOWN_IMPORT)
+        if '"data-pw-boundary"' in body:
+            imports.append('import { guard as $boundary } from "./boundary.js";')
         if getattr(info, "forms", None):
             imports.append(FORMS_IMPORT)
         if "$subscribe(" in body or "$live(" in body or "$join(" in body:
@@ -1330,6 +1350,12 @@ class Emitter:
     def element_js(self, n, scope, ind):
         p = self.props_js(n, scope)
         children = self.ui_js(n.children, scope, ind) if n.children else None
+        if "data-pw-boundary" in n.attrs:
+            # <ErrorBoundary>: boundary.js renders the children, or the fallback if that throws (or
+            # if the server already had to show it); $ref hands it the element first.
+            p = p[:-1] + (", " if p != "{}" else "") + '"$ref": ($el) => { $b = $el; }}'
+            return (f"(() => {{ let $b; return $h({json.dumps(n.tag)}, {p}, "
+                    f"$boundary(() => $b, () => {children or '[]'})); }})()")
         if children:
             # A thunk, so children are created (or claimed, when hydrating)
             # after their parent, in document order.

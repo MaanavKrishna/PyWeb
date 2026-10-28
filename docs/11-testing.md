@@ -41,6 +41,36 @@ def test_notes():
 | `.cookies` | the cookie jar |
 | `.app.module` | the executed app module, for direct access to its objects |
 
+### Looking inside pages and components
+
+```python
+from pyweb.testing import TestClient, assert_snapshot
+
+
+def test_todos(client):
+    r = client.get("/")
+    assert [li.text for li in r.find_all("ul.todos li")] == ["milk", "bread"]
+    assert r.find("li.done").text == "milk"
+
+    badge = client.render("Badge", label="new", tone="warn")      # one component, with props
+    assert badge.find("span").classes == ["badge", "warn"]
+
+    assert client.a11y("/") == []                                  # accessibility of the rendered page
+
+    assert_snapshot(r.find("main").text, "home-text")              # __snapshots__/home-text.txt
+```
+
+- `find` / `find_all` take CSS selectors: `tag`, `#id`, `.class`, `[attr]`, `[attr=value]`, combined
+  (`button.primary[disabled]`), descendants (`ul li`) and lists (`h1, h2`). Elements have `.text`
+  (what a person reads), `.attrs`, `.get(name)` and `.classes`.
+- `client.render(name, **props)` renders a component (or a page) on its own, in a request, so
+  `session` works.
+- `client.a11y(path)` runs the accessibility rules on what the page became (components included):
+  images without `alt`, fields without a label, buttons and links without a name, positive
+  `tabindex`, a missing page language. An empty list is a pass.
+- `assert_snapshot(value, name)` compares with `__snapshots__/<name>.txt` next to the test (written
+  the first time). After a change you meant, run the tests with `PYWEB_UPDATE_SNAPSHOTS=1`.
+
 ## Apps with accounts, data and jobs
 
 For an app with a database, give each test its own: change into

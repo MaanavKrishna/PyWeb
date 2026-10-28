@@ -89,6 +89,15 @@ project uses [semantic versioning](https://semver.org).
   the rendered HTML for visitors who aren't signed in, dropped when a table
   the page read changes, shared through Redis when configured. See
   [Performance](docs/29-performance.md#caching-pages).
+- **`<ErrorBoundary fallback="...">`.** A part of the page that fails, on the
+  server or in the browser, shows its fallback instead of breaking the page.
+  Its browser code is a small module loaded only by pages that use it.
+- **Testing:** `response.find("li.done")` / `find_all(...)`,
+  `client.render("Component", **props)`, `client.a11y("/")` (accessibility
+  rules on the rendered page) and `assert_snapshot(value, name)`.
+- **Debugging:** `pyweb dev --debug` (attach VS Code or PyCharm through
+  debugpy); source maps from each page module to its `.pyweb` lines in
+  `pyweb dev`, and `pyweb build --sourcemaps`.
 - `/robots.txt` and `/sitemap.xml` (with `App(base_url=...)`), from the app's
   public pages plus `@app.sitemap` generators; `App(robots=...)`.
 - Plugins work: `App(plugins=[...])` registers a plugin's routes, pages,

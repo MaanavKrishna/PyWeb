@@ -305,6 +305,27 @@ class Site:
     def _index_memory_js(self):
         units = {**self.app.compiled.get("layouts", {}), **self.app.compiled["pages"]}
         self.memory_js = {f"{n}.js": p["js"] for n, p in units.items() if p["js"]}
+        self.memory_units = {f"{n}.js": p for n, p in units.items() if p["js"]}
+        if self.dev:                       # pyweb dev: browser stack traces point into the .pyweb file
+            for name in list(self.memory_js):
+                self.memory_js[name] += f"\n//# sourceMappingURL={name}.map\n"
+
+    def _source_map(self, rel):
+        import json as _json
+
+        from .sourcemap import build
+        unit = self.memory_units[rel[:-4]]
+        path = getattr(self.app, "path", None) or "app.pyweb"
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            text = None
+        info = unit.get("info")
+        default = getattr(getattr(info, "node", None), "lineno", None) or unit.get("lineno") or 1
+        data = build(unit["js"], unit.get("sourcemap") or [], source_name="/" + os.path.basename(path),
+                     default_line=default, source_text=text, file=rel[:-4])
+        return 200, [("Content-Type", "application/json"), ("Cache-Control", "no-cache")], _json.dumps(data).encode()
 
     def reload(self):
         """Re-load the app from source (dev hot reload)."""
@@ -320,12 +341,14 @@ class Site:
         rel, _, q = rel.partition("?")
         query = query or q
         if self.source_mode:
-            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js") or rel in MOTION_FILES:
+            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js", "boundary.js") or rel in MOTION_FILES:
                 with open(os.path.join(os.path.dirname(RUNTIME_PATH), rel), "rb") as fh:
                     return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], fh.read()
             if rel in self.memory_js:
                 return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], \
                     self.memory_js[rel].encode()
+            if self.dev and rel.endswith(".js.map") and rel[:-4] in getattr(self, "memory_units", {}):
+                return self._source_map(rel)
         return static_file(self.static_dirs, rel, query=query, if_none_match=if_none_match, dev=self.source_mode)
 
     # --------------------------------------------------------- websocket

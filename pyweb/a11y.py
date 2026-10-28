@@ -119,3 +119,55 @@ def check(text, path=None):
         return []
     found = sorted(lint_ui(ui) + lint_app(tree))
     return [{"kind": "a11y-" + rule, "line": line, "message": msg} for line, rule, msg in found]
+
+
+# ------------------------------------------------------------------ rendered pages
+
+def check_html(html):
+    """The same rules on a rendered page (what the markup became, components included): a list of
+    ``{"rule", "element", "message"}``. ``TestClient.a11y(path)`` calls it."""
+    from .htmlquery import Node, parse
+    doc = parse(html)
+    out = []
+
+    def report(rule, node, message):
+        out.append({"rule": rule, "element": f"<{node.tag}{' id=' + node.attrs['id'] if 'id' in node.attrs else ''}>",
+                    "message": message})
+
+    def named(node, by=NAMED_BY):
+        return bool(node.text or any((node.attrs.get(a) or "").strip() for a in by)
+                    or any(isinstance(c, Node) and c.tag == "img" and (c.attrs.get("alt") or "").strip()
+                           for c in node.children))
+
+    html_el = doc.find("html")
+    if html_el is not None and not (html_el.attrs.get("lang") or "").strip():
+        report("html-lang", html_el, "the page has no language: <html lang=\"en\">")
+    labelled = {n.attrs.get("for") for n in doc.find_all("label") if n.attrs.get("for")}
+    for img in doc.find_all("img"):
+        if "alt" not in img.attrs and img.attrs.get("role") != "presentation":
+            report("img-alt", img, "image without alt= (alt=\"\" if it's decoration)")
+    for field in doc.find_all("input, select, textarea"):
+        if field.tag == "input" and (field.attrs.get("type") or "text") in UNLABELLED_TYPES:
+            continue
+        inside_label, p = False, field.parent
+        while p is not None:
+            if p.tag == "label":
+                inside_label = True
+                break
+            p = p.parent
+        if not (inside_label or field.attrs.get("id") in labelled
+                or any((field.attrs.get(a) or "").strip() for a in FIELD_NAMED_BY)):
+            report("label", field, "form field without a label (<label for=...>, or aria-label=)")
+    for b in doc.find_all("button"):
+        if not named(b):
+            report("button-name", b, "button without a name: text inside, or aria-label=")
+    for a in doc.find_all("a[href]"):
+        if not named(a):
+            report("link-name", a, "link without a name: text inside, or aria-label=")
+    for n in doc.find_all("[tabindex]"):
+        try:
+            if int(n.attrs["tabindex"]) > 0:
+                report("tabindex", n, "positive tabindex changes the keyboard order: use 0 or -1")
+        except ValueError:
+            pass
+    return out

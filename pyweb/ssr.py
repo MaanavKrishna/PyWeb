@@ -279,8 +279,26 @@ class Renderer:
         if isinstance(n, Element):
             if n.is_component:
                 return self.component(n, env)
+            if "data-pw-boundary" in n.attrs:
+                return self.boundary(n, env)
             return self.element(n, env)
         return ""
+
+    def boundary(self, n, env):
+        """``<ErrorBoundary>``: its children, or its fallback if rendering them raised."""
+        from .context import BadRequest, NotFound
+        try:
+            return self.element(n, env)
+        except Exception as exc:  # noqa: BLE001 - shown as the fallback, reported like a page error
+            if isinstance(exc, (NotFound, BadRequest)) or isinstance(exc.__cause__, (NotFound, BadRequest)):
+                raise                               # the page's answer, not a broken part of it
+            from .telemetry import report_error
+            report_error(exc, "page", boundary=True)
+            kind, body, line = n.attrs["data-fallback"]
+            text = body if kind == "lit" else self.eval(body, env, line)
+            outer = Element("div", {k: v for k, v in n.attrs.items() if k != "data-fallback"}, [], n.line)
+            return (f"<div{self.attrs_html(outer, env)} data-pw-failed><div role=\"alert\" "
+                    f"class=\"pw-boundary-fallback\"><p>{_html.escape(str(text), quote=False)}</p></div></div>")
 
     def attrs_html(self, n, env):
         parts = []

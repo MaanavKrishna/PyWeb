@@ -44,6 +44,23 @@ class TestResponse:
         name = name.lower()
         return next((v for k, v in self.headers if k.lower() == name), None)
 
+    @property
+    def html(self):
+        """The body as a parsed document: ``.find("li.done")``, ``.find_all(...)``, ``.text``."""
+        doc = getattr(self, "_doc", None)
+        if doc is None:
+            from .htmlquery import parse
+            doc = self._doc = parse(self.text)
+        return doc
+
+    def find(self, selector):
+        """The first element matching a CSS selector (``tag``, ``#id``, ``.class``, ``[attr=value]``,
+        descendants with spaces), or None."""
+        return self.html.find(selector)
+
+    def find_all(self, selector):
+        return self.html.find_all(selector)
+
     def __repr__(self):
         return f"<TestResponse {self.status}>"
 
@@ -98,6 +115,29 @@ class TestClient:
     def post(self, path, data=None, headers=None):
         body = json.dumps(data).encode() if data is not None else b""
         return self.request("POST", path, body, {"Content-Type": "application/json", **(headers or {})})
+
+    def render(self, name, **props):
+        """A component (or page) of the app rendered on its own with ``props``: a parsed fragment
+        (``.find(...)``, ``.text``). ``session`` and ``request`` work as in a real request."""
+        from .htmlquery import parse
+        from .runtime.server import Request
+        loaded = self.site.app
+        server = self.site.server
+
+        def run():
+            if name in loaded.compiled["pages"]:
+                html = loaded.render(name, props, path="/")
+                return html if isinstance(html, str) else ""
+            if name not in loaded.ctx.components and name not in loaded.ctx.imported_components:
+                raise KeyError(f"no component or page named {name!r}")
+            return loaded.renderer("/").component_html(name, props, None)
+        return parse(server.in_request(Request("GET", "/", self._headers()), run))
+
+    def a11y(self, path="/"):
+        """Accessibility problems in the page at ``path`` as rendered (images without ``alt``, fields
+        without a label, buttons and links without a name, ...): a list of dicts; empty is good."""
+        from .a11y import check_html
+        return check_html(self.get(path).text)
 
     def put(self, path, data=None, headers=None):
         body = json.dumps(data).encode() if data is not None else b""
@@ -214,6 +254,34 @@ def as_org(org, role=None):
     organization, as a request from one of its members would: tenant Models see its rows only."""
     from .tenancy import org_scope
     return org_scope(org, role)
+
+
+def assert_snapshot(value, name, *, folder=None):
+    """Compare ``value`` (text, or anything with ``str()``) with ``__snapshots__/<name>.txt`` next to
+    the calling test. The first run writes the file; ``PYWEB_UPDATE_SNAPSHOTS=1`` rewrites them all.
+    A difference fails with a diff."""
+    import difflib
+    import inspect
+    import os
+    import re as _re
+    text = value if isinstance(value, str) else str(value)
+    if folder is None:
+        caller = inspect.stack()[1].filename
+        folder = os.path.join(os.path.dirname(os.path.abspath(caller)), "__snapshots__")
+    if not _re.fullmatch(r"[\w.-]+", name):
+        raise ValueError("snapshot names are letters, digits, '.', '_' and '-'")
+    path = os.path.join(folder, name + ".txt")
+    if os.environ.get("PYWEB_UPDATE_SNAPSHOTS") == "1" or not os.path.exists(path):
+        os.makedirs(folder, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return
+    with open(path, encoding="utf-8") as fh:
+        expected = fh.read()
+    if expected != text:
+        diff = "".join(difflib.unified_diff(expected.splitlines(True), text.splitlines(True),
+                                            "snapshot", "now"))
+        raise AssertionError(f"{name} doesn't match {path} (PYWEB_UPDATE_SNAPSHOTS=1 to accept):\n{diff}")
 
 
 @contextlib.contextmanager

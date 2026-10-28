@@ -136,6 +136,23 @@ hot reload, never your tools: no toolbar (it shows SQL and request
 data), inspector, AI help, editor opening or theme saving. Those
 answer only requests from your machine to `localhost`.
 
+## Debugging
+
+`pyweb dev --debug` starts `debugpy` (`pip install debugpy`) on `127.0.0.1:5678` (`--debug-port` to
+change it; `--wait` waits for the debugger before serving). Attach from VS Code with **Python
+Debugger: Remote Attach** (or PyCharm's remote debugger) and set breakpoints in the `.pyweb` file:
+its server code runs with its own line numbers.
+
+```json
+{"name": "Attach to pyweb dev", "type": "debugpy", "request": "attach",
+ "connect": {"host": "127.0.0.1", "port": 5678}, "justMyCode": true}
+```
+
+In the browser, each page module has a source map in `pyweb dev`: stack traces and the devtools'
+breakpoints point at the `.pyweb` file (an event handler's code at its `def`, state at its
+assignment). `pyweb build --sourcemaps` links the maps in a build too; they don't include your
+source there.
+
 ## Security limits
 
 | Feature | Who can use it |

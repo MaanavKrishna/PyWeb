@@ -154,7 +154,7 @@ def _gzip_size(text) -> int:
 
 
 def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
-          source=None, app_dir=None, production=True) -> dict:
+          source=None, app_dir=None, production=True, sourcemaps=False, source_name="app.pyweb") -> dict:
     """Write a deployable ``dist/`` for ``compile_source`` output.
 
     ``production=True`` minifies and content-hashes JS; otherwise files
@@ -198,7 +198,7 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
     # Add-on modules, shipped only with apps that use them.
     addon_names = {}
     units = [*compiled["pages"].values(), *(compiled.get("layouts") or {}).values()]
-    for addon in ("markdown.js", "forms.js", "live.js"):
+    for addon in ("markdown.js", "forms.js", "live.js", "boundary.js"):
         if not any(f'"./{addon}"' in (u.get("js") or "") for u in units):
             continue
         with open(os.path.join(os.path.dirname(rt_path), addon), encoding="utf-8") as fh:
@@ -224,7 +224,8 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
             with open(f"{out}/static/{fname}", "w", encoding="utf-8") as fh:
                 fh.write(mjs)
 
-    def write_module(name, js, mappings):
+    def write_module(name, js, mappings, default_line=1):
+        from .sourcemap import build as source_map
         body = js.replace('from "./runtime.js"', f'from "./{rt_name}"')
         for addon, published in addon_names.items():
             body = body.replace(f'"./{addon}"', f'"./{published}"')
@@ -235,10 +236,14 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
         else:
             js_name = f"{name}.js"
             url = f"/static/{js_name}?v={content_hash(body)[:10]}"
+        # A v3 source map without the source (the .pyweb file holds server code too); linked from
+        # the module only with --sourcemaps. Minified modules map to the page as a whole.
+        smap = source_map(body, mappings, source_name=source_name, default_line=default_line, file=js_name)
+        written = body + (f"\n//# sourceMappingURL={js_name}.map\n" if sourcemaps else "")
         with open(f"{out}/static/{js_name}", "w", encoding="utf-8") as fh:
-            fh.write(body)
+            fh.write(written)
         with open(f"{out}/static/{js_name}.map", "w", encoding="utf-8") as fh:
-            json.dump({"page": name, "mappings": mappings}, fh)
+            json.dump(smap, fh)
         return js_name, url, body
 
     def point_at(html, name, url):
@@ -263,7 +268,7 @@ def build(compiled: dict, out: str, *, minifier=None, extract_css=True,
         js_name = ""
         body = ""
         if js:
-            js_name, url, body = write_module(name, js, page.get("sourcemap", []))
+            js_name, url, body = write_module(name, js, page.get("sourcemap", []), page.get("lineno") or 1)
             html = point_at(html, name, url)
         css_text = ""
         if extract_css:

@@ -86,6 +86,8 @@ class _Gen:
         elif isinstance(n, Element):
             if n.is_component:
                 self.component(n, depth, out)
+            elif "data-pw-boundary" in n.attrs:
+                self.fallback(n, depth, out)          # <ErrorBoundary>: the interpreter catches errors
             else:
                 self.element(n, depth, out)
         elif isinstance(n, (MarkdownNode, SlotNode)):

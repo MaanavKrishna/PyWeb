@@ -246,6 +246,10 @@ def Item(item_id: int):
   `pyweb.routes.json(...)/csv(rows, filename=)/redirect(...)`. Use server
   functions for the app's own pages; routes for other clients.
 - `@app.middleware` `def mw(request, call_next): ...` wraps every request.
+- `<ErrorBoundary fallback="...">children</ErrorBoundary>` (from `pyweb`) keeps a
+  failing part from breaking the page (server render and browser handlers).
+- Tests: `client.get("/").find("li.done").text`, `client.render("Badge", label="x")`,
+  `client.a11y("/") == []`, `assert_snapshot(text, "name")`.
 - Read-mostly public pages: `@app.page("/pricing", cache=300)` keeps the HTML for
   visitors who aren't signed in (dropped when a table it read changes).
 

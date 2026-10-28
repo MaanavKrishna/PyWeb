@@ -1,0 +1,39 @@
+"""A multi-step form or flow (from pyweb.ui import Stepper, Step).
+
+    <Form action={sign_up}>
+        <Stepper submit="Create account">
+            <Step title="Account">
+                <Input name="email" />
+                <Input name="password" />
+            </Step>
+            <Step title="Profile">
+                <Input name="name" />
+            </Step>
+        </Stepper>
+    </Form>
+
+One step shows at a time. Next checks the fields of the step you're on (required, email...)
+before moving on; Back never checks. The submit button shows on the last step. Without scripts
+every step shows, one under the other, and the form still works. Each change fires a
+"stepchange" event (event.detail.step); event.preventDefault() keeps the current step.
+"""
+
+
+def Stepper(default=0, next="Next", back="Back", submit=None, children=None, **attrs):
+    <div class="pw-stepper" data-pw-ui="stepper" data-part="root" data-default={default} {**attrs}>
+        <ol class="pw-stepper-list" data-part="list" hidden></ol>
+        {children}
+        <div class="pw-stepper-nav" data-part="nav">
+            <button type="button" class="pw-button" data-variant="outline" data-size="md" data-part="back" hidden>{back}</button>
+            <button type="button" class="pw-button" data-variant="default" data-size="md" data-part="next" hidden>{next}</button>
+            if submit:
+                <button type="submit" class="pw-button" data-variant="default" data-size="md" data-part="submit" data-pw-submit="">{submit}</button>
+        </div>
+    </div>
+
+
+def Step(title, children=None, **attrs):
+    <section class="pw-stepper-step" data-part="step" data-title={title} aria-label={title} {**attrs}>
+        <h3 class="pw-stepper-title" data-part="title">{title}</h3>
+        {children}
+    </section>

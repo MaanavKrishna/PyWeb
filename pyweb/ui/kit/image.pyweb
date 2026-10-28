@@ -1,0 +1,32 @@
+"""Responsive images (from pyweb.ui import Image).
+
+    <Image src="/static/team.jpg" alt="The team at the 2026 offsite" width={800} height={450} />
+
+width and height are the size it shows at (CSS pixels): the browser keeps that space free while
+it loads, so nothing jumps. For a file under static/, srcset lists smaller copies
+(/__pyweb/img/<w>/...) and the browser picks the one that fits the screen; the server makes them
+with Pillow, never larger than the original. Off-screen images load when scrolled to
+(loading="lazy"); priority=True loads the first, biggest image of a page at once.
+"""
+
+IMAGE_WIDTHS = [320, 640, 960, 1280, 1920, 2560]
+
+
+def _srcset(src, width):
+    if not width or not isinstance(src, str) or not src.startswith("/static/"):
+        return None
+    rest = src[8:]
+    out = []
+    for w in IMAGE_WIDTHS:
+        out.append(f"/__pyweb/img/{w}/{rest} {w}w")
+        if w >= width * 2:
+            break
+    return ", ".join(out)
+
+
+def Image(src, alt, width=None, height=None, sizes=None, priority=False, loading="lazy", **attrs):
+    srcset = _srcset(src, width)
+    fit = sizes or (f"(max-width: {width}px) 100vw, {width}px" if srcset else None)
+    <img class="pw-image" data-part="image" src={src} alt={alt} width={width} height={height}
+         srcset={srcset} sizes={fit} loading={"eager" if priority else loading} decoding="async"
+         fetchpriority={"high" if priority else None} {**attrs}>

@@ -154,11 +154,16 @@ async function submitForm(form) {
   setBusy(form, true);
   let res = null, data = null;
   try {
-    res = await fetch(form.getAttribute("action"), {
-      method: "POST", body: new FormData(form), credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-    data = await res.json().catch(() => null);
+    if (hasFiles(form)) {
+      res = await upload(form);
+      data = res && res.data;
+    } else {
+      res = await fetch(form.getAttribute("action"), {
+        method: "POST", body: new FormData(form), credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      data = await res.json().catch(() => null);
+    }
   } catch (e) {
     data = null;
   } finally {
@@ -189,6 +194,128 @@ async function submitForm(form) {
   focusFirst(form, fieldErrors);
 }
 
+// ---- <FileInput>: drop files on it, see what's chosen, watch the upload ----
+
+const fileField = (el) => (el && el.closest ? el.closest(".pw-fileinput") : null);
+const fileInput = (box) => box && box.querySelector('input[type="file"]');
+
+function hasFiles(form) {
+  return Array.from(form.querySelectorAll('input[type="file"]')).some((i) => i.files && i.files.length);
+}
+
+/** POST with upload progress (fetch can't report it): a <progress> shows how much has gone. */
+function upload(form) {
+  const bar = document.createElement("progress");
+  bar.className = "pw-upload-progress";
+  bar.max = 100;
+  bar.value = 0;
+  const at = form.querySelector('[type="submit"], [data-pw-submit]');
+  if (at) at.after(bar); else form.append(bar);
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", form.getAttribute("action"));
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) bar.value = Math.round((e.loaded / e.total) * 100); };
+    const done = (r) => { bar.remove(); resolve(r); };
+    xhr.onload = () => {
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+      done({ status: xhr.status, data });
+    };
+    xhr.onerror = xhr.onabort = () => done(null);
+    xhr.send(new FormData(form));
+  });
+}
+
+function accepts(input, file) {
+  const accept = (input.getAttribute("accept") || "").split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
+  if (!accept.length) return true;
+  const name = file.name.toLowerCase(), type = (file.type || "").toLowerCase();
+  return accept.some((a) => a.startsWith(".") ? name.endsWith(a)
+    : a.endsWith("/*") ? type.startsWith(a.slice(0, -1)) : type === a);
+}
+
+function setFiles(input, files) {
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(f);
+  input.files = dt.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function sizeText(n) {
+  return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+}
+
+/** The list under a file input: each chosen file, a preview for images, and a Remove button. */
+function showFiles(input) {
+  const box = fileField(input);
+  if (!box) return;
+  let list = box.querySelector(".pw-file-list");
+  if (list) list.remove();
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  list = document.createElement("ul");
+  list.className = "pw-file-list";
+  files.forEach((file, i) => {
+    const li = document.createElement("li");
+    if ((file.type || "").startsWith("image/") && file.size < 5 * 1048576) {
+      const img = document.createElement("img");      // a data: URL: the default CSP allows those, not blob:
+      img.alt = "";
+      const reader = new FileReader();
+      reader.onload = () => { img.src = reader.result; };
+      reader.readAsDataURL(file);
+      li.append(img);
+    }
+    const name = document.createElement("span");
+    name.textContent = `${file.name} (${sizeText(file.size)})`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${file.name}`);
+    remove.addEventListener("click", () => {
+      setFiles(input, files.filter((_, j) => j !== i));
+      input.focus();
+    });
+    li.append(name, remove);
+    list.append(li);
+  });
+  input.after(list);
+}
+
+function startDrops() {
+  const over = (ev) => {
+    const box = fileField(ev.target);
+    const input = fileInput(box);
+    if (!input || input.disabled || !ev.dataTransfer || !Array.from(ev.dataTransfer.types || []).includes("Files")) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "copy";
+    box.setAttribute("data-dragging", "");
+  };
+  document.addEventListener("dragenter", over);
+  document.addEventListener("dragover", over);
+  document.addEventListener("dragleave", (ev) => {
+    const box = fileField(ev.target);
+    if (box && !box.contains(ev.relatedTarget)) box.removeAttribute("data-dragging");
+  });
+  document.addEventListener("drop", (ev) => {
+    const box = fileField(ev.target);
+    const input = fileInput(box);
+    if (!input || input.disabled || !ev.dataTransfer) return;
+    ev.preventDefault();
+    box.removeAttribute("data-dragging");
+    let files = Array.from(ev.dataTransfer.files || []).filter((f) => accepts(input, f));
+    if (input.multiple) files = [...Array.from(input.files || []), ...files];
+    else files = files.slice(0, 1);
+    if (files.length) setFiles(input, files);
+  });
+  document.addEventListener("change", (ev) => {
+    if (ev.target && ev.target.type === "file" && fileField(ev.target)) showFiles(ev.target);
+  });
+  document.addEventListener("reset", (ev) => {
+    for (const list of ev.target.querySelectorAll ? ev.target.querySelectorAll(".pw-file-list") : []) list.remove();
+  });
+}
+
 function pwForm(el) {
   return el && el.closest ? el.closest("form[data-pw-form]") : null;
 }
@@ -202,6 +329,7 @@ function takeOver(form) {
 function startForms() {
   if (G.formsStarted || typeof document === "undefined") return;
   G.formsStarted = true;
+  startDrops();
   const claim = (ev) => takeOver(pwForm(ev.target));
   document.addEventListener("click", claim, true);       // before a submit button's click submits
   document.addEventListener("keydown", (ev) => { if (ev.key === "Enter") claim(ev); }, true);

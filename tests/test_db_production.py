@@ -200,3 +200,16 @@ def test_stream_inside_a_transaction_uses_its_connection():
         d.execute("insert into t values (2)")
         rows = [r for page in d.stream("select x from t order by x", chunksize=1) for r in page.fetchall()]
     assert [r[0] for r in rows] == [1, 2]                # no wait for a second connection; sees its own write
+
+
+def test_pool_size_from_the_app_and_the_environment(tmp_path, monkeypatch):
+    from pyweb import App
+    from pyweb import models as M
+    monkeypatch.setattr(M._state, "db", None)
+    monkeypatch.delenv("PYWEB_DB_POOL", raising=False)
+    url = f"sqlite:///{tmp_path / 'p.db'}"
+    assert App(database=url).db._pool_size == 10
+    assert App(database=url, pool_size=3).db._pool_size == 3
+    monkeypatch.setenv("PYWEB_DB_POOL", "7")
+    assert App(database=url, pool_size=3).db._pool_size == 7          # where it's deployed decides
+    M._state.db = None

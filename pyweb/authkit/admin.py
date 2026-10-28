@@ -131,6 +131,15 @@ def dispatch(kit, server, req):
             return page(c, "Not found", H.notice("No such table.", "error"), status=404)
         if len(parts) == 1:
             return _list(c, model)
+        if parts[1] == "export.csv" and len(parts) == 2:
+            # Every row at once: a recent sign-in, like other sensitive actions, and a record of it.
+            if not kit.fresh(FRESH):
+                return redirect("/login?" + urllib.parse.urlencode({"next": path, "fresh": "1"}))
+            try:
+                kit.event("admin_export", user=user, detail=model._meta.table)
+            except Exception:  # noqa: BLE001 - the export still works without the log line
+                pass
+            return _export(c, model)
         if c.method == "POST":
             if not c.csrf_ok():
                 return forbidden(c)
@@ -142,6 +151,18 @@ def dispatch(kit, server, req):
         if row is None:
             return page(c, "Not found", H.notice("No such row.", "error"), status=404)
         return _edit(c, model, row)
+
+
+EXPORT_LIMIT = 100_000
+
+
+def _export(c, model):
+    """``/admin/<table>/export.csv``: the table's rows (private and encrypted fields left out)."""
+    from pyweb.routes import csv
+    cols = [f for f in _shown(model) if not f.encrypted]
+    query = model.query().order(model._meta.pk.name).limit(EXPORT_LIMIT)
+    rows = ({f.name: r.__dict__.get(f.name) for f in cols} for r in query)
+    return csv(list(rows), columns=[f.name for f in cols], filename=f"{model._meta.table}.csv")
 
 
 def _list(c, model):
@@ -188,7 +209,8 @@ def _list(c, model):
         more = f'<p class="pw-links"><a href="/admin/{table}?{params}">Next page</a></p>'
     nav = (f'<nav class="pw-nav" aria-label="Admin"><a href="/admin">All tables</a>'
            f'<a href="/admin/{table}" aria-current="page">{H.esc(_label(model))}</a>'
-           f'<a href="/admin/{table}/new">Add a row</a></nav>')
+           f'<a href="/admin/{table}/new">Add a row</a>'
+           f'<a href="/admin/{table}/export.csv">Export CSV</a></nav>')
     body = nav + search + f'<div class="pw-table-wrap"><table class="pw-table"><tr>{head}</tr>{body_rows}</table></div>' + more
     return page(c, _label(model), body, wide=True)
 

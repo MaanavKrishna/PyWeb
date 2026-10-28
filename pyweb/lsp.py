@@ -473,7 +473,8 @@ class LanguageServer:
 
     #: Requests (messages with an id) the server answers; others get "method not found", as LSP asks.
     REQUESTS = {"initialize", "shutdown", "textDocument/hover", "textDocument/completion", "textDocument/definition",
-                "textDocument/documentSymbol", "textDocument/codeLens"}
+                "textDocument/documentSymbol", "textDocument/codeLens", "textDocument/references",
+                "textDocument/rename", "textDocument/prepareRename", "textDocument/codeAction"}
 
     def handle(self, msg):
         method, params, mid = msg.get("method"), msg.get("params") or {}, msg.get("id")
@@ -500,6 +501,8 @@ class LanguageServer:
                 "hoverProvider": True, "definitionProvider": True, "documentSymbolProvider": True,
                 "completionProvider": {"triggerCharacters": ["<", " ", ".", "(", "\"", "'", ","]},
                 "codeLensProvider": {"resolveProvider": False},
+                "referencesProvider": True, "renameProvider": {"prepareProvider": True},
+                "codeActionProvider": {"codeActionKinds": ["quickfix"]},
             }, "serverInfo": {"name": "pyweb", "version": __version__}}
         if method == "textDocument/didOpen":
             self.docs[uri] = doc.get("text", "")
@@ -546,9 +549,44 @@ class LanguageServer:
                 out.append({"name": s["name"], "detail": s["kind"], "kind": SYMBOL_KINDS.get(s["kind"], 12),
                             "range": r, "selectionRange": r})
             return out
+        elif method in ("textDocument/references", "textDocument/rename", "textDocument/prepareRename"):
+            return self._refs(method, uri, pos, p)
+        elif method == "textDocument/codeAction":
+            from . import lsp_refs
+            found = lsp_refs.quick_fixes(self.docs.get(uri, ""), (p.get("context") or {}).get("diagnostics") or [])
+            for action in found:
+                action["edit"]["changes"] = {uri: action["edit"]["changes"]["__uri__"]}
+            return found
         elif method == "shutdown":
             return None
         return None
+
+    def _refs(self, method, uri, pos, p):
+        from . import lsp_refs
+        text, path = self.docs.get(uri, ""), _path(uri)
+        line, col = pos.get("line", 0), pos.get("character", 0)
+        if method == "textDocument/prepareRename":
+            word = word_at(text, line, col)
+            hits = [r for r in lsp_refs.references(text, path, line, col) if r[0] is None or r[0] == path]
+            here = next(((ln, c, n) for _f, ln, c, n in hits if ln == line and c <= col <= c + n), None)
+            if not word or here is None:
+                return None
+            return {"range": _range(here[0], here[1], here[1] + here[2]), "placeholder": word}
+
+        def file_uri(file):
+            return uri if file is None or (path and os.path.abspath(file) == os.path.abspath(path)) else _uri(file)
+        if method == "textDocument/references":
+            return [{"uri": file_uri(f), "range": _range(ln, c, c + n)}
+                    for f, ln, c, n in lsp_refs.references(text, path, line, col)]
+        try:
+            edits = lsp_refs.rename(text, path, line, col, p.get("newName", ""))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
+        changes: dict = {}
+        for file, spots in edits.items():
+            changes.setdefault(file_uri(file), []).extend(
+                {"range": _range(ln, c, c + n), "newText": p["newName"]} for ln, c, n in spots)
+        return {"changes": changes} if changes else None
 
 
 def _read_message(stream):

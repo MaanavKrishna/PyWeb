@@ -97,6 +97,8 @@ Everything is a CSS variable, so plain CSS can change any of it:
 | `Separator` | `orientation`, `decorative` |
 | `Skeleton` | `width`, `height`, `radius` |
 | `Kbd`, `Label`, `Avatar` (`src`, `alt`, `fallback`, `size`), `AspectRatio` (`ratio`), `Progress` (`value`, `max`, `label`) | |
+| `Image` | `src`, `alt` (required), `width`, `height`, `sizes`, `priority`. See [Images](#images) |
+| `Stepper`, `Step` | a form in steps: `Step(title=)`; `Stepper(submit=, next=, back=, default=)`. See [Forms](23-forms.md#multi-step-forms) |
 
 The form tags (`<Form>`, `<Input>`, `<Textarea>`, `<Select>`,
 `<Checkbox>`, `<Submit>`, from `pyweb`) are styled by the kit too.
@@ -322,9 +324,27 @@ Search, sorting (click a header: ascending, descending, off), pages
 and row selection all run in the browser; the first page is rendered on
 the server. `rows` is a list of dicts. A live query works: the table
 follows it. `onselect(keys)` gets the `key` (default `"id"`) of every
-selected row. For a plain styled table there are `Table` (`caption`),
+selected row. `export="csv"` adds a "Download CSV" button: the rows that
+match the search, in the table's order (`filename="tasks.csv"`); the
+admin has the same per Model, and a route can send one with
+`pyweb.routes.csv(rows)`. For a plain styled table there are `Table` (`caption`),
 `TableHeader`, `TableBody`, `TableFooter`, `TableRow` (`selected`),
 `TableHead` and `TableCell` (`align`).
+
+### Images
+
+```html
+<Image src="/static/team.jpg" alt="The team at the offsite" width={800} height={450} />
+```
+
+`width` and `height` are the size it shows at, so the page doesn't jump
+while it loads. For a file in `static/`, the browser gets a `srcset` of
+smaller copies (320 to 2560 pixels wide) and picks the one that fits the
+screen; the server makes them on first request with Pillow
+(`pip install "pyweb-stack[images]"`), never larger than the original and
+without the photo's metadata (camera, location), and keeps them in memory.
+Without Pillow the original is sent. Images load when scrolled to;
+`priority={True}` loads the first big image of a page at once.
 
 ### Charts
 

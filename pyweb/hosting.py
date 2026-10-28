@@ -393,6 +393,12 @@ class Site:
             query = path.partition("?")[2]
             inm = next((v for k, v in (headers or {}).items() if k.lower() == "if-none-match"), None)
             out = self.static(bare[len("/static/"):], query=query, if_none_match=inm)
+        elif bare.startswith("/__pyweb/img/") and method in ("GET", "HEAD"):
+            tel.route = "static"
+            from . import images
+            inm = next((v for k, v in (headers or {}).items() if k.lower() == "if-none-match"), None)
+            out = images.respond(self.static_dirs, bare[len("/__pyweb/img/"):], query=path.partition("?")[2],
+                                 if_none_match=inm, dev=self.source_mode)
         elif method in ("GET", "HEAD") and self._metrics_path(bare):
             tel.route = "metrics"
             if telemetry.metrics_allowed(headers, dev=self.debug):

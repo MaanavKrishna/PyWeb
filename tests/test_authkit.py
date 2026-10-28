@@ -609,6 +609,10 @@ def test_admin_lists_edits_and_respects_private_fields(make):
     assert status == 200 and 'href="/admin/users"' in html and 'href="/admin/auth_events"' in html
     status, _, html = admin.get("/admin/users?q=member")
     assert "member@example.com" in html and "boss@example.com" not in html and "password_hash" not in html
+    status, headers, csv = admin.get("/admin/users/export.csv")
+    assert status == 200 and dict(headers)["Content-Disposition"] == 'attachment; filename="users.csv"'
+    assert "member@example.com" in csv and "boss@example.com" in csv and "password_hash" not in csv
+    assert member.get("/admin/users/export.csv")[0] == 403
     status, _, html = admin.get(f"/admin/users/{user.id}")
     assert status == 200 and "password_hash" not in html and "Password hash" not in html
     assert "Session version" in html and 'name="session_version"' not in html   # shown, not editable

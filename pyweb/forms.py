@@ -194,7 +194,7 @@ def _param_fields(fn):
             inner = type(typing.get_args(inner)[0])
         if _is_upload_type(inner):
             out[p.name] = FieldDef(p.name, kind="str", label=humanize(p.name), file={"max_size": None, "types": []},
-                                   nullable=optional or p.default is not p.empty)
+                                   nullable=optional or p.default is not p.empty or multiple, multiple=multiple)
             continue
         kind = kind_for(inner) or "str"
         has_default = p.default is not p.empty
@@ -568,16 +568,16 @@ def _coerce_into(fdef, raw_list, files, errors):
     if fdef.file is not None:
         uploads = files.get(name) or []
         if not uploads:
-            return None
-        up = uploads[-1]
+            return [] if fdef.multiple else None
         limit = fdef.file.get("max_size")
-        if limit and up.size > limit:
-            errors[name] = f"must be at most {_size_words(limit)}"
-            return None
-        if not storage.type_allowed(up.content_type, fdef.file.get("types")):
-            errors[name] = "isn't an allowed kind of file"
-            return None
-        return up
+        for up in uploads if fdef.multiple else uploads[-1:]:
+            if limit and up.size > limit:
+                errors[name] = (f"{up.filename} is too big: " if fdef.multiple else "") + f"must be at most {_size_words(limit)}"
+                return None
+            if not storage.type_allowed(up.content_type, fdef.file.get("types")):
+                errors[name] = (f"{up.filename} " if fdef.multiple else "") + "isn't an allowed kind of file"
+                return None
+        return uploads if fdef.multiple else uploads[-1]
     if fdef.multiple:
         values = [v for v in (raw_list or []) if v != ""]
         try:
@@ -681,6 +681,8 @@ def build_args(action, fid, fields, files):
     for name, fdef in defs.items():
         if name not in rendered or (name not in fields and name not in files and f"__pw_has_{name}" not in fields):
             if fdef.default is not None or fdef.nullable or fdef.bool_field or fdef.multiple:
+                if fdef.multiple and fdef.default is None and name in rendered:
+                    out[name] = []        # nothing chosen: an empty list, not a missing argument
                 continue
             errors[name] = "is required"
             continue

@@ -109,8 +109,29 @@ project uses [semantic versioning](https://semver.org).
   public pages plus `@app.sitemap` generators; `App(robots=...)`.
 - Plugins work: `App(plugins=[...])` registers a plugin's routes, pages,
   server functions and Models.
+- **CSV export:** `DataTable export="csv"` downloads the rows that match
+  the search; the admin has "Export CSV" per Model (fresh sign-in, logged).
+- **Uploads:** drop files on a `<FileInput>`, see what's chosen (image
+  previews, remove one), an upload progress bar, and several files in one
+  field (`photos: list[UploadedFile]`).
+- **`Stepper` / `Step`** (UI kit): a form in steps that checks each step's
+  fields before the next.
+- **`Image`** (UI kit): `srcset` of resized copies made by the server
+  (`/__pyweb/img/<width>/...`, with Pillow: `pyweb-stack[images]`), lazy
+  loading, no layout shift.
+- **Editor:** find references, rename (across the folder's `.pyweb` files
+  for components and server functions) and "did you mean" quick fixes.
 - `TestClient.put/patch/delete`; `pyweb.request.body` and `request.json()`.
-- `PYWEB_DB_POOL` (default 10): database connections per process.
+- `PYWEB_DB_POOL` (default 10) and `App(pool_size=...)`: database
+  connections per process.
+
+### Fixed
+- `from pyweb.browser import document` (and `Blob`, `URL`, ...) works in a
+  file that also runs on the server; browser code can construct `Date`,
+  `URL`, `URLSearchParams`, `Blob`, `FormData`, `Event`, `CustomEvent` and
+  `Promise` (`new` is added for you).
+- A server function with a `list[...]` parameter and no default gets `[]`
+  when the form sends none, instead of failing.
 
 ### Changed (internals)
 - An option in `@app.page(...)`/`@app.layout(...)` that isn't written out as

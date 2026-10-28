@@ -7,7 +7,7 @@
 const KINDS = new Set(["dialog", "popover", "tooltip", "hover-card", "menu", "context-menu", "menubar",
   "select", "combobox", "command", "toaster", "tabs", "accordion", "collapsible", "switch", "slider",
   "radio-group", "toggle-group", "toggle", "checkbox", "scroll-area", "resizable", "navigation-menu",
-  "sidebar", "calendar", "carousel", "data-table", "otp", "theme-toggle"]);
+  "sidebar", "calendar", "carousel", "data-table", "otp", "theme-toggle", "stepper"]);
 const modules = new Map();
 const live = new WeakMap();
 

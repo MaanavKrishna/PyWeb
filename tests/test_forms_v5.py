@@ -20,6 +20,7 @@ APP = '''
 from typing import Literal
 from pyweb import App, Form, FormError, Input, Textarea, Select, Checkbox, FileInput, Submit, Field, Model, server
 from pyweb.models import Email, File, ValidationError
+from pyweb.forms import UploadedFile
 
 app = App(database="sqlite:///{db}")
 
@@ -68,6 +69,17 @@ def EditPost(post_id: int):
         <Input name="title" />
         <Checkbox name="draft" />
         <Submit>Save</Submit>
+    </Form>
+
+@server
+def add_photos(title: str, photos: list[UploadedFile]):
+    return {{"title": title, "names": [p.filename for p in photos], "types": [p.content_type for p in photos]}}
+
+@app.page("/gallery")
+def Gallery():
+    <Form action={{add_photos}}>
+        <Input name="title" />
+        <FileInput name="photos" accept="image/*" />
     </Form>
 
 @app.page("/subscribe")
@@ -119,7 +131,8 @@ class Client:
             for k, vals in data.items():
                 for v in (vals if isinstance(vals, list) else [vals]):
                     parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
-            for k, (fname, content) in files.items():
+            for k, spec in files.items():
+              for fname, content in (spec if isinstance(spec, list) else [spec]):
                 parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"; filename="{fname}"\r\n'
                              f"Content-Type: application/octet-stream\r\n\r\n".encode() + content + b"\r\n")
             body = b"".join(parts) + f"--{boundary}--\r\n".encode()
@@ -351,6 +364,20 @@ def test_plain_parameters(app):
 
 
 # ------------------------------------------------------------------ uploads
+
+def test_several_files_in_one_field(app):
+    c = Client(app)
+    _, _, html = c.get("/gallery")
+    assert re.search(r'<input [^>]*type="file"[^>]*multiple', html)
+    hidden = c.hidden(html)
+    status, _, body = c.post("add_photos", {**hidden, "title": "Trip"},
+                             files={"photos": [("a.png", PNG), ("b.png", PNG)]}, accept="application/json")
+    assert status == 200, body
+    assert json.loads(body)["result"] == {"title": "Trip", "names": ["a.png", "b.png"], "types": ["image/png"] * 2}
+    hidden["__pw_key"] = "again"
+    status, _, body = c.post("add_photos", {**hidden, "title": "Empty"}, files={"photos": []}, accept="application/json")
+    assert status == 200 and json.loads(body)["result"]["names"] == [], body
+
 
 def test_uploads_are_checked_by_content_and_size(app, tmp_path):
     from pyweb import storage

@@ -10,7 +10,12 @@ browser once loaded; the first page is rendered on the server).
 `rows` is a list of dicts (a live query works: the table follows it). Columns are dicts with
 "key", and optionally "label", "sortable" (default True), "align" ("start", "end", "center"),
 "format" (a function of the value) and "width"; a plain string is a key.
+
+`export="csv"` adds a Download button: the rows that match the search, in the current order, as a
+CSV file (`filename=`), made in the browser.
 """
+
+from pyweb.browser import Blob, URL, document
 
 
 def _columns(columns):
@@ -33,6 +38,21 @@ def _cell(row, col):
     value = row.get(col["key"])
     f = col["format"]
     return _text(f(value) if f else value)
+
+
+def _csv_field(text):
+    if text[:1] in ("=", "+", "-", "@"):
+        text = "'" + text                        # a spreadsheet must not run it as a formula
+    if any(ch in text for ch in ',"\n\r'):
+        return '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def _csv(rows, cols):
+    lines = [",".join(_csv_field(c["label"]) for c in cols)]
+    for r in rows:
+        lines.append(",".join(_csv_field(_cell(r, c)) for c in cols))
+    return "\r\n".join(lines) + "\r\n"
 
 
 def _matches(row, cols, needle):
@@ -82,7 +102,8 @@ def TableCell(align=None, children=None, **attrs):
 
 
 def DataTable(rows=None, columns=None, key="id", page_size=10, search=True, placeholder="Search…",
-              selectable=False, onselect=None, empty="No results.", caption=None, label="Table", **attrs):
+              selectable=False, onselect=None, empty="No results.", caption=None, label="Table",
+              export=None, filename="export.csv", **attrs):
     query = ""
     sort_key = None
     descending = False
@@ -107,6 +128,12 @@ def DataTable(rows=None, columns=None, key="id", page_size=10, search=True, plac
 
     def go(n):
         page = n
+
+    def download():
+        link = document.createElement("a")
+        link.href = URL.createObjectURL(Blob([_csv(ordered, cols)], {"type": "text/csv;charset=utf-8"}))
+        link.download = filename
+        link.click()
 
     def choose(keys):
         picked = keys
@@ -135,12 +162,16 @@ def DataTable(rows=None, columns=None, key="id", page_size=10, search=True, plac
     first = (current - 1) * page_size + 1 if ordered else 0
     last = min(current * page_size, len(ordered))
     <div class="pw-data-table" data-part="data-table" {**attrs}>
-        if search:
+        if search or export:
             <div data-part="toolbar">
-                <input class="pw-control" data-part="search" type="search" placeholder={placeholder}
-                       aria-label={placeholder} value={query} oninput={search_for} />
+                if search:
+                    <input class="pw-control" data-part="search" type="search" placeholder={placeholder}
+                           aria-label={placeholder} value={query} oninput={search_for} />
                 if selectable and picked:
                     <span class="pw-muted" data-part="selection">{len(picked)} selected</span>
+                if export == "csv":
+                    <button type="button" class="pw-button" data-variant="outline" data-size="sm"
+                            data-part="export" onclick={download}>Download CSV</button>
             </div>
         <div class="pw-table-wrap" data-pw-ui="table" data-part="table-wrap">
             <table class="pw-table" data-part="table" aria-label={None if caption else label}>

@@ -160,7 +160,14 @@ class User(Model):
   `storage.url(user.avatar)` (from `pyweb`) gives a link.
 - A form with no new file keeps the old one.
 - Plain parameters can take the file itself: `def upload(doc: UploadedFile)`
-  (`.filename`, `.content_type`, `.size`, `.data`, `.save()`).
+  (`.filename`, `.content_type`, `.size`, `.data`, `.save()`), or several:
+  `def upload(photos: list[UploadedFile])` makes the input `multiple` and
+  gives a list (empty when nothing was chosen).
+
+With JavaScript, files can be dropped on the field, the chosen ones are
+listed under it (a preview for images, a Remove button each), and a bar
+shows how much of the upload has been sent. Dropped files that don't match
+`accept=` are left out.
 
 Where files go is set by `PYWEB_STORAGE`:
 
@@ -175,7 +182,27 @@ bucket.
 
 ## Multi-step forms
 
-Carry earlier steps' answers in a signed hidden value:
+In one page, the UI kit's `Stepper` shows one step at a time and checks a
+step's fields before moving on:
+
+```
+from pyweb.ui import Stepper, Step
+
+<Form action={sign_up}>
+    <Stepper submit="Create account">
+        <Step title="Account">
+            <Input name="email" />
+        </Step>
+        <Step title="Profile">
+            <Input name="name" />
+        </Step>
+    </Stepper>
+</Form>
+```
+
+The whole form is still one submit, checked again on the server; an error
+on an earlier step's field takes you back to it. Across pages, carry
+earlier steps' answers in a signed hidden value:
 
 ```python
 from pyweb import forms

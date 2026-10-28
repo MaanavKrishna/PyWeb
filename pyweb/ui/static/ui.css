@@ -141,6 +141,14 @@
   .pw-field input[type="checkbox"], .pw-checkbox-input { width: 16px; height: 16px; margin: 0 var(--pw-space-3) 0 0;
                                                          accent-color: var(--pw-accent); vertical-align: -3px; }
   .pw-field.pw-checkbox > label { display: inline-flex; align-items: center; font-weight: 400; }
+  .pw-field.pw-fileinput { padding: var(--pw-space-6); border: 1px dashed var(--pw-border-strong); border-radius: var(--pw-radius);
+                           transition: border-color .15s, background-color .15s; }
+  .pw-fileinput[data-dragging] { border-color: var(--pw-accent); background: var(--pw-accent-2); }
+  .pw-file-list { list-style: none; margin: var(--pw-space-4) 0 0; padding: 0; display: grid; gap: var(--pw-space-2); font-size: var(--pw-text-sm); }
+  .pw-file-list li { display: flex; align-items: center; gap: var(--pw-space-3); }
+  .pw-file-list img { width: 40px; height: 40px; object-fit: cover; border-radius: var(--pw-radius-sm); }
+  .pw-file-list button { margin-left: auto; border: 0; background: none; color: var(--pw-fg-muted); cursor: pointer; text-decoration: underline; }
+  .pw-upload-progress { display: block; width: 100%; margin-top: var(--pw-space-4); accent-color: var(--pw-accent); }
   .pw-help { margin: var(--pw-space-2) 0 0; color: var(--pw-fg-muted); font-size: var(--pw-text-xs); }
   .pw-error { margin: var(--pw-space-2) 0 0; color: var(--pw-danger-11); font-size: var(--pw-text-xs); }
   .pw-form-error { padding: var(--pw-space-5) var(--pw-space-6); border-radius: var(--pw-radius); background: var(--pw-danger-3);
@@ -614,4 +622,16 @@
   .pw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
                 clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .pw-muted { color: var(--pw-fg-muted); }
+}
+
+@layer pyweb.components {
+  .pw-stepper-list { display: flex; gap: var(--pw-space-3); margin: 0 0 var(--pw-space-7); padding: 0; list-style: none; counter-reset: pw-step; }
+  .pw-stepper-list li { flex: 1; counter-increment: pw-step; border-top: 3px solid var(--pw-border); padding-top: var(--pw-space-3); }
+  .pw-stepper-list li[data-state="complete"], .pw-stepper-list li[data-state="current"] { border-top-color: var(--pw-accent); }
+  .pw-stepper-list button { border: 0; background: none; padding: 0; font: inherit; font-size: var(--pw-text-sm); color: var(--pw-fg-muted); text-align: left; }
+  .pw-stepper-list button::before { content: counter(pw-step) ". "; }
+  .pw-stepper-list li[data-state="complete"] button { cursor: pointer; text-decoration: underline; }
+  .pw-stepper-list [aria-current="step"] { color: var(--pw-fg); font-weight: 600; }
+  .pw-stepper-step + .pw-stepper-step:not([hidden]) { margin-top: var(--pw-space-7); }
+  .pw-stepper-nav { display: flex; gap: var(--pw-space-3); justify-content: flex-end; margin-top: var(--pw-space-7); }
 }

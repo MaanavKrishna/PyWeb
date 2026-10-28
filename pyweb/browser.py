@@ -255,3 +255,32 @@ def bindings() -> dict:
         if isinstance(obj, Api) and js:
             out[name] = js
     return out
+
+
+class _BrowserOnly:
+    """A JavaScript global (``document``, ``Blob``, ...) imported from :mod:`pyweb.browser`: browser code
+    uses the real one; on the server it's this stand-in, which explains itself if touched."""
+
+    def __init__(self, name):
+        self._name = name
+
+    def _refuse(self, *_a, **_k):
+        raise RuntimeError(f"{self._name} only exists in the browser: use it in browser code (an event "
+                           "handler, or code the compiler places in the browser)")
+
+    __call__ = _refuse
+
+    def __getattr__(self, attr):
+        if attr.startswith("__"):
+            raise AttributeError(attr)
+        self._refuse()
+
+    def __repr__(self):
+        return f"<browser-only {self._name}>"
+
+
+def __getattr__(name):
+    from .compiler.pyjs import JS_GLOBALS
+    if name in JS_GLOBALS:
+        return _BrowserOnly(name)
+    raise AttributeError(f"module 'pyweb.browser' has no attribute {name!r}")

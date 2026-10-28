@@ -16,13 +16,14 @@ class App:
     ``locales=["en", "de"]`` turns on translations (see :mod:`pyweb.i18n`).
     ``database`` (a URL like ``"sqlite:///app.db"`` or a database object) is
     where Models keep their rows. ``DATABASE_URL``, when set, wins over a URL
-    given here: develop on SQLite, deploy on Postgres, same code.
+    given here: develop on SQLite, deploy on Postgres, same code. ``pool_size``:
+    connections each process may open to it (default 10; ``PYWEB_DB_POOL`` wins).
     """
 
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
                  title="PyWeb", stylesheets=(), lang="en", base_url=None, description=None,
                  image=None, client_nav=True, pwa=None, desktop=None, theme=None, motion=None,
-                 robots=None, locales=None, default_locale=None):
+                 robots=None, locales=None, default_locale=None, pool_size=None):
         self.title = title
         self.locales = list(locales or ())    # ["en", "de"]: translations (pyweb.i18n)
         self.default_locale = default_locale or (self.locales[0] if self.locales else None)
@@ -59,7 +60,9 @@ class App:
                 from pyweb.db import connect
                 database = _os.environ.get("DATABASE_URL") or database   # the environment decides in production
                 replica = _os.environ.get("DATABASE_REPLICA_URL") or None
-                database = connect(database, replica=replica)
+                # PYWEB_DB_POOL (set where it's deployed) wins over pool_size= in the code.
+                pool = None if _os.environ.get("PYWEB_DB_POOL", "").strip() else pool_size
+                database = connect(database, replica=replica, pool_size=pool)
             self.db = _models.use_database(database)
         self.cache = cache
         self.auth = auth

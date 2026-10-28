@@ -41,6 +41,11 @@ JS_GLOBALS = frozenset({
     "FormData", "Blob", "crypto", "performance", "structuredClone",
 })
 
+#: JavaScript classes that only work with ``new``: calling one from browser code constructs it
+#: (``Blob(["x"])`` is ``new Blob(["x"])``).
+JS_CONSTRUCTORS = frozenset({"Date", "URL", "URLSearchParams", "Blob", "FormData", "Event", "CustomEvent",
+                             "Promise"})
+
 #: Python methods dispatched through ``$py.m`` (strings, lists, dicts, sets).
 PY_METHODS = frozenset({
     "append", "extend", "insert", "pop", "remove", "index", "count", "clear",
@@ -636,6 +641,8 @@ class Translator:
                 return self.js_call("$py.call", [callee], node, scope)
             if node.keywords:
                 raise self.error(node, f"keyword arguments are not supported when calling {f.id!r} from browser code")
+            if f.id in JS_CONSTRUCTORS and kind in ("browser_global", None) and callee == f.id:
+                return f"new {callee}({', '.join(self.args(node, scope))})"
             return f"{callee}({', '.join(self.args(node, scope))})"
         if isinstance(f, ast.Attribute):
             self.expr(f.value, scope)  # surfaces server-only names before other errors

@@ -146,14 +146,20 @@ class RPCStream:
 
     async def aiter(self):
         import asyncio
+        import concurrent.futures
+        # Every step on the same thread: a generator that holds a transaction (or anything else
+        # kept per thread) across ``yield`` sees it again on the next step.
+        thread = concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix=f"pyweb-stream-{self.name}")
+        loop = asyncio.get_running_loop()
         try:
             while True:
-                line = await asyncio.to_thread(self._line)
+                line = await loop.run_in_executor(thread, self._line)
                 if line is None:
                     return
                 yield line
         finally:
             self.close()
+            thread.shutdown(wait=False)
 
     def snapshot(self):
         """Everything, synchronously (tests)."""

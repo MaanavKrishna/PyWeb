@@ -26,6 +26,14 @@ class FakeRedis:
             (sid.encode(), {k.encode(): v.encode() for k, v in fields.items()}))
         return sid
 
+    def eval(self, script, numkeys, *args):
+        """The bus's publish script: INCR, XADD with that id, PUBLISH."""
+        seq_key, stream_key, pub_key, body = args
+        seq = self.incr(seq_key)
+        self.xadd(stream_key, {"body": body}, id=f"{seq}-1")
+        self.publish(pub_key, body)
+        return seq
+
     def lpop(self, key):
         lst = self.lists.get(key, [])
         return lst.pop(0) if lst else None

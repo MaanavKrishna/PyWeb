@@ -168,8 +168,8 @@ def test_cache_redis_fake_client():
         def smembers(self, t):
             return self.sets.get(t, set())
 
-        def flushdb(self):
-            self.kv.clear()
+        def persist(self, k):
+            pass
 
     c = RedisCache(client=Fake())
     c.set("a", {"n": 1}, tags=("t",))

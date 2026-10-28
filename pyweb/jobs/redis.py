@@ -239,19 +239,27 @@ class RedisBackend(Backend):
     def purge(self, before):
         gone = 0
         now = time.time()
-        for raw in self.r.zrange(self.p + "all", 0, 9999):
-            job_id = raw.decode() if isinstance(raw, bytes) else raw
-            rec = self._hash(job_id)
-            if rec is None:
-                self.r.zrem(self.p + "all", job_id)
-                continue
-            finished = float(rec.get("finished_at") or 0)
-            held = rec.get("unique_until") and float(rec["unique_until"]) > now
-            if rec["state"] in ("done", "dead") and finished and finished < before and not held:
-                self.r.delete(self.p + "job:" + job_id)
-                self.r.zrem(self.p + "all", job_id)
-                gone += 1
-        return gone
+        start = 0
+        while True:                                   # every job, a page at a time
+            page = self.r.zrange(self.p + "all", start, start + 999)
+            if not page:
+                return gone
+            kept = 0
+            for raw in page:
+                job_id = raw.decode() if isinstance(raw, bytes) else raw
+                rec = self._hash(job_id)
+                if rec is None:
+                    self.r.zrem(self.p + "all", job_id)
+                    continue
+                finished = float(rec.get("finished_at") or 0)
+                held = rec.get("unique_until") and float(rec["unique_until"]) > now
+                if rec["state"] in ("done", "dead") and finished and finished < before and not held:
+                    self.r.delete(self.p + "job:" + job_id)
+                    self.r.zrem(self.p + "all", job_id)
+                    gone += 1
+                else:
+                    kept += 1
+            start += kept                             # removed ones shifted the rest down
 
     def mark(self, name):
         v = self.r.hget(self.p + "marks", name)

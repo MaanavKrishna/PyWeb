@@ -48,7 +48,12 @@ class Server:
         self.logger = logger
         self.max_connections = max_connections or conf.max_connections
         self.timeout = float(socket_timeout or conf.socket_timeout)
-        self.pool = concurrent.futures.ThreadPoolExecutor(threads or conf.threads, thread_name_prefix="pyweb")
+        self.threads = threads or conf.threads
+        self.pool = concurrent.futures.ThreadPoolExecutor(self.threads, thread_name_prefix="pyweb")
+        # Requests waiting for a thread beyond this get 503 + Retry-After at once, instead of
+        # queueing for minutes behind a stuck dependency.
+        self.max_queue = conf.max_queue
+        self.inflight = 0                  # requests handed to the pool and not finished yet
         self.active = 0
         self.busy = 0                      # connections in the middle of a request
         self.draining = False
@@ -71,19 +76,29 @@ class Server:
     def port(self):
         return self.servers[0].sockets[0].getsockname()[1]
 
-    async def drain(self, timeout=25.0):
-        """Stop accepting, let in-flight requests finish (up to ``timeout``), then close everything."""
+    async def drain(self, timeout=None):
+        """Stop accepting, let in-flight requests and jobs finish, then close everything, all within
+        one deadline (``PYWEB_SHUTDOWN_TIMEOUT``, 25 s: under the usual 30 s a platform waits)."""
+        if timeout is None:
+            from pyweb.config import settings
+            timeout = settings().shutdown_timeout
+        end = time.monotonic() + timeout
         self.draining = True
         for srv in self.servers:
             srv.close()
         loop = asyncio.get_running_loop()
         from pyweb.hosting import shutdown
-        await loop.run_in_executor(None, shutdown, min(timeout, 10.0), self.logger)
+        # Jobs wind down while requests finish (not one after the other).
+        jobs_done = loop.run_in_executor(None, shutdown, max(0.1, timeout - 2.0), self.logger)
         for writer in list(self.idle_writers):
             writer.close()
-        end = time.monotonic() + timeout
         while self.busy and time.monotonic() < end:
             await asyncio.sleep(0.05)
+        try:
+            await asyncio.wait_for(asyncio.shield(jobs_done), max(0.1, end - time.monotonic()))
+        except asyncio.TimeoutError:
+            if self.logger is not None:
+                self.logger.info("shutdown: jobs still running at the deadline; handing them back")
         for writer in list(self.writers):                  # streams and sockets still open
             writer.close()
         end = time.monotonic() + 2.0
@@ -189,15 +204,26 @@ class Server:
             return False
         headers = head.header_dict()
         loop = asyncio.get_running_loop()
-        try:
-            status, hdrs, out = await respond_within(
-                self.site, lambda: loop.run_in_executor(self.pool, self.site.respond, head.method, path, headers,
-                                                        body, client), head.method, path, headers)
-        except Exception as exc:  # noqa: BLE001
-            if self.logger is not None:
-                self.logger.info(f"request failed: {type(exc).__name__}: {exc}")
-            await self._send_error(writer, 500, "internal error")
+        bare = path.split("?", 1)[0]
+        quick = self._quick(bare)
+        if quick is not None:
+            status, hdrs, out = quick
+        elif self.inflight >= self.threads + self.max_queue:
+            await self._write(writer, _simple(503, "server busy", close=True, extra=[("Retry-After", "2")]))
             return False
+        else:
+            self.inflight += 1
+            try:
+                status, hdrs, out = await respond_within(
+                    self.site, lambda: loop.run_in_executor(self.pool, self.site.respond, head.method, path,
+                                                            headers, body, client), head.method, path, headers)
+            except Exception as exc:  # noqa: BLE001
+                if self.logger is not None:
+                    self.logger.info(f"request failed: {type(exc).__name__}: {exc}")
+                await self._send_error(writer, 500, "internal error")
+                return False
+            finally:
+                self.inflight -= 1
         keep = head.keep_alive and not self.draining
         if hasattr(out, "aiter"):
             await self._stream(reader, writer, head, status, hdrs, out)
@@ -210,6 +236,20 @@ class Server:
             hdrs.append(("Connection", "keep-alive"))
         await self._write(writer, H.response_head(status, hdrs) + (b"" if head.method == "HEAD" else out))
         return keep
+
+    def _quick(self, bare):
+        """``/healthz`` answered on the event loop (it must answer even with every thread busy), and
+        ``/readyz`` while draining (503: send no more traffic here)."""
+        if bare in ("/healthz", "/health") or (bare == "/readyz" and self.draining):
+            import json as _json
+
+            from pyweb.hosting import health
+            code, payload = health(False, self.started)
+            if bare == "/readyz":
+                code, payload = 503, {**payload, "ok": False, "draining": True}
+            return code, [("Content-Type", "application/json"), ("Cache-Control", "no-store")], \
+                _json.dumps(payload).encode()
+        return None
 
     async def _read_body(self, reader, head, limit):
         if head.chunked:
@@ -280,9 +320,13 @@ class Server:
         if isinstance(live, tuple):
             await self._send_error(writer, *live)
             return
-        await self._write(writer, H.response_head(101, [
-            ("Upgrade", "websocket"), ("Connection", "Upgrade"),
-            ("Sec-WebSocket-Accept", W.accept_key(head.headers["sec-websocket-key"]))]))
+        try:
+            await self._write(writer, H.response_head(101, [
+                ("Upgrade", "websocket"), ("Connection", "Upgrade"),
+                ("Sec-WebSocket-Accept", W.accept_key(head.headers["sec-websocket-key"]))]))
+        except BaseException:
+            live._release()                # the client left mid-handshake: give its slot back
+            raise
         conn = _WSConnection(reader, writer, self.timeout)
         await live.run(conn.recv, conn.send, conn.close)
         await conn.close(W.NORMAL, "")

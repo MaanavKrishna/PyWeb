@@ -142,6 +142,23 @@ def test_closing_the_stream_closes_the_generator():
     assert closed == [True]
 
 
+def test_every_step_of_a_stream_runs_on_the_same_thread():
+    import asyncio
+    import threading
+
+    from pyweb.runtime.server import RPCStream
+
+    def gen():
+        for _ in range(5):
+            yield threading.get_ident()
+
+    async def collect():
+        return [json.loads(line)["chunk"] async for line in RPCStream(gen(), "gen").aiter()
+                if b"chunk" in line]
+    idents = asyncio.run(collect())
+    assert len(idents) == 5 and len(set(idents)) == 1
+
+
 def test_asgi_streams_each_value_and_stops_on_disconnect(tmp_path):
     from pyweb.asgi import create_app
     path = tmp_path / "app.pyweb"

@@ -139,6 +139,12 @@ class _Entry:
         self.dirty = True
         self.used = time.monotonic()
         self.watchers = 0
+        # What browsers were last told (the version every patch is made from). Kept apart from
+        # ``version``, which a page render can move on at any moment: comparing against that lost
+        # changes a render had already picked up before the watcher re-ran.
+        self.published = None
+        self.published_rows = None
+        self.lock = threading.Lock()
 
     def run(self):
         from .ssr import to_jsonable
@@ -150,6 +156,8 @@ class _Entry:
         if self.row_key is None and rows and all(isinstance(r, dict) and "id" in r for r in rows):
             self.row_key = "id"
         self.rows, self.version, self.dirty = rows, _version(rows), False
+        if self.published is None:          # the first rows browsers see
+            self.published, self.published_rows = self.version, rows
         return rows
 
 
@@ -223,8 +231,8 @@ class _Registry:
                 self.event.clear()
             try:
                 self.check()
-            except Exception:  # noqa: BLE001 - keep watching; a failing query is retried next change
-                pass
+            except Exception as exc:  # noqa: BLE001 - keep watching; a failing query is retried next change
+                _report("live data watcher", exc)
 
     def check(self):
         """Re-run queries whose tables changed; publish rows that differ. Returns the keys re-run."""
@@ -244,22 +252,44 @@ class _Registry:
             due = [e for e in self.entries.values()
                    if any(f"{e.dbid}:{t}" in changed for t in e.tables)]
         for entry in due:
-            entry.dirty = True
-            before, old_rows = entry.version, entry.rows
-            try:
-                rows = entry.run()
-            except Exception:  # noqa: BLE001
-                continue
-            if entry.version != before:
+            with entry.lock:
+                entry.dirty = True
+                before, old_rows = entry.published, entry.published_rows
+                try:
+                    rows = entry.run()
+                except Exception as exc:  # noqa: BLE001 - retried on the next change
+                    _report("live query", exc)
+                    continue
+                version = entry.version
+                entry.published, entry.published_rows = version, rows
+                if version == before:
+                    continue
                 chan = LIVE_CHANNEL + entry.key
                 latest = bus.since(chan, max(0, bus.position(chan) - 1), limit=1)
-                if latest and isinstance(latest[-1][1], dict) and latest[-1][1].get("version") == entry.version:
+                if latest and isinstance(latest[-1][1], dict) and latest[-1][1].get("version") == version:
                     continue                        # another process already sent these rows
-                bus.publish(chan, change_message(old_rows, rows, entry.row_key, before, entry.version))
+                bus.publish(chan, change_message(old_rows, rows, entry.row_key, before, version))
         return [e.key for e in due]
 
 
 REGISTRY = _Registry()
+
+_last_report = {}
+
+
+def _report(what, exc):
+    """Log a failure in the background watcher (at most once a minute per kind) and count it."""
+    import logging
+    now = time.monotonic()
+    key = (what, type(exc).__name__)
+    if now - _last_report.get(key, -1e9) >= 60:
+        _last_report[key] = now
+        logging.getLogger("pyweb.live").warning("%s failed: %s: %s", what, type(exc).__name__, exc)
+    try:
+        from .telemetry.instruments import errors
+        errors.inc(where="live")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------- patches

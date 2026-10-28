@@ -94,6 +94,42 @@ def test_pool_is_thread_safe(database):
     assert conn.execute(f"select count(*) from {t}").fetchall()[0][0] == 10 * len(threads)
 
 
+def _kill_connections(conn):
+    """Terminate every server connection the pool holds (a restart or failover, as the app sees it)."""
+    admin = _db.connect(SQL_URLS[conn.dialect.name])
+    try:
+        if conn.dialect.name == "postgres":
+            admin.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                          "WHERE datname = current_database() AND pid <> pg_backend_pid()")
+        else:
+            for (pid,) in admin.execute("SELECT id FROM information_schema.processlist "
+                                        "WHERE id <> CONNECTION_ID() AND db = DATABASE()").fetchall():
+                admin.execute(f"KILL {int(pid)}")
+    finally:
+        admin.close()
+
+
+def test_the_pool_recovers_from_dropped_connections(database):
+    conn, t = database
+    if conn.dialect.name == "sqlite":
+        pytest.skip("SQLite has no server to drop the connection")
+    conn.execute(f"insert into {t} (id, name, score) values (?, ?, ?)", (1, "a", 1))
+    _kill_connections(conn)
+    # A read on a dead connection is retried once on a new one.
+    assert conn.execute(f"select count(*) from {t}").fetchall()[0][0] == 1
+    _kill_connections(conn)
+    # A write isn't retried (it may have been applied), but the dead connection is gone: the next works.
+    try:
+        conn.execute(f"insert into {t} (id, name, score) values (?, ?, ?)", (2, "b", 2))
+    except Exception:  # noqa: BLE001
+        conn.execute(f"insert into {t} (id, name, score) values (?, ?, ?)", (2, "b", 2))
+    _kill_connections(conn)
+    conn.ping_after = 0                            # (5 s idle by default)
+    with conn.transaction():                       # a transaction checks an idle connection first
+        conn.execute(f"insert into {t} (id, name, score) values (?, ?, ?)", (3, "c", 3))
+    assert conn.execute(f"select count(*) from {t}").fetchall()[0][0] == 3
+
+
 def test_migrations_apply_and_roll_back(database, tmp_path):
     conn, _t = database
     d = str(tmp_path / "migrations")
@@ -236,3 +272,27 @@ def test_live_queries_work_across_processes(tmp_path):
         for proc in procs:
             proc.terminate()
             proc.wait(5)
+
+
+@pytest.mark.skipif(not REDIS, reason="set PYWEB_TEST_REDIS")
+def test_redis_bus_keeps_working_under_concurrent_publishes():
+    """Several servers publishing to one channel at once: every message is kept, in order, and no
+    server falls back to local-only delivery."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from pyweb.realtime import RedisBus
+    prefix = f"pyweb:test:{uuid.uuid4().hex[:8]}:"
+    buses = [RedisBus(REDIS, prefix=prefix) for _ in range(4)]
+    with ThreadPoolExecutor(16) as ex:
+        list(ex.map(lambda i: buses[i % 4].publish("hot", {"n": i}), range(200)))
+    assert all(b._broken.error is None for b in buses)
+    got = []
+    last = 0
+    while True:
+        page = RedisBus(REDIS, prefix=prefix).since("hot", last, 100)
+        if not page:
+            break
+        got += page
+        last = page[-1][0]
+    assert [s for s, _ in got] == list(range(1, 201))
+    assert sorted(m["n"] for _, m in got) == list(range(200))

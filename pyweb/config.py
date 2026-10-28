@@ -21,6 +21,9 @@ Variable                       Default      Meaning
 ``PYWEB_REDIS_URL``            (none)       share rate limits and live updates across servers
 ``PYWEB_MAX_CONNECTIONS``      10000        simultaneous connections per server process
 ``PYWEB_THREADS``              32           threads per process rendering pages and running RPCs
+``PYWEB_DB_POOL``              10           database connections per process (per database)
+``PYWEB_MAX_QUEUE``            256          requests waiting for a thread before new ones get 503
+``PYWEB_SHUTDOWN_TIMEOUT``     25           seconds to finish requests and jobs on SIGTERM
 ``PYWEB_SOCKET_TIMEOUT``       30           seconds before a stalled client is dropped
 ``PYWEB_MAX_STREAMS_PER_CLIENT`` 20         open live connections per client address
 ``PYWEB_RENDER_TIMEOUT``       30           seconds a page may take to render (504 after)
@@ -108,6 +111,8 @@ class Settings:
     max_streams_per_client: int = 20
     render_timeout: int = 30
     max_upload: int = 10 * 1024 * 1024
+    max_queue: int = 256
+    shutdown_timeout: int = 25
 
     @property
     def production(self):
@@ -132,6 +137,8 @@ class Settings:
             max_streams_per_client=_int("PYWEB_MAX_STREAMS_PER_CLIENT", env, 20),
             render_timeout=_int("PYWEB_RENDER_TIMEOUT", env, 30),
             max_upload=_size("PYWEB_MAX_UPLOAD", env, 10 * 1024 * 1024),
+            max_queue=_int("PYWEB_MAX_QUEUE", env, 256, minimum=0),
+            shutdown_timeout=_int("PYWEB_SHUTDOWN_TIMEOUT", env, 25),
         )
 
 
@@ -140,7 +147,7 @@ class Settings:
 _KEYS = ("PYWEB_ENV", "PYWEB_AUTH_SECRET", "PYWEB_AUTH_SECRET_PREVIOUS", "PYWEB_CSRF_SECRET",
          "PYWEB_COOKIE_SECURE", "PYWEB_CSP", "PYWEB_TRUST_PROXY", "PYWEB_REDIS_URL", "PYWEB_MAX_CONNECTIONS",
          "PYWEB_THREADS", "PYWEB_SOCKET_TIMEOUT", "PYWEB_MAX_STREAMS_PER_CLIENT", "PYWEB_RENDER_TIMEOUT",
-         "PYWEB_MAX_UPLOAD")
+         "PYWEB_MAX_UPLOAD", "PYWEB_MAX_QUEUE", "PYWEB_SHUTDOWN_TIMEOUT")
 _cached: tuple = (None, None)
 _encoded = None
 

@@ -75,6 +75,12 @@ def put(kind, k, data):
 
 def _prune(folder):
     try:
+        now = __import__("time").time()
+        for n in os.listdir(folder):              # temp files a crashed write left behind
+            if n.startswith(".tmp-"):
+                path = os.path.join(folder, n)
+                if now - os.path.getmtime(path) > 3600:
+                    os.remove(path)
         names = [n for n in os.listdir(folder) if n.endswith(".bin")]
         if len(names) <= KEEP:
             return

@@ -36,6 +36,24 @@ CRON_KEY_DAYS = 2              # a schedule slot's key blocks duplicates this lo
 WORKERS: "weakref.WeakSet[Worker]" = weakref.WeakSet()
 
 
+_BUILTIN = {"pyweb.webhooks.deliver": ("pyweb.webhooks", "_register"),
+            "pyweb.push.deliver": ("pyweb.push", "_job")}
+
+
+def _builtin(name):
+    """PyWeb's own jobs that register on first use (a worker that never sent one must still run them)."""
+    where = _BUILTIN.get(name)
+    if where is None:
+        return None
+    import importlib
+    try:
+        getattr(importlib.import_module(where[0]), where[1])()
+    except Exception:  # noqa: BLE001 - e.g. an optional dependency is missing
+        log.exception("couldn't load PyWeb's job %s", name)
+        return None
+    return core.REGISTRY.get(name)
+
+
 class _LostLease(Exception):
     pass
 
@@ -64,6 +82,7 @@ class Worker:
         self.poll = poll
         self.name = name or f"{socket.gethostname()}:{os.getpid()}"
         self.running: dict[str, _Running] = {}
+        self.overdue: dict[str, _Running] = {}     # timed out, but the thread hasn't returned yet
         self.lock = threading.Lock()
         self.wake = threading.Event()
         self.stopping = threading.Event()
@@ -154,7 +173,9 @@ class Worker:
             run_schedules(self.backend, now=now, started_at=self.started_at)
             self._next_schedule = min(now + SCHEDULE_EVERY, next_due(now))
         with self.lock:
-            free = self.concurrency - len(self.running)
+            # A timed-out job's thread can't be stopped, only told to: it keeps its slot until it
+            # returns, so a stuck job can't make the worker run more threads than ``concurrency``.
+            free = self.concurrency - len(self.running) - len(self.overdue)
         if free <= 0 or self.stopping.is_set():
             return 0
         claims = self.backend.claim(self.queue_names(), self.name, free, now=now)
@@ -176,6 +197,10 @@ class Worker:
             overdue = [r for r in self.running.values() if r.deadline < now]
             for r in overdue:
                 self.running.pop(r.claim["id"], None)
+                self.overdue[r.claim["id"]] = r       # still holds its slot until its thread returns
+            for key, r in list(self.overdue.items()):
+                if r.thread is None or not r.thread.is_alive():
+                    del self.overdue[key]
         for r in overdue:
             r.ctx.cancelled.set()
             telemetry.instruments.jobs_done.inc(job=r.claim["name"], outcome="timeout")
@@ -185,9 +210,14 @@ class Worker:
     def _execute(self, run):
         claim, b = run.claim, self.backend
         try:
-            definition = core.REGISTRY.get(claim["name"])
+            definition = core.REGISTRY.get(claim["name"]) or _builtin(claim["name"])
             if definition is None:
-                b.fail(claim["id"], claim["token"], f"no job named {claim['name']!r} in this app")
+                # Usually a deploy in progress: an older worker sees a job the new code queued. Try
+                # again later (using up an attempt) rather than giving up at once.
+                retry_at = time.time() + 60.0 * claim["attempt"] if claim["attempt"] < claim["max_attempts"] else None
+                log.warning("job %s: no job named %r in this worker%s", claim["id"], claim["name"],
+                            "; trying again later" if retry_at else "")
+                b.fail(claim["id"], claim["token"], f"no job named {claim['name']!r} in this app", retry_at)
                 return
             if claim["attempt"] > claim["max_attempts"]:
                 b.fail(claim["id"], claim["token"],
@@ -241,6 +271,8 @@ class Worker:
             with self.lock:
                 if self.running.get(claim["id"]) is run:
                     del self.running[claim["id"]]
+                if self.overdue.get(claim["id"]) is run:
+                    del self.overdue[claim["id"]]
             self.wake.set()
 
     def _still_mine(self, claim):

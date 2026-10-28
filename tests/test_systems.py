@@ -42,9 +42,39 @@ def test_redis_rate_limit_is_shared_between_processes():
     assert not ok and 1 <= retry <= 61
 
 
+@pytest.mark.skipif(not REDIS, reason="set PYWEB_TEST_REDIS to run Redis tests")
+def test_redis_rate_limit_holds_under_concurrent_calls():
+    from concurrent.futures import ThreadPoolExecutor
+    prefix = f"pyweb:test:rl:{time.time()}:"
+    lims = [rpc.RedisRateLimiter(REDIS, max_calls=10, window=60, prefix=prefix) for _ in range(4)]
+    with ThreadPoolExecutor(16) as ex:
+        got = list(ex.map(lambda i: lims[i % 4].allow("hot")[0], range(80)))
+    assert sum(got) == 10
+
+
+def test_redis_errors_pause_redis_for_a_while_not_forever(monkeypatch):
+    from pyweb import redisutil
+    calls = []
+
+    class Flaky:
+        def eval(self, *a):
+            calls.append(1)
+            if len(calls) == 1:
+                raise ConnectionError("blip")
+            return [1, b"0"]
+    lim = rpc.RedisRateLimiter(client=Flaky(), max_calls=5, window=60)
+    clock = [1000.0]
+    monkeypatch.setattr(redisutil.time, "monotonic", lambda: clock[0])
+    assert lim.allow("k")[0] and len(calls) == 1          # failed: limited in this process
+    assert lim.allow("k")[0] and len(calls) == 1          # Redis is left alone for a few seconds
+    clock[0] += redisutil.RETRY_AFTER + 0.1
+    assert lim.allow("k")[0] and len(calls) == 2          # then tried again, and used
+    assert lim._broken.error is None
+
+
 def test_redis_rate_limit_falls_back_when_redis_is_down():
     class Down:
-        def pipeline(self):
+        def eval(self, *a):
             raise ConnectionError("no redis")
     lim = rpc.RedisRateLimiter(client=Down(), max_calls=1, window=60)
     assert lim.allow("k")[0] and not lim.allow("k")[0]          # still limited, in this process
@@ -124,6 +154,33 @@ def test_redis_cache_refuses_pickle_unless_allowed():
     trusting = RedisCache(client=r, allow_pickle=True)
     trusting.set("obj", {1, 2})
     assert trusting.get("obj") == {1, 2}
+
+
+@pytest.mark.skipif(not REDIS, reason="set PYWEB_TEST_REDIS to run Redis tests")
+def test_redis_cache_clears_only_its_own_keys_and_works_with_the_decorator():
+    import redis
+
+    from pyweb.cache import cache as cached
+    from pyweb.cache import swr
+    r = redis.Redis.from_url(REDIS)
+    prefix = f"pyweb:test:cache:{time.time()}:"
+    r.set(prefix + "not-the-cache", b"keep")
+    store = RedisCache(REDIS, prefix=prefix)
+    store.set("a", 1, ttl=30, tags=["t"])
+    assert 0 < r.ttl(prefix + "tag:t") <= 30                     # tags expire with their keys
+    calls = []
+
+    @cached(minutes=1, backend=store)
+    def double(n):
+        calls.append(n)
+        return n * 2
+    assert double(2) == 4 and double(2) == 4 and calls == [2]
+    double.cache_invalidate()
+    assert double(2) == 4 and calls == [2, 2] and store.get("a") == 1   # only that function's entries
+    assert swr(store, "s", lambda: "v")[1] == "miss" and swr(store, "s", lambda: "v")[1] == "fresh"
+    store.clear()
+    assert store.get("a") is None and r.get(prefix + "not-the-cache") == b"keep"
+    r.delete(prefix + "not-the-cache")
 
 
 def test_healthz_bodies_are_json(tmp_path):

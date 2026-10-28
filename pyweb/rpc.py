@@ -138,34 +138,39 @@ class RedisRateLimiter(RateLimiter):
     def __init__(self, url="redis://localhost:6379/0", client=None, max_calls: int = 60,
                  window: float = 60.0, prefix="pyweb:rl:"):
         super().__init__(max_calls=max_calls, window=window)
-        if client is None:
-            import redis  # noqa: PLC0415 - optional dependency
-            client = redis.Redis.from_url(url)
-        self._r, self._prefix = client, prefix
-        self._broken = None
+        from .redisutil import Breaker
+        from .redisutil import client as _client
+        self._r, self._prefix = client if client is not None else _client(url), prefix
+        self._broken = Breaker("rate limits")
+
+    # One round trip, atomic: concurrent calls from several servers can't all slip under the limit.
+    _SCRIPT = """
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, tonumber(ARGV[1]) - tonumber(ARGV[2]))
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[3]) then
+  local first = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+  return {0, first[2] or ARGV[1]}
+end
+redis.call('ZADD', KEYS[1], ARGV[1], ARGV[4])
+redis.call('PEXPIRE', KEYS[1], ARGV[5])
+return {1, '0'}
+"""
 
     def allow(self, key: str) -> tuple[bool, int]:
-        if self._broken is not None:
+        if not self._broken.ok():
             return super().allow(key)
         now = time.time()
-        k = self._prefix + key
         try:
-            pipe = self._r.pipeline()
-            pipe.zremrangebyscore(k, 0, now - self.window)
-            pipe.zcard(k)
-            pipe.zrange(k, 0, 0, withscores=True)
-            _, count, oldest = pipe.execute()
-            if count >= self.max_calls:
-                first = oldest[0][1] if oldest else now
-                return False, max(int(self.window - (now - first)) + 1, 1)
-            pipe = self._r.pipeline()
-            pipe.zadd(k, {f"{now}:{uuid.uuid4().hex[:8]}": now})
-            pipe.pexpire(k, int(self.window * 1000) + 1000)
-            pipe.execute()
-            return True, 0
+            ok, first = self._r.eval(self._SCRIPT, 1, self._prefix + key, repr(now), repr(self.window),
+                                     self.max_calls, f"{now}:{uuid.uuid4().hex[:8]}",
+                                     int(self.window * 1000) + 1000)
         except Exception as exc:  # noqa: BLE001 - degrade to per-process limits, never fail the request
-            self._broken = exc
+            self._broken.failed(exc)
             return super().allow(key)
+        self._broken.worked()
+        if int(ok):
+            return True, 0
+        first = float(first.decode() if isinstance(first, bytes) else first)
+        return False, max(int(self.window - (now - first)) + 1, 1)
 
 
 def default_rate_limiter(max_calls=120, window=60.0):

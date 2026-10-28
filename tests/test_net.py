@@ -665,3 +665,51 @@ def test_a_ping_flood_closes_the_socket():
     out = asyncio.run(run())
     assert out.count(W2.frame(W2.PONG, b"p")) == NS.PING_LIMIT
     assert W2.close_frame(W2.POLICY, "too many pings") in out
+
+
+SLOW = '''
+import threading
+from pyweb import App, server
+
+app = App(title="Slow")
+GATE = threading.Event()
+
+@server
+def wait() -> str:
+    GATE.wait(10)
+    return "done"
+
+@app.page("/")
+def Home():
+    <p>hi</p>
+'''
+
+
+def test_health_answers_with_every_thread_busy_and_overload_gets_503(tmp_path, monkeypatch):
+    import threading
+
+    from pyweb.hosting import Site
+    from pyweb.net.server import Running
+    monkeypatch.setenv("PYWEB_THREADS", "1")
+    monkeypatch.setenv("PYWEB_MAX_QUEUE", "1")
+    (tmp_path / "app.pyweb").write_text(SLOW)
+    site = Site(str(tmp_path / "app.pyweb"), debug=True, rate_limit=False)
+    r = Running(site)
+    body = b'{"args": [], "kwargs": {}}'
+    call = (b"POST /__pyweb/rpc/wait HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"
+            b"Origin: http://127.0.0.1\r\nContent-Length: " + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n"
+            + body)
+    try:
+        held = [threading.Thread(target=raw, args=(r, call), kwargs={"wait": 0, "timeout": 8}) for _ in range(2)]
+        for t in held:                       # one runs, one waits in the queue
+            t.start()
+            time.sleep(0.2)
+        out = raw(r, b"GET /healthz HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n", wait=0.2)
+        assert out.startswith(b"HTTP/1.1 200") and b'"ok": true' in out          # the event loop answers
+        out = raw(r, call, wait=0.3, timeout=2)
+        assert out.startswith(b"HTTP/1.1 503") and b"Retry-After: 2" in out        # past the queue: refused
+    finally:
+        site.app.module.GATE.set()
+        for t in held:
+            t.join(10)
+        r.stop(timeout=1)

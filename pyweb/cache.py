@@ -25,6 +25,11 @@ class Cache:
     def invalidate_tag(self, tag):
         raise NotImplementedError
 
+    def lookup(self, key):
+        """``(value, hit)`` on every backend (``MemoryCache.get`` returns this; ``RedisCache.get`` a value)."""
+        value = self.get_value(key, _MISS)
+        return (None, False) if value is _MISS else (value, True)
+
 
 class MemoryCache(Cache):
     def __init__(self, time_fn=None):
@@ -138,19 +143,15 @@ class RedisCache(Cache):
     because reading a pickle can run arbitrary code.
     """
 
+    _now = staticmethod(time.time)          # shared by every process (for swr)
+
     def __init__(self, url="redis://localhost:6379/0", client=None, prefix="pyweb:", allow_pickle=False):
         self.allow_pickle = allow_pickle
         if client is not None:
             self._r = client
         else:
-            try:
-                import redis
-            except ImportError as e:
-                raise RuntimeError(
-                    "RedisCache requires the 'redis' package, which is not "
-                    "installed. Install it with: pip install redis"
-                ) from e
-            self._r = redis.Redis.from_url(url)
+            from .redisutil import client as _client
+            self._r = _client(url)
         self._prefix = prefix
 
     def _k(self, key):
@@ -159,10 +160,21 @@ class RedisCache(Cache):
     def _t(self, tag):
         return f"{self._prefix}tag:{tag}"
 
-    def set(self, key, value, ttl=None, tags=()):
-        self._r.set(self._k(key), _dumps(value, self.allow_pickle), ex=ttl)
+    def set(self, key, value, ttl=None, tags=(), **kw):
+        if kw.get("minutes") is not None:
+            ttl = kw["minutes"] * 60
+        ex = None if ttl is None else max(1, int(-(-ttl // 1)))
+        self._r.set(self._k(key), _dumps(value, self.allow_pickle), ex=ex)
         for t in tags:
-            self._r.sadd(self._t(t), self._k(key))
+            tk = self._t(t)
+            self._r.sadd(tk, self._k(key))
+            # A tag's set lives as long as its longest-lived key, so tags of expired keys go away.
+            if ex is None:
+                self._r.persist(tk)
+            else:
+                left = int(self._r.ttl(tk))          # -1: no expiry (new, or holds a key without one)
+                if 0 <= left < ex or (left == -1 and int(self._r.scard(tk)) == 1):
+                    self._r.expire(tk, ex)
 
     def get(self, key, default=None):
         raw = self._r.get(self._k(key))
@@ -171,11 +183,23 @@ class RedisCache(Cache):
         value = _loads(bytes(raw), self.allow_pickle)
         return default if value is _MISS else value
 
+    def get_value(self, key, default=None):
+        return self.get(key, default)
+
     def delete(self, key):
         return bool(self._r.delete(self._k(key)))
 
     def clear(self):
-        self._r.flushdb()
+        """Delete this cache's keys (the ones under its prefix), nothing else in the database."""
+        batch = []
+        for pattern in (f"{self._prefix}k:*", f"{self._prefix}tag:*"):
+            for k in self._r.scan_iter(match=pattern, count=500):
+                batch.append(k)
+                if len(batch) >= 500:
+                    self._r.delete(*batch)
+                    batch = []
+        if batch:
+            self._r.delete(*batch)
 
     def invalidate_tag(self, tag):
         members = [m if isinstance(m, bytes) else str(m).encode("utf-8")
@@ -203,24 +227,27 @@ def cache(_fn=None, *, minutes=5, tags=(), backend=None):
     store = backend or MemoryCache()
 
     def deco(fn):
+        own = f"fn:{fn.__module__}.{fn.__qualname__}"
+
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             key = _key(fn, args, kwargs)
-            value, hit = store.get(key)
+            value, hit = store.lookup(key)
             if hit:
                 return value
             value = fn(*args, **kwargs)
-            store.set(key, value, ttl=minutes * 60, tags=tags if isinstance(tags, (list, tuple)) else [tags])
+            store.set(key, value, ttl=minutes * 60,
+                      tags=[own, *(tags if isinstance(tags, (list, tuple)) else [tags])])
             return value
         wrapper.cache_store = store
-        wrapper.cache_invalidate = lambda: store.clear()
+        wrapper.cache_invalidate = lambda: store.invalidate_tag(own)      # this function's entries only
         return wrapper
     return deco(_fn) if _fn else deco
 
 
 def swr(store, key, loader, *, ttl=60, stale=300):
     """Stale-while-revalidate: serve stale copy, refresh in background."""
-    value, hit = store.get("__swr__" + key)
+    value, hit = store.lookup("__swr__" + key)
     now = store._now()
     if hit:
         data, ts = value

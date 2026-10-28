@@ -237,6 +237,7 @@ async def respond_within(site, start, method, path, headers):
     finally:
         timer.cancel()
     if winner is None:
+        fut.cancel()           # still waiting for a thread: don't run it at all (running work can't be stopped)
         return site.timed_out(method, path, headers)
     return winner.result()
 

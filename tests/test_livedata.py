@@ -108,6 +108,20 @@ def test_one_rerun_per_change_shared_by_every_viewer(bus, db, monkeypatch):
     assert len(bus.since(chan, 0)) == 1
 
 
+def test_a_render_between_a_write_and_the_re_run_doesnt_swallow_the_change(bus, db):
+    """A page rendered after a write (but before the watcher re-ran) moves the query's rows on;
+    browsers that loaded the page earlier still get the change."""
+    sql = "select id, title from todos order by id"
+    entry = livedata.REGISTRY.add(db, sql, (), ["todos"])
+    entry.run()                                                          # page A rendered: no rows
+    old = entry.version
+    db.execute("insert into todos (title) values (?)", ("a",))
+    entry.run()                                                          # page B rendered: one row
+    livedata.REGISTRY.check()
+    [(_s, msg)] = bus.since(livedata.LIVE_CHANNEL + entry.key, 0)
+    assert msg["version"] == entry.version != old and msg["rows"][0]["title"] == "a"   # page A catches up
+
+
 def test_forgotten_after_idle_unless_watched(bus, db, monkeypatch):
     entry = livedata.REGISTRY.add(db, "select * from todos", (), ["todos"])
     livedata.REGISTRY.watching(entry.key, 1)

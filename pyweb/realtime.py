@@ -147,17 +147,10 @@ class RedisBus(Bus):
                  prefix="pyweb:"):
         super().__init__()
         self._prefix = prefix
-        if client is not None:
-            self._r = client
-        else:
-            try:
-                import redis
-            except ImportError as e:
-                raise RuntimeError(
-                    "RedisBus requires the 'redis' package: "
-                    "pip install redis") from e
-            self._r = redis.Redis.from_url(url)
-        self._broken = None
+        from .redisutil import Breaker
+        from .redisutil import client as _client
+        self._r = client if client is not None else _client(url)
+        self._broken = Breaker("live updates")
 
     def _stream_key(self, channel_name):
         return f"{self._prefix}stream:{channel_name}"
@@ -168,6 +161,15 @@ class RedisBus(Bus):
     def _seq_key(self, channel_name):
         return f"{self._prefix}seq:{channel_name}"
 
+    # Number, store and announce in one atomic step: two servers publishing at once can't end up
+    # with stream ids out of order (which made Redis refuse the second one).
+    _PUBLISH = """
+local seq = redis.call('INCR', KEYS[1])
+redis.call('XADD', KEYS[2], 'MAXLEN', '~', 1000, seq .. '-1', 'body', ARGV[1])
+redis.call('PUBLISH', KEYS[3], ARGV[1])
+return seq
+"""
+
     def publish(self, channel_name, message):
         """Publish to local subscribers and to Redis.
 
@@ -176,34 +178,33 @@ class RedisBus(Bus):
         ``since(last_id)`` resumes exactly where a client left off.
         """
         import json as _json
-        if self._broken:
+        if not self._broken.ok():
             return super().publish(channel_name, message)
         try:
             body = message if isinstance(message, str) else _json.dumps(message)
-            seq = int(self._r.incr(self._seq_key(channel_name)))
-            self._r.xadd(self._stream_key(channel_name), {"body": body},
-                         id=f"{seq}-1", maxlen=1000, approximate=True)
-            self._r.publish(self._pub_key(channel_name), body)
+            seq = int(self._r.eval(self._PUBLISH, 3, self._seq_key(channel_name), self._stream_key(channel_name),
+                                   self._pub_key(channel_name), body))
         except Exception as exc:  # noqa: BLE001 — degrade, don't crash app
-            self._broken = exc
+            self._broken.failed(exc)
             return super().publish(channel_name, message)
+        self._broken.worked()
         with self._lock:
             self._seq = max(self._seq, seq)
             self._remember(channel_name, (seq, message))
         return self.channel(channel_name).publish(message)
 
     def position(self, channel_name):
-        if self._broken:
+        if not self._broken.ok():
             return super().position(channel_name)
         try:
             return int(self._r.get(self._seq_key(channel_name)) or 0)
         except Exception as exc:  # noqa: BLE001
-            self._broken = exc
+            self._broken.failed(exc)
             return super().position(channel_name)
 
     def since(self, channel_name, last_id=0, limit=50):
         """Messages after ``last_id`` from the shared Redis stream."""
-        if self._broken:
+        if not self._broken.ok():
             return super().since(channel_name, last_id, limit)
         try:
             import json as _json
@@ -221,7 +222,7 @@ class RedisBus(Bus):
                     out.append((seq, body))
             return out
         except Exception as exc:  # noqa: BLE001
-            self._broken = exc
+            self._broken.failed(exc)
             return super().since(channel_name, last_id, limit)
 
     def history(self, channel_name, limit=50):

@@ -28,6 +28,8 @@ auth_events = REGISTRY.counter("pyweb_auth_events_total", "Sign-in activity", ("
 csp_violations = REGISTRY.counter("pyweb_csp_violations_total", "Content-Security-Policy violations browsers "
                                   "reported", ("directive",))
 errors = REGISTRY.counter("pyweb_errors_total", "Unhandled errors", ("where",))
+redis_errors = REGISTRY.counter("pyweb_redis_errors_total", "Redis errors (each pauses Redis use for a few seconds)",
+                                ("what",))
 
 
 def _sockets():

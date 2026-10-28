@@ -45,6 +45,38 @@ project uses [semantic versioning](https://semver.org).
   the compile cache is read only from a folder and files only you can
   write.
 
+### Fixed (reliability)
+- **Dropped database connections recover.** A connection the server closed
+  (restart, failover, idle timeout) is replaced instead of failing every
+  request that later draws it from the pool; a read on one is retried once
+  on a fresh connection; a transaction pings a connection that sat idle.
+- **Redis live updates and rate limits** no longer turn themselves off for
+  good after one error: they work without Redis for 5 seconds and try
+  again. Two servers publishing to one channel at once can't make Redis
+  refuse a message anymore (number, store and announce are one atomic
+  script), and the shared rate limit can't be overshot by concurrent calls.
+  Redis clients get 2-second timeouts.
+- **Live queries** no longer miss a change when a page render picked up the
+  new rows before the watcher re-ran.
+- **`RedisCache`:** `clear()` deletes only the cache's own keys (it used to
+  empty the whole Redis database); `@cache(backend=RedisCache(...))` and
+  `swr()` work with it; tag sets expire with their keys.
+- **Jobs:** PyWeb's own jobs (webhooks, push) run in a worker that never
+  queued one; a job name a worker doesn't know is retried later (a deploy in
+  progress) instead of dying at once; a timed-out job keeps its slot until
+  its thread really returns.
+- **Overload and shutdown:** requests waiting for a thread beyond
+  `PYWEB_MAX_QUEUE` (256) get `503` with `Retry-After`; work still queued
+  when its time limit passes isn't started; `/healthz` is answered even with
+  every thread busy, and `/readyz` says 503 while draining; jobs and
+  requests wind down together within `PYWEB_SHUTDOWN_TIMEOUT` (25 s).
+- Streamed server functions run every step on one thread; a WebSocket
+  handshake that fails gives its slot back; the Redis job store's cleanup
+  reaches every job; failures in the live-data watcher are logged.
+
+### Added
+- `PYWEB_DB_POOL` (default 10): database connections per process.
+
 ### Changed
 - `pyweb serve` and `pyweb.asgi.create_app()` refuse to start without
   `PYWEB_AUTH_SECRET` (set `PYWEB_ENV=development` to run without one).

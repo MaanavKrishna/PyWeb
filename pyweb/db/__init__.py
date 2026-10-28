@@ -376,7 +376,7 @@ class _PooledDB:
             pending, self._local.pending = getattr(self._local, "pending", None), None
             callbacks, self._local.callbacks = getattr(self._local, "callbacks", None), None
             finals, self._local.finals = getattr(self._local, "finals", None), None
-            self._pool.put(conn)
+            self._release(conn)
         if commit and pending:
             from pyweb import livedata
             livedata.table_changed(self, *pending)
@@ -431,6 +431,7 @@ class _PooledDB:
         self._pool_size = max(1, pool_size)
         self._pool_timeout = timeout
         self._created = 0
+        self._idle_since = {}          # id(conn) -> when it went back to the pool
         self._create_lock = threading.Lock()
         self._local = threading.local()
         self._stmt_cache_size = statement_cache
@@ -472,22 +473,74 @@ class _PooledDB:
         else:
             livedata.table_changed(self, table)
 
-    def _acquire(self):
+    # -- connections that died (server restart, failover, idle timeout) ---------------
+    def _dead(self, conn, exc=None):
+        """Is ``conn`` unusable? (Checked cheaply: the driver's own flags, or the error just raised.)"""
+        return False
+
+    def _discard(self, conn):
+        """Drop a dead connection so the pool can open a fresh one in its place."""
+        with self._create_lock:
+            self._created = max(0, self._created - 1)
         try:
-            return self._pool.get_nowait()
-        except queue.Empty:
+            conn.close()
+        except Exception:  # noqa: BLE001 - it's dead already
             pass
+        self._org_seen.pop(conn, None)
+        self._idle_since.pop(id(conn), None)
+
+    def _release(self, conn):
+        """Return ``conn`` to the pool, unless it died while in use."""
+        if self._dead(conn):
+            self._discard(conn)
+        else:
+            self._idle_since[id(conn)] = time.monotonic()
+            self._pool.put(conn)
+
+    ping_after = 5.0     # seconds idle before a transaction checks its connection first
+
+    def _acquire_checked(self):
+        """A connection for a transaction (which can't be retried on another one): one that sat
+        idle for a while is pinged first, and replaced if the server dropped it meanwhile."""
+        for _ in range(3):
+            conn = self._acquire()
+            idle = self._idle_since.pop(id(conn), None)
+            if idle is None or time.monotonic() - idle < self.ping_after:
+                return conn
+            try:
+                self._raw(conn, "SELECT 1")
+                return conn
+            except Exception as exc:  # noqa: BLE001
+                if not self._dead(conn, exc):
+                    self._pool.put(conn)
+                    raise
+                self._discard(conn)
+        return self._acquire()
+
+    def _acquire(self):
+        while True:
+            try:
+                conn = self._pool.get_nowait()
+            except queue.Empty:
+                break
+            if not self._dead(conn):
+                return conn
+            self._discard(conn)
         with self._create_lock:
             if self._created < self._pool_size:
                 conn = self._connect()
                 self._created += 1
                 return conn
         try:
-            return self._pool.get(timeout=self._pool_timeout)
+            conn = self._pool.get(timeout=self._pool_timeout)
         except queue.Empty:
             raise TransientDBError(
                 f"no database connection available within {self._pool_timeout}s "
-                f"(pool_size={self._pool_size})") from None
+                f"(pool_size={self._pool_size}; raise it with PYWEB_DB_POOL)") from None
+        if self._dead(conn):
+            self._discard(conn)
+            return self._acquire()
+        return conn
 
     def _adapt(self, sql, params):
         """Rewrite portable ``?`` placeholders for ``format``-style drivers."""
@@ -553,9 +606,13 @@ class _PooledDB:
             conn = self._acquire()
         setting = _rls_setting(self, sql)
         sql = self._adapt(sql, params)
+        reconnected = False
         try:
             last: Exception | None = None
-            for _ in range(max(1, attempts)):
+            tries = max(1, attempts)
+            i = 0
+            while i < tries:
+                i += 1
                 try:
                     if setting is not None:
                         self._set_org(conn, setting, cache=owned)
@@ -585,6 +642,18 @@ class _PooledDB:
                         # transaction's earlier writes while later ones still commit.
                         # transaction() rolls back if the error escapes it.
                         raise
+                    if self._dead(conn, exc):
+                        # The connection died (the server restarted, a failover, an idle timeout):
+                        # replace it. A read is tried once more on the new one; a write isn't
+                        # (it may have been applied before the connection dropped).
+                        self._discard(conn)
+                        conn = None
+                        if reconnected or not _is_read(sql):
+                            raise
+                        reconnected = True
+                        conn = self._acquire()
+                        i -= 1
+                        continue
                     try:
                         conn.rollback()
                     except Exception:
@@ -594,8 +663,8 @@ class _PooledDB:
             raise TransientDBError(
                 f"transient failure after {attempts} attempts: {last}")
         finally:
-            if owned:
-                self._pool.put(conn)
+            if owned and conn is not None:
+                self._release(conn)
 
     def stream(self, sql, params=(), *, chunksize=1000):
         """Yield ``Result`` pages without loading the full result set."""
@@ -623,7 +692,7 @@ class _PooledDB:
                 pass
         finally:
             if owned:
-                self._pool.put(conn)
+                self._release(conn)
 
     @contextmanager
     def transaction(self):
@@ -652,11 +721,11 @@ class _PooledDB:
             finally:
                 self._local.depth = depth - 1
             return
-        conn = self._acquire()
+        conn = self._acquire_checked()
         try:
             prev = self._begin(conn)
         except BaseException:
-            self._pool.put(conn)
+            self._release(conn)
             raise
         try:
             yield self
@@ -752,11 +821,11 @@ class SQLiteDB(_PooledDB):
             conn.execute("PRAGMA foreign_keys = ON")
             if self._local.conn is not None:
                 self._local.conn = None
-            self._pool.put(conn)
+            self._release(conn)
             raise
         conn.execute("PRAGMA foreign_keys = ON")
         self._local.conn = None
-        self._pool.put(conn)
+        self._release(conn)
 
 
 def snapshot(models):
@@ -842,6 +911,17 @@ class PostgresDB(_PooledDB):
             pass
         return conn
 
+    def _dead(self, conn, exc=None):
+        if getattr(conn, "broken", False) or getattr(conn, "closed", False):     # psycopg 3 / psycopg2
+            return True
+        if exc is not None and self._psycopg is not None:
+            kinds = tuple(k for k in (getattr(self._psycopg, "OperationalError", None),
+                                      getattr(self._psycopg, "InterfaceError", None)) if k)
+            if kinds and isinstance(exc, kinds):
+                code = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
+                return code is None or str(code).startswith(("08", "57P"))   # connection / shutdown
+        return False
+
     def _is_transient(self, exc):
         code = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
         if code in self.TRANSIENT_CODES:
@@ -915,6 +995,11 @@ class MySQLDB(_PooledDB):
     def _connect(self):
         return self._factory()
 
+    def _dead(self, conn, exc=None):
+        if getattr(conn, "open", True) is False:                                  # PyMySQL
+            return True
+        return exc is not None and getattr(exc, "errno", None) in (2006, 2013, 2055)   # server gone / lost
+
     def _is_transient(self, exc):
         code = getattr(exc, "errno", None)
         if code in self.TRANSIENT_CODES:
@@ -936,10 +1021,21 @@ def connect(url: str, *, replica=None, **kwargs):
     return db
 
 
+def default_pool_size():
+    """``PYWEB_DB_POOL``, else 10: connections each process may open to one database."""
+    raw = os.environ.get("PYWEB_DB_POOL", "").strip()
+    try:
+        return max(1, int(raw)) if raw else 10
+    except ValueError:
+        raise ValueError(f"PYWEB_DB_POOL must be a whole number, not {raw!r}") from None
+
+
 def _connect_url(url, **kwargs):
     from urllib.parse import urlparse as _up
     if url in (":memory:", "sqlite:///:memory:", "sqlite://"):
         return SQLiteDB(":memory:")
+    if kwargs.get("pool_size") is None:
+        kwargs["pool_size"] = default_pool_size()
     u = _up(url)
     scheme = u.scheme.lower()
     if scheme in ("sqlite", "sqlite3", ""):
@@ -1001,11 +1097,11 @@ class _Scope:
         self.open = []          # (db, conn, prev_autocommit, thread id)
 
     def begin(self, db):
-        conn = db._acquire()
+        conn = db._acquire_checked()
         try:
             prev = db._begin(conn)
         except BaseException:
-            db._pool.put(conn)
+            db._release(conn)
             raise
         self.open.append((db, conn, prev))
         return conn

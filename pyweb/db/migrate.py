@@ -217,7 +217,7 @@ def lock(db, name=LOCK_NAME, *, timeout=600.0, poll=0.25):
                 except Exception:
                     pass
         finally:
-            db._pool.put(conn)
+            db._release(conn)
         return
     # A row in pyweb_locks: works everywhere, including SQLite files shared by processes.
     real = {"sqlite": "REAL", "postgres": "DOUBLE PRECISION", "mysql": "DOUBLE"}[d.name]

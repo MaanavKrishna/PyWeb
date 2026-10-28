@@ -217,14 +217,60 @@ def test_timeouts_count_as_failed_attempts(store):
     assert store.get(h.id)["state"] == "dead"          # and its late result was ignored
 
 
-def test_unknown_jobs_go_dead(store):
-    store.enqueue(name="no_such_job", queue="default", payload="{}", run_at=time.time(), max_attempts=3,
+def test_a_timed_out_job_keeps_its_slot_until_its_thread_returns(store):
+    release = threading.Event()
+
+    @define(retries=0, timeout=0.1)
+    def stuck():
+        release.wait(5)                     # ignores being told to stop
+
+    @define()
+    def quick():
+        return 1
+
+    w = jobs.Worker(store, schedule=False, concurrency=1)
+    stuck.enqueue()
+    w.tick()
+    time.sleep(0.25)
+    h = quick.enqueue()
+    w.tick()                                 # times out `stuck`; its thread still runs
+    time.sleep(0.05)
+    assert w.tick() == 0 and store.get(h.id)["state"] == "queued"
+    release.set()
+    time.sleep(0.1)
+    assert settle(store, h)["state"] == "done"
+
+
+def test_unknown_jobs_wait_for_a_worker_that_knows_them(store):
+    """An older worker during a deploy: the job is tried again later, and only dies after its attempts."""
+    store.enqueue(name="no_such_job", queue="default", payload="{}", run_at=time.time(), max_attempts=2,
                   timeout=30)
     w = jobs.Worker(store, schedule=False)
     w.tick()
     time.sleep(0.2)
     [rec] = store.list(name="no_such_job")
-    assert rec["state"] == "dead" and "no job named" in rec["last_error"]
+    assert rec["state"] == "queued" and rec["run_at"] > time.time() + 30 and "no job named" in rec["last_error"]
+    store.enqueue(name="no_such_job_2", queue="default", payload="{}", run_at=time.time(), max_attempts=1,
+                  timeout=30)
+    w.tick()
+    time.sleep(0.2)
+    [rec] = store.list(name="no_such_job_2")
+    assert rec["state"] == "dead"
+
+
+def test_pyweb_s_own_jobs_run_in_a_worker_that_never_queued_one(store, monkeypatch):
+    core.REGISTRY.pop("pyweb.webhooks.deliver", None)
+    ran = []
+    from pyweb import webhooks
+    monkeypatch.setattr(webhooks, "_deliver", lambda *a: ran.append(a))
+    store.enqueue(name="pyweb.webhooks.deliver", queue="default", payload='{"args": [1, "u", "s", "m", "t", {}]}',
+                  run_at=time.time(), max_attempts=3, timeout=30)
+    jobs.Worker(store, schedule=False).tick()
+    deadline = time.time() + 5
+    while not ran and time.time() < deadline:
+        time.sleep(0.02)
+    assert ran == [(1, "u", "s", "m", "t", {})]
+    core.REGISTRY.pop("pyweb.webhooks.deliver", None)
 
 
 def test_an_expired_lease_lets_another_worker_finish(store):

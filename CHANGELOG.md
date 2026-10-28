@@ -6,6 +6,18 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.6.3]
+
+An audit release. A security and reliability pass over the whole
+framework (guards and RLS fail closed, forms only accept their own fields,
+dropped database connections recover, Redis hiccups no longer switch
+features off), and the pieces apps missed most: HTTP routes and
+middleware, page caching, translations, error boundaries, better testing
+and debugging, CSV export, drag-and-drop uploads, a form stepper,
+responsive images, and rename in the editor. Read **Changed** before
+upgrading: `pyweb serve` now needs `PYWEB_AUTH_SECRET`, and Postgres
+tenant tables get a new policy.
+
 ### Security
 - **Guards fail closed without a secret.** A server function guarded by
   `@auth.required` or permissions used to run unchecked when the app had no

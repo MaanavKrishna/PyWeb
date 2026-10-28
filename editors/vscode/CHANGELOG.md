@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3
+
+- Released with PyWeb 0.6.3. Rename a component, server function, Model or
+  page variable (F2) across the file, and across the folder's `.pyweb`
+  files that import it; Find All References; quick fixes for "did you
+  mean ...?" errors.
+
 ## 0.6.2
 
 - Released with PyWeb 0.6.2 (the dev loop: in-place hot reload,

@@ -13,6 +13,32 @@ pyweb check app.pyweb
 pytest
 ```
 
+## From 0.6.2 to 0.6.3
+
+0.6.3 closes security gaps, and three of the fixes can change how an
+existing app behaves. `pyweb upgrade --check` points at each one.
+
+- **`pyweb serve` needs a secret.** It refuses to start without
+  `PYWEB_AUTH_SECRET` (`python -c "import secrets; print(secrets.token_hex(32))"`
+  makes one); set `PYWEB_ENV=development` to run a local server without
+  one. Guarded server functions are refused when there's no secret instead
+  of running unchecked. Sessions made with the old derived development key
+  end once.
+- **Postgres tenant tables** get a new row-level security policy
+  (`pyweb_tenant_v2`) that shows no rows to a connection that never set
+  the organization. Apps that create tables get it on start; with
+  migrations, run `pyweb db diff` and `pyweb db upgrade`.
+- **Forms** carry a signed list of the fields they rendered. A page
+  rendered by 0.6.2 and submitted after the upgrade gets "reload the page"
+  once. A field your server function fills in without an input on the form
+  must now be set in the function.
+- An option in `@app.page(...)` that isn't written as a value
+  (`login=NEEDS_LOGIN`) is a compile error; write the value itself.
+
+Everything new (routes, `cache=`, translations, `<ErrorBoundary>`,
+`Stepper`, `<Image>`) is opt-in. Update the VS Code extension to 0.6.3 for
+rename, find references and quick fixes.
+
 ## One migration, for apps with accounts
 
 0.6 lists each signed-in device on `/account`, so people can sign one out.

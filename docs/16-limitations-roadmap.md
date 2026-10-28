@@ -40,7 +40,11 @@ can decide up front whether they matter for your app.
   saves update the page in place with component state kept, Alt-click
   opens any element's source, Fix with AI and Edit with AI, a
   time-travel timeline, `pyweb dev --share`, a faster first start and a
-  guided `pyweb new`.
+  guided `pyweb new`. 0.6.3 was a security and reliability release plus
+  what apps missed most: HTTP routes and middleware, page caching with
+  ETags, translations, `<ErrorBoundary>`, test helpers, source maps and
+  `pyweb dev --debug`, CSV export, drag-and-drop uploads, a `Stepper`,
+  responsive `<Image>`, and rename and find-references in the editor.
 - **0.5**: production apps. Models with relations and migrations, forms
   checked in the browser and on the server, an auth kit (passwords,
   passkeys, emailed links, OAuth, two-step sign-in, an admin), row-level
@@ -70,8 +74,23 @@ Planned, roughly in order. Nothing here is promised for a date.
 
 1. **1.0**: the API, RPC protocol and CLI frozen under semantic versioning,
    after 0.6 has been used in production for a while.
-2. **File uploads from the playground and the admin.**
-3. **Fix with AI in the editor**, from the same proposals the dev page
+2. **0.7: the next things apps ask for.**
+   - Billing: Stripe Checkout and the customer portal, plans tied to the
+     organization's features, webhooks handled for you.
+   - An in-app notifications center (a bell, unread counts, live), with
+     email and push from the same call.
+   - Full-text search on Models (SQLite FTS5, Postgres `tsvector`, MySQL
+     `FULLTEXT`) behind one `Model.search()`.
+   - A rich-text editor component whose output is sanitized on the server.
+   - Feature flags and A/B tests per user or organization.
+   - Streaming server rendering: `<Await>` sends the page shell first and
+     slow parts as they finish.
+   - Pages built ahead of time from data, rebuilt on a schedule or on a
+     write (incremental static regeneration).
+   - `pyweb typecheck`: pyright over the Python in `.pyweb` files.
+   - Admin customization per Model: list columns, filters, actions, forms.
+3. **File uploads from the playground.**
+4. **Fix with AI in the editor**, from the same proposals the dev page
    shows (diff, apply, undo), through the VS Code extension.
 
 Ideas, bug reports and pull requests are welcome; see

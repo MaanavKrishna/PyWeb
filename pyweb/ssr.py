@@ -528,7 +528,7 @@ def head_tags(title, head):
 
 
 def page_html(*, name, title, body, state, js_url=None, css_urls=(), head_extra="", lang="en", importmap=None,
-              layouts=(), head=None, nav=True):
+              layouts=(), head=None, nav=True, direction="ltr"):
     """The full HTML document for one page.
 
     ``importmap`` maps npm specifiers to vendored files. ``layouts`` wrap
@@ -562,7 +562,8 @@ def page_html(*, name, title, body, state, js_url=None, css_urls=(), head_extra=
         head_extra = f'<script type="importmap">{importmap_json(importmap)}</script>' + head_extra
     if not nav:
         head_extra = '<meta name="pw-nav" content="off">' + head_extra
-    return (f"<!doctype html>\n<html lang=\"{esc(lang)}\"><head><meta charset=\"utf-8\">"
+    return (f"<!doctype html>\n<html lang=\"{esc(lang)}\""
+            + (' dir="rtl"' if direction == "rtl" else "") + "><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
             f"<title>{esc(title)}</title>{head_tags(title, head)}{css}{head_extra}</head>"
             f"<body>{inner}{script}</body></html>\n")

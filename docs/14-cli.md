@@ -77,8 +77,10 @@ pyweb add [PKG[@RANGE] ...] [--app DIR]
                                      and pin them in pyweb.lock; no arguments: reinstall from the lock
 pyweb remove PKG ... [--app DIR]     remove npm packages (see npm packages)
 pyweb dts FILE.d.ts                  Python dataclasses from TypeScript declarations
+pyweb i18n extract | init LANG | check [--strict] [--app app.pyweb]
+                                     translation catalogs in locales/ (see Translations)
 pyweb mcp                            MCP server over stdio for AI assistants (see AI assistants & MCP)
-pyweb mcp --http [--port 8765] [--token T]   the same over Streamable HTTP (127.0.0.1 only without a token)
+pyweb mcp --http [--port 8765] [--token T]   the same over Streamable HTTP (always with a bearer token)
 pyweb lsp                            language server over stdio for editors (see below)
 pyweb test [PATH]                    run pytest on PATH (a test file, a folder or app.pyweb's folder;
                                      default: the current folder, where new apps keep test_app.py)

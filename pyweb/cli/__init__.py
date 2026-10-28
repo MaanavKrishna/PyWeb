@@ -774,6 +774,83 @@ def cmd_upgrade(args):
         raise SystemExit(1)
 
 
+def cmd_i18n(args):
+    """``pyweb i18n extract | init LANG | check``: the app's translation catalogs (locales/)."""
+    from pyweb import i18n
+    app_dir = os.path.dirname(os.path.abspath(args.app)) or "."
+    folder = os.path.join(app_dir, "locales")
+    found = {}
+    skip = {".git", "node_modules", "dist", "build", "__pycache__", ".venv", "venv", "locales", "static"}
+    for root, dirs, files in os.walk(app_dir):
+        dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".")]
+        for fn in files:
+            if fn.endswith((".pyweb", ".py")) and not fn.startswith("test_"):
+                path = os.path.join(root, fn)
+                with open(path, encoding="utf-8") as fh:
+                    text = fh.read()
+                for key, line in i18n.extract(text):
+                    found.setdefault(key, []).append(f"{os.path.relpath(path, app_dir)}:{line}")
+    pot = os.path.join(folder, "messages.pot")
+    if args.action == "extract":
+        os.makedirs(folder, exist_ok=True)
+        with open(pot, "w", encoding="utf-8") as fh:
+            fh.write(i18n.write_pot(found))
+        print(f"{len(found)} string(s) -> {os.path.relpath(pot)}")
+        for lang in sorted(os.listdir(folder)):
+            po = os.path.join(folder, lang, "messages.po")
+            if os.path.isfile(po):
+                added = _merge_po(po, found)
+                if added:
+                    print(f"  {lang}: {added} new string(s) to translate")
+        return
+    if args.action == "init":
+        if not args.lang:
+            raise SystemExit("pyweb i18n init LANG (e.g. de)")
+        po = os.path.join(folder, args.lang, "messages.po")
+        if os.path.exists(po):
+            raise SystemExit(f"{os.path.relpath(po)} exists already (pyweb i18n extract adds new strings)")
+        os.makedirs(os.path.dirname(po), exist_ok=True)
+        with open(po, "w", encoding="utf-8") as fh:
+            fh.write(i18n.init_po(i18n.write_pot(found), args.lang))
+        print(f"wrote {os.path.relpath(po)}: translate the msgstr lines, then add \"{args.lang}\" to App(locales=[...])")
+        return
+    problems = 0                                          # check
+    langs = sorted(d for d in os.listdir(folder) if os.path.isfile(os.path.join(folder, d, "messages.po"))) \
+        if os.path.isdir(folder) else []
+    if not langs:
+        raise SystemExit("no locales/<lang>/messages.po yet: pyweb i18n init de")
+    for lang in langs:
+        with open(os.path.join(folder, lang, "messages.po"), encoding="utf-8") as fh:
+            messages, _header = i18n.parse_po(fh.read())
+        missing = [k for k in found if k not in messages]
+        unused = [k for k in messages if k not in found]
+        problems += len(missing)
+        print(f"{lang}: {len(found) - len(missing)}/{len(found)} translated"
+              + (f"; missing: {', '.join(repr(k if isinstance(k, str) else k[0]) for k in missing[:8])}"
+                 + (" ..." if len(missing) > 8 else "") if missing else "")
+              + (f"; {len(unused)} no longer used" if unused else ""))
+    if problems and args.strict:
+        raise SystemExit(1)
+
+
+def _merge_po(po, found):
+    """Add strings ``found`` has and ``po`` doesn't (empty translations); returns how many."""
+    from pyweb import i18n
+    with open(po, encoding="utf-8") as fh:
+        text = fh.read()
+    have, _header = i18n.parse_po(text)
+    known = set(have)
+    for m in __import__("re").finditer(r'(?m)^msgid (".*")\n(?:msgid_plural (".*")\n)?', text):
+        a = i18n._unquote(m.group(1))
+        known.add((a, i18n._unquote(m.group(2))) if m.group(2) else a)
+    new = {k: v for k, v in found.items() if k not in known and k != ""}
+    if new:
+        body = i18n.write_pot(new).split("\n\n", 1)[1]
+        with open(po, "a", encoding="utf-8") as fh:
+            fh.write("\n" + body)
+    return len(new)
+
+
 def cmd_lsp(args):
     """Language server for editors (stdio)."""
     from pyweb.lsp import serve_stdio
@@ -902,6 +979,12 @@ def main(argv=None):
     p.add_argument("--token", default=None, help="--http: the bearer token clients send (default: PYWEB_MCP_TOKEN, else one kept in .pyweb/mcp-token)")
     p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
+    p = sub.add_parser("i18n", help="translations: extract the strings, start a language, check what's missing")
+    p.add_argument("action", choices=["extract", "init", "check"])
+    p.add_argument("lang", nargs="?", default=None, help="init: the language (de, fr, pt-BR, ...)")
+    p.add_argument("--app", default="app.pyweb")
+    p.add_argument("--strict", action="store_true", help="check: fail when a translation is missing")
+    p.set_defaults(fn=cmd_i18n)
     p = sub.add_parser("doctor", help="check the project and the machine, with a fix for each problem")
     p.add_argument("file", nargs="?", default="app.pyweb")
     p.add_argument("--production", action="store_true", help="also check the environment for production")

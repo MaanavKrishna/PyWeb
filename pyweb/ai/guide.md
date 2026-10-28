@@ -246,6 +246,9 @@ def Item(item_id: int):
   `pyweb.routes.json(...)/csv(rows, filename=)/redirect(...)`. Use server
   functions for the app's own pages; routes for other clients.
 - `@app.middleware` `def mw(request, call_next): ...` wraps every request.
+- Translations: `App(locales=["en", "de"])`, `from pyweb import _, ngettext`;
+  `{_("Welcome")}` and `{ngettext("{n} item", "{n} items", count)}` in markup;
+  `pyweb i18n extract` / `init de` / `check`; `set_locale(lang)` in a server function.
 - `<ErrorBoundary fallback="...">children</ErrorBoundary>` (from `pyweb`) keeps a
   failing part from breaking the page (server render and browser handlers).
 - Tests: `client.get("/").find("li.done").text`, `client.render("Badge", label="x")`,

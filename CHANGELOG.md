@@ -89,6 +89,13 @@ project uses [semantic versioning](https://semver.org).
   the rendered HTML for visitors who aren't signed in, dropped when a table
   the page read changes, shared through Redis when configured. See
   [Performance](docs/29-performance.md#caching-pages).
+- **Translations.** `_("...")` and `ngettext("{n} item", "{n} items", n)` in
+  Python and in markup, gettext `.po` catalogs in `locales/` (no extra
+  package), the language from a `lang` cookie or `Accept-Language`
+  (`App(locales=[...])`, `set_locale()`), `<html lang>` and `dir="rtl"`, the
+  page's strings sent to the browser (an optional `i18n.js`),
+  `number`/`currency`/`date` formatting, and `pyweb i18n extract | init |
+  check`. See [Translations](docs/37-i18n.md).
 - **`<ErrorBoundary fallback="...">`.** A part of the page that fails, on the
   server or in the browser, shows its fallback instead of breaking the page.
   Its browser code is a small module loaded only by pages that use it.

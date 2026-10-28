@@ -706,14 +706,21 @@ class Server:
         rc = _ctx.RequestContext(req, auth_secret=self.auth_secret,
                                  secure_cookies=self.secure_cookies)
         token = _ctx.activate(rc)
+        user_app = getattr(self.app, "app", None)
+        lang_token = None
+        if getattr(user_app, "locales", None):
+            from pyweb import i18n as _i18n
+            lang_token = _i18n.begin(user_app, req)
         try:
-            chain = getattr(getattr(self.app, "app", None), "middlewares", None)
+            chain = getattr(user_app, "middlewares", None)
             if chain:
                 from pyweb.routes import run_middleware
                 resp = run_middleware(chain, req, self._dispatch)
             else:
                 resp = self._dispatch(req)
         finally:
+            if lang_token is not None:
+                _i18n.end(lang_token)
             _ctx.deactivate(token)
             if rc._session_loaded and rc._session:
                 tel = _telemetry_now()

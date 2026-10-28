@@ -20,13 +20,14 @@ _LAZY = {
     "npm": (".packages", "npm"),
     "Markdown": (".markdown", "Markdown"),
     "ErrorBoundary": (".errorboundary", "ErrorBoundary"),
+    "_": (".i18n", "gettext"), "gettext": (".i18n", "gettext"), "ngettext": (".i18n", "ngettext"),
     "Checkbox": (".forms", "Checkbox"), "FileInput": (".forms", "FileInput"), "Form": (".forms", "Form"),
     "FormError": (".forms", "FormError"), "Input": (".forms", "Input"), "Select": (".forms", "Select"),
     "Submit": (".forms", "Submit"), "Textarea": (".forms", "Textarea"), "UploadedFile": (".forms", "UploadedFile"),
     "live": (".livedata", "live"),
     "browser_api": (".browser", None),
 }
-_SUBMODULES = {"auth", "cache", "jobs", "realtime", "security", "observability", "forms", "testing", "sync",
+_SUBMODULES = {"i18n", "auth", "cache", "jobs", "realtime", "security", "observability", "forms", "testing", "sync",
                "deploy", "uploads", "lsp", "livetable", "build", "css", "plugins", "platform"}
 
 
@@ -70,6 +71,8 @@ __all__ = [
     "npm",
     "Markdown",
     "ErrorBoundary",
+    "gettext",
+    "ngettext",
     "Form",
     "Input",
     "Textarea",

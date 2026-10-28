@@ -13,6 +13,7 @@ class App:
     ``pwa=True`` (or ``pwa=PWA(...)``) makes the app installable, usable offline and able
     to send push notifications (see :mod:`pyweb.pwa` and :mod:`pyweb.push`).
     ``desktop=Window(...)`` sets the window of the desktop app (``pyweb desktop``).
+    ``locales=["en", "de"]`` turns on translations (see :mod:`pyweb.i18n`).
     ``database`` (a URL like ``"sqlite:///app.db"`` or a database object) is
     where Models keep their rows. ``DATABASE_URL``, when set, wins over a URL
     given here: develop on SQLite, deploy on Postgres, same code.
@@ -21,8 +22,10 @@ class App:
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
                  title="PyWeb", stylesheets=(), lang="en", base_url=None, description=None,
                  image=None, client_nav=True, pwa=None, desktop=None, theme=None, motion=None,
-                 robots=None):
+                 robots=None, locales=None, default_locale=None):
         self.title = title
+        self.locales = list(locales or ())    # ["en", "de"]: translations (pyweb.i18n)
+        self.default_locale = default_locale or (self.locales[0] if self.locales else None)
         self.robots = robots             # /robots.txt: None (PyWeb's default), False (none), or the text
         self.http_routes: list = []      # @app.route (pyweb.routes.Route)
         self.middlewares: list = []      # @app.middleware, outermost first

@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import copy
 import inspect
+import json
 import os
 import sys
 import types
@@ -139,6 +140,9 @@ class LoadedApp:
         app_obj = next((v for v in self.module.__dict__.values()
                         if type(v).__name__ == "App" and type(v).__module__.startswith("pyweb")), None)
         self.app = app_obj
+        if getattr(app_obj, "locales", None):
+            from . import i18n
+            i18n.configure(app_obj, os.path.dirname(os.path.abspath(self.path)) if self.path else ".")
         for plugin in getattr(getattr(app_obj, "plugins", None), "_plugins", {}).values():
             for fn in plugin.rpc:                       # a plugin's server functions are callable too
                 self.rpc.setdefault(fn.__name__, fn)
@@ -351,10 +355,22 @@ class LoadedApp:
             title = self.app.title_for(page_name) or title
         title = dynamic.pop("title", None) or title
         importmap = dict(page.get("importmap") or {})
+        lang, direction, i18n_head = self.lang, "ltr", ""
+        if getattr(self.app, "locales", None):
+            from . import i18n
+            lang = i18n.get_locale() or self.lang
+            direction = i18n.direction(lang)
+            ids = list(page.get("i18n") or ())
+            for lname in page.get("layouts") or ():
+                ids += self.compiled.get("layouts", {}).get(lname, {}).get("i18n") or []
+            strings = i18n.browser_catalog(ids) if ids else {}
+            if strings:
+                i18n_head = ('<script type="application/json" id="pw-i18n">'
+                             + json.dumps(strings, ensure_ascii=False).replace("</", "<\\/") + "</script>")
         return page_html(name=page_name, title=title, body=body, state=state,
                          js_url=js_url if page["js"] else None, css_urls=self.stylesheets,
-                         lang=self.lang, importmap=importmap, layouts=layouts,
-                         head=self.head_for(page, dynamic, path), head_extra=self.kit_head() + self.motion_head(body) + self.pwa_head() + _desktop_head(),
+                         lang=lang, direction=direction, importmap=importmap, layouts=layouts,
+                         head=self.head_for(page, dynamic, path), head_extra=i18n_head + self.kit_head() + self.motion_head(body) + self.pwa_head() + _desktop_head(),
                          nav=getattr(self.app, "client_nav", True) is not False)
 
     def motion_head(self, body=""):

@@ -376,6 +376,8 @@ def scan_module(tree, ui_all, filename, resolve=None):
                 local = alias.asname or alias.name.split(".")[0]
                 if mod == "pyweb" and alias.name in ("subscribe", "join"):
                     ctx.browser_globals[local] = "$" + alias.name
+                elif mod in ("pyweb", "pyweb.i18n") and alias.name in ("_", "gettext", "ngettext"):
+                    ctx.browser_globals[local] = "$ngettext" if alias.name == "ngettext" else "$_"
                 elif mod == "pyweb" and alias.name in BUILTIN_COMPONENTS:
                     ctx.builtin_components[local] = alias.name
                 elif mod == "pyweb.browser" and alias.name in browser_bindings:
@@ -1138,6 +1140,8 @@ class Emitter:
         imports = [RUNTIME_IMPORT]
         if "$markdown(" in body:
             imports.append(MARKDOWN_IMPORT)
+        if "$_(" in body or "$ngettext(" in body:
+            imports.append('import { gettext as $_, ngettext as $ngettext } from "./i18n.js";')
         if '"data-pw-boundary"' in body:
             imports.append('import { guard as $boundary } from "./boundary.js";')
         if getattr(info, "forms", None):

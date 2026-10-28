@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import builtins
 import hashlib
+import json
 import os
 import re
 import threading
@@ -21,6 +22,20 @@ from .errors import CompileError
 from .lower import Emitter, classify, scan_module
 from .rpc import rpc_specs
 
+
+
+_I18N_ONE = re.compile(r'\$_\(("(?:[^"\\]|\\.)*")\)')
+_I18N_TWO = re.compile(r'\$ngettext\(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")')
+
+
+def i18n_ids(js):
+    """The literal strings a browser module translates (``_("...")``, ``ngettext("...", "...", n)``):
+    the page is sent their translations only."""
+    if not js or ("$_(" not in js and "$ngettext(" not in js):
+        return []
+    ids = [json.loads(m.group(1)) for m in _I18N_ONE.finditer(js)]
+    ids += [[json.loads(m.group(1)), json.loads(m.group(2))] for m in _I18N_TWO.finditer(js)]
+    return ids
 
 def static_state(info, ctx, args=None):
     """Evaluate a page/component's state at compile time.
@@ -287,6 +302,7 @@ def _compile(source, filename, route, title, libs, stack):
             "js_url": f"/static/{lay.name}.js?v={version}" if js else None, "version": version if js else "0",
             "body": _renderer(ctx).render(lay.ui, env), "state": {k: env.get(k) for k in lay.sent},
             "lineno": lay.node.lineno, "dynamic": any(lay.origin[n] == "server" for n in lay.order),
+            "i18n": i18n_ids(js),
         }
     artifacts = {}
     page_infos, all_signals, all_computeds, all_place, all_edges = [], {}, {}, {}, []
@@ -327,7 +343,7 @@ def _compile(source, filename, route, title, libs, stack):
         artifacts[info.name] = {
             "ui": info.ui, "signals": signals, "computeds": computeds,
             "placement": placement, "edges": edges, "initial": initial,
-            "js": js, "html": html, "html_body": body, "lineno": info.node.lineno,
+            "js": js, "html": html, "html_body": body, "lineno": info.node.lineno, "i18n": i18n_ids(js),
             "params": info.params, "sourcemap": sourcemap,
             "route": None if info.error_status else (info.route or route), "error_status": info.error_status,
             "layouts": [lay.name for lay in info.layouts], "head": dict(info.head),

@@ -341,7 +341,7 @@ class Site:
         rel, _, q = rel.partition("?")
         query = query or q
         if self.source_mode:
-            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js", "boundary.js") or rel in MOTION_FILES:
+            if rel in ("runtime.js", "markdown.js", "forms.js", "live.js", "boundary.js", "i18n.js") or rel in MOTION_FILES:
                 with open(os.path.join(os.path.dirname(RUNTIME_PATH), rel), "rb") as fh:
                     return 200, [("Content-Type", _ctype(rel)), ("Cache-Control", "no-cache")], fh.read()
             if rel in self.memory_js:

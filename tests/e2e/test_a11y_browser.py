@@ -40,9 +40,13 @@ def audit(browser, axe):
         return ctx.new_page()
 
     def run(pg):
-        # Colours mid-animation (a dialog fading in) aren't the colours people read.
-        until(pg, "document.getAnimations().every((a) => a.playState !== 'running' || "
-                  "a.effect.getComputedTiming().iterations === Infinity)")
+        # Colours mid-animation (a dialog fading in) aren't the colours people read. Two frames
+        # first: a transition a focus change starts only shows up in getAnimations() a frame later.
+        settled = ("document.getAnimations().every((a) => a.playState !== 'running' || "
+                   "a.effect.getComputedTiming().iterations === Infinity)")
+        for _ in range(2):
+            pg.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+            until(pg, settled)
         found = pg.evaluate("""async () => {
           const r = await axe.run(document, {resultTypes: ["violations"]});
           return r.violations.filter((v) => v.impact === "serious" || v.impact === "critical")

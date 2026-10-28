@@ -97,7 +97,7 @@ class Provider:
         if self.name == "microsoft" and verified is None:
             verified = False          # Microsoft doesn't always say; treat as unverified
         return {"subject": str(info.get("sub")), "email": info.get("email"),
-                "email_verified": bool(verified), "name": info.get("name") or ""}
+                "email_verified": verified is True or str(verified).lower() == "true", "name": info.get("name") or ""}
 
 
 def _http_json(url, *, data=None, token=None, timeout=10):

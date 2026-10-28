@@ -111,7 +111,8 @@ class S3Storage:
         return f"{self.prefix}/{key}" if self.prefix else key
 
     def presign(self, method, key, *, expires=None, now=None, content_type=None):
-        """A URL that allows ``method`` (GET/PUT) on ``key`` for ``expires`` seconds."""
+        """A URL that allows ``method`` (GET/PUT) on ``key`` for ``expires`` seconds. With ``content_type``
+        the signature covers the ``Content-Type`` header too: an upload must send exactly that type."""
         now = now or _dt.datetime.now(_dt.timezone.utc)
         amz_date = now.strftime("%Y%m%dT%H%M%SZ")
         day = now.strftime("%Y%m%d")
@@ -123,11 +124,12 @@ class S3Storage:
             "X-Amz-Credential": f"{self.access_key}/{scope}",
             "X-Amz-Date": amz_date,
             "X-Amz-Expires": str(expires or self.expires),
-            "X-Amz-SignedHeaders": "host",
+            "X-Amz-SignedHeaders": "content-type;host" if content_type else "host",
         }
         query = "&".join(f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}"
                          for k, v in sorted(params.items()))
-        canonical = "\n".join([method, path, query, f"host:{host}\n", "host", "UNSIGNED-PAYLOAD"])
+        signed = f"content-type:{content_type.strip()}\nhost:{host}\n" if content_type else f"host:{host}\n"
+        canonical = "\n".join([method, path, query, signed, params["X-Amz-SignedHeaders"], "UNSIGNED-PAYLOAD"])
         to_sign = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, hashlib.sha256(canonical.encode()).hexdigest()])
         k = ("AWS4" + self.secret_key).encode()
         for part in (day, self.region, "s3", "aws4_request"):
@@ -137,8 +139,9 @@ class S3Storage:
 
     def save(self, data, filename, content_type=None):
         key = new_key(filename)
-        req = urllib.request.Request(self.presign("PUT", key), data=data, method="PUT",
-                                     headers={"Content-Type": content_type or "application/octet-stream"})
+        ctype = content_type or "application/octet-stream"
+        req = urllib.request.Request(self.presign("PUT", key, content_type=ctype), data=data, method="PUT",
+                                     headers={"Content-Type": ctype})
         with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 - our own signed URL
             resp.read()
         return key
@@ -166,10 +169,12 @@ class S3Storage:
     def url(self, key):
         return self.presign("GET", key)
 
-    def upload_url(self, filename):
-        """``(key, url)``: the browser PUTs the file to ``url`` itself (big files never touch the app)."""
+    def upload_url(self, filename, content_type=None):
+        """``(key, url)``: the browser PUTs the file to ``url`` itself (big files never touch the app).
+        Pass ``content_type`` (one you've checked) and the upload must send exactly that type, so a file
+        can't be stored as ``text/html`` and served from your bucket's domain."""
         key = new_key(filename)
-        return key, self.presign("PUT", key)
+        return key, self.presign("PUT", key, content_type=content_type)
 
 
 _current = None

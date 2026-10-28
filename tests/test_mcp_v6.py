@@ -399,3 +399,14 @@ def test_official_sdk_over_http(http_url, tmp_path, monkeypatch):
     version, count, routes, doc = asyncio.run(run())
     assert version == mcp.PROTOCOL_VERSIONS[0] and count == len(mcp.TOOLS)
     assert routes["pages"][0]["route"] == "/" and doc.startswith("# Teams")
+
+
+def test_http_keeps_a_private_token_when_none_is_given(tmp_path):
+    from pyweb.mcp_http import local_token
+    tok = local_token(str(tmp_path))
+    assert len(tok) >= 20 and local_token(str(tmp_path)) == tok
+    p = tmp_path / ".pyweb" / "mcp-token"
+    assert p.stat().st_mode & 0o777 == 0o600
+    p.chmod(0o644)
+    with pytest.raises(SystemExit):
+        local_token(str(tmp_path))

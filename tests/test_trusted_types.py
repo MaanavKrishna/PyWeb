@@ -12,7 +12,7 @@ from pyweb.testing import TestClient
 
 RUNTIME = os.path.join(os.path.dirname(__file__), "..", "pyweb", "runtime", "browser")
 SINKS = re.compile(r"\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write|parseFromString|"
-                   r"createContextualFragment|srcdoc|new Function|\beval\(")
+                   r"createContextualFragment|\.srcdoc\s*=|setAttribute\(\s*.srcdoc|new Function|\beval\(")
 
 
 def test_the_runtime_only_reaches_html_sinks_through_its_policies():

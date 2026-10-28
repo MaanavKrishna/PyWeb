@@ -148,7 +148,7 @@ def test_asgi_streams_each_value_and_stops_on_disconnect(tmp_path):
     path.write_text(APP.replace("for i in range(n):\n                yield {\"i\": i}",
                                 "for i in range(n):\n                yield {\"i\": i}\n"
                                 "                import time; time.sleep(0.05)"))
-    app = create_app(str(path))
+    app = create_app(str(path), auth_secret="t" * 32)
     body = json.dumps({"args": {"n": 1000}}).encode()
     sent, disconnect = [], asyncio.Event()
 

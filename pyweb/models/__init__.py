@@ -247,6 +247,10 @@ class Policy:
             return Raw("1 = 0")
         return found
 
+    def enforced(self):
+        """Is the write rule in force here (a request, not system code)?"""
+        return self.write is not None and not _SYSTEM.get() and self._viewer()[0]
+
     def check_write(self, row, action):
         if self.write is None or _SYSTEM.get():
             return
@@ -1044,6 +1048,13 @@ class Model(metaclass=ModelMeta):
         if validate:
             self.validate()
         if meta.policy is not None:
+            if state.get("_persisted") and state.get("_orig") and meta.policy.enforced():
+                # the row as it is stored must be writable too: changing author_id to yourself
+                # doesn't make someone else's row yours
+                before = cls.__new__(cls)
+                before.__dict__.update(state)
+                before.__dict__.update(state["_orig"])
+                meta.policy.check_write(before, "change")
             meta.policy.check_write(self, "change" if state.get("_persisted") else "create")
         pk = meta.pk
         q = d.quote

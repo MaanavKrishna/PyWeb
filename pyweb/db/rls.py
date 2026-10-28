@@ -7,10 +7,16 @@ the ``org_id`` condition (or SQL injected into a query) can't cross organization
 * ``pyweb db diff`` adds ``ENABLE`` + ``FORCE ROW LEVEL SECURITY`` and a policy
   to the migration for each tenant table that doesn't have them (``FORCE``
   applies it to the table's owner too, which is usually the app's role);
-* before a statement that mentions a tenant table, PyWeb sets the
-  transaction-local setting ``pyweb.org_id``: the organization's id while code
-  runs for one, ``0`` (no rows) while it runs for none, and empty for code
-  outside any organization (migrations, scripts), which the policy lets through.
+* PyWeb sets ``pyweb.org_id`` for the statements it runs: the organization's id
+  on every statement while code runs for one, ``0`` while it runs for none, and
+  ``*`` before statements on tenant tables from code outside any organization
+  (migrations, scripts, ``system()``).
+* The policy **fails closed**: no setting, or an empty one, matches no rows; only
+  ``*`` sees every organization.
+
+It stops queries that forget the organization (raw SQL, a report, a view). It is
+not a sandbox for arbitrary injected SQL, which could set ``pyweb.org_id`` itself:
+keep using parameters.
 
 Superusers and roles with ``BYPASSRLS`` skip every policy: connect the app as an
 ordinary role for this to apply. SQLite and MySQL have no row-level security;
@@ -21,16 +27,18 @@ from __future__ import annotations
 
 import re
 
-POLICY = "pyweb_tenant"
+POLICY = "pyweb_tenant_v2"
+OLD_POLICIES = ("pyweb_tenant",)          # 0.6.0-0.6.2: an empty setting let every row through
 SETTING = "pyweb.org_id"
-_CONDITION = (f"coalesce(current_setting('{SETTING}', true), '') = '' "
-              f"OR org_id = nullif(current_setting('{SETTING}', true), '')::bigint")
+_CONDITION = (f"CASE coalesce(current_setting('{SETTING}', true), '') WHEN '*' THEN true WHEN '' THEN false "
+              f"ELSE org_id = current_setting('{SETTING}', true)::bigint END")
 
 
 def enable_sql(table, quote):
     """The statements that turn the policy on for ``table``."""
     t = quote(table)
-    return [f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY",
+    return [*(f"DROP POLICY IF EXISTS {old} ON {t}" for old in OLD_POLICIES),
+            f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY",
             f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY",
             f"CREATE POLICY {POLICY} ON {t} USING ({_CONDITION}) WITH CHECK ({_CONDITION})"]
 
@@ -38,6 +46,7 @@ def enable_sql(table, quote):
 def disable_sql(table, quote):
     t = quote(table)
     return [f"DROP POLICY IF EXISTS {POLICY} ON {t}",
+            *(f"DROP POLICY IF EXISTS {old} ON {t}" for old in OLD_POLICIES),
             f"ALTER TABLE {t} NO FORCE ROW LEVEL SECURITY",
             f"ALTER TABLE {t} DISABLE ROW LEVEL SECURITY"]
 
@@ -97,13 +106,13 @@ def statement_setting(db, sql):
     pattern = _names.get(id(db))
     if pattern is None:
         return None
-    if not pattern.search(sql):
-        return None
     from pyweb import tenancy
     scoped, org_id, _ = tenancy.current()
-    if not scoped:
-        return ""
-    return str(org_id) if org_id is not None else "0"
+    if scoped:                       # every statement, so views and functions see the organization too
+        return str(org_id) if org_id is not None else "0"
+    if pattern.search(sql):
+        return "*"                   # outside any organization: migrations, scripts, system()
+    return None
 
 
 def watch(db, models):

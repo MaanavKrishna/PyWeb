@@ -92,7 +92,14 @@ def public(ip):
         ip = ip.ipv4_mapped
     if ip.version == 6 and ip.sixtofour is not None:
         ip = ip.sixtofour
+    if ip.version == 6 and (ip in _NAT64 or ip in _V4_COMPAT):
+        # NAT64 (64:ff9b::a.b.c.d) and IPv4-compatible (::a.b.c.d) addresses reach the embedded IPv4 one
+        ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
     return ip.is_global and not ip.is_multicast
+
+
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+_V4_COMPAT = ipaddress.ip_network("::/96")
 
 
 def _check(host, port, allow):

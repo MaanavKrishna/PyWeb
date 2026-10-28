@@ -267,6 +267,13 @@ DEV_RELOAD_JS = _dev_reload_js()
 DEV_GUEST_JS = _dev_reload_js(("reload.js",))   # someone else (a share link, the LAN): hot reload only
 
 
+_GUEST_ERROR = ("<!doctype html><meta charset=utf-8><title>Something went wrong</title>"
+                "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                "<style>body{font:16px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:34rem;padding:0 1rem;"
+                "color:#334155}</style><body><h1>Something went wrong</h1><p>The app hit an error. The details "
+                "are on the developer's screen; this page reloads when they fix it.</p>")
+
+
 def _error_overlay(exc, path, scripts=None):
     """HTML page shown in the browser while the app has a compile error."""
     import html as _h
@@ -319,6 +326,7 @@ class _DevState:
         self.kind = "code"          # what the last change was: "code" (rebuilt) or "css" (stylesheets only)
         self.css = []               # the stylesheet URLs a "css" change touched
         self.welcome = False        # show the first-run welcome panel (pyweb dev sets it)
+        self.port = None            # the port pyweb dev listens on (set when it's ready)
 
 
 def _dev_load(state, Site):
@@ -356,16 +364,36 @@ class _DevSite:
     def timed_out(self, method, path, headers=None):
         return self.state.site.timed_out(method, path, headers)
 
+    def _mine(self, client, headers):
+        """The developer: a request from this machine to this dev server's loopback address. While
+        sharing, Host must name the dev server's own port too, so a tunnel that rewrites Host to
+        ``localhost`` still can't pose as the developer."""
+        if not _local(client, headers):
+            return False
+        if self.share is not None and self.share.url and self.state.port:
+            name = next((v for k, v in (headers or {}).items() if k.lower() == "host"), "")
+            return name.rsplit(":", 1)[-1] == str(self.state.port) and ":" in name
+        return True
+
+    def _guest(self, client, headers):
+        """Someone using a share link: the tunnel's public Host, or any other request the tunnel
+        brought to us (it connects from this machine) that isn't the developer's."""
+        if self.share is None or not self.share.url:
+            return False
+        if self.share.guest(headers):
+            return True
+        host = client[0] if isinstance(client, (tuple, list)) else (client or "127.0.0.1")
+        return host in ("127.0.0.1", "::1", "localhost") and not self._mine(client, headers)
+
     def respond(self, method, path, headers, body=b"", client=None):
         state = self.state
-        guest = False
+        guest = self._guest(client, headers)
         if self.share is not None:
-            refused = self.share.check(method, path, headers)
+            refused = self.share.check(method, path, headers, guest=guest)
             if refused is not None:
                 return refused
-            guest = self.share.guest(headers)
         bare = path.split("?")[0]
-        mine = _local(client, headers)         # the developer, on this machine (not a share link or the LAN)
+        mine = self._mine(client, headers)     # the developer, on this machine (not a share link or the LAN)
         if path.startswith("/__pyweb/dev/") and bare not in ("/__pyweb/dev/version", "/__pyweb/dev/changes") \
                 and (guest or (not mine and not bare.startswith("/__pyweb/dev/agent/"))):
             from pyweb.telemetry.devtools import _json
@@ -382,7 +410,7 @@ class _DevSite:
             return self._ai(method, path, headers, body, client)
         if path == "/__pyweb/dev/welcome":
             from pyweb.telemetry.devtools import _json, _same_origin
-            if method != "POST" or not _same_origin(headers) or not _local(client, headers):
+            if method != "POST" or not _same_origin(headers) or not self._mine(client, headers):
                 return _json({"error": "POST from this page on this machine only"}, 403)
             state.welcome = False
             try:
@@ -398,7 +426,10 @@ class _DevSite:
             if answer is not None:
                 return answer
         if state.error is not None or state.site is None:
-            overlay = _error_overlay(state.error, state.path, None if mine else DEV_GUEST_JS)
+            if not mine:                          # source lines and paths stay on the developer's screen
+                return 500, [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")], \
+                    (_GUEST_ERROR + DEV_GUEST_JS).encode()
+            overlay = _error_overlay(state.error, state.path, None)
             return 500, [("Content-Type", "text/html; charset=utf-8")], overlay.encode()
         from pyweb.telemetry import RECENT, devtools
         if path.startswith(devtools.PREFIX):
@@ -411,6 +442,11 @@ class _DevSite:
         headers = {k: v for k, v in (headers or {}).items() if k.lower() != "accept-encoding"}
         status, hdrs, raw = state.site.respond(method, path, headers, body, client=client)
         ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
+        if status >= 500 and not mine and ctype.startswith("text/html"):
+            # dev error pages show code and tracebacks: only for the person running pyweb dev
+            hdrs = [(k, v) for k, v in hdrs if k.lower() not in ("content-length", "content-type")]
+            hdrs.append(("Content-Type", "text/html; charset=utf-8"))
+            raw = (_GUEST_ERROR + "</body>").encode()
         if ctype.startswith("text/html") and isinstance(raw, bytes) and b"</body>" in raw:
             dev_js = DEV_RELOAD_JS if mine else DEV_GUEST_JS
             if state.welcome and mine:
@@ -428,7 +464,7 @@ class _DevSite:
         """``POST /__pyweb/dev/open {"chain": ["file:line", ...]}``: open the source in your editor."""
         from pyweb import devopen
         from pyweb.telemetry.devtools import _json, _same_origin
-        if method != "POST" or not _same_origin(headers) or not _local(client, headers):
+        if method != "POST" or not _same_origin(headers) or not self._mine(client, headers):
             return _json({"error": "POST from this page on this machine only"}, 403)
         try:
             chain = json.loads(body or b"{}").get("chain")
@@ -445,7 +481,7 @@ class _DevSite:
         from pyweb import assist, devopen
         from pyweb.telemetry.devtools import _json, _same_origin
         what = path.split("?")[0][len("/__pyweb/dev/ai/"):]
-        if not _local(client, headers):
+        if not self._mine(client, headers):
             return _json({"error": "AI help is for the person running pyweb dev, on this machine"}, 403)
         app_dir = os.path.dirname(os.path.abspath(self.state.path))
         if what == "status":
@@ -508,7 +544,8 @@ class _DevSite:
         return assist.ask_for("fix", path, rel, text, assist.fix_prompt(rel, text, error), self.proposals)
 
     def websocket(self, path, headers, client=None):
-        if self.share is not None and self.share.check("GET", path, headers) is not None:
+        if self.share is not None and self.share.check("GET", path, headers,
+                                                       guest=self._guest(client, headers)) is not None:
             return 403, "open the share link first"
         if self.state.site is None:
             return 503, "the app doesn't compile"
@@ -576,6 +613,7 @@ def cmd_dev(args):
         share = Share()
 
     def ready(port):
+        state.port = port
         local = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
         url = f"http://{'localhost' if local in ('127.0.0.1', '::1') else local}:{port}/"
         print(f"PyWeb dev server: {url}  ({args.file})", flush=True)
@@ -712,6 +750,7 @@ def cmd_serve(args):
         return
     from pyweb import config
     from pyweb.net import server as _net
+    config.require_secret("pyweb serve")
     config.startup()
     if getattr(args, "migrate", False) or os.environ.get("PYWEB_MIGRATE_ON_START", "").lower() in ("1", "true", "yes"):
         import subprocess
@@ -1288,7 +1327,7 @@ def main(argv=None):
     p.add_argument("--host", default="127.0.0.1", help="--http: address (default 127.0.0.1; others need --token)")
     p.add_argument("--port", type=int, default=8765, help="--http: port (default 8765)")
     p.add_argument("--path", default="/mcp", help="--http: endpoint path (default /mcp)")
-    p.add_argument("--token", default=None, help="--http: require Authorization: Bearer TOKEN (or PYWEB_MCP_TOKEN)")
+    p.add_argument("--token", default=None, help="--http: the bearer token clients send (default: PYWEB_MCP_TOKEN, else one kept in .pyweb/mcp-token)")
     p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("lsp", help="run the language server (stdio) for editors"); p.set_defaults(fn=cmd_lsp)
     p = sub.add_parser("doctor", help="check the project and the machine, with a fix for each problem")

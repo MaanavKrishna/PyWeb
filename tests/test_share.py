@@ -85,6 +85,8 @@ def test_a_compile_error_page_for_guests_has_no_tools(site, tmp_path):
     guest = {"Host": PUBLIC, "Cookie": f"{S.COOKIE}={gate.session}"}
     status, page = _get(site, "/", guest)
     assert status == 500 and "/__pyweb/dev/changes" in page and "Fix with AI" not in page and "pyweb-assist" not in page
+    assert "boom" not in page and "SyntaxError" not in page              # no error details either
+    assert "boom" in _get(site, "/", {"Host": "localhost:8000"})[1]      # the developer sees them
 
 
 FAKE = "import sys, time\nprint('INF Requesting new quick Tunnel on trycloudflare.com...', flush=True)\n" \
@@ -151,3 +153,17 @@ def test_pyweb_dev_share_end_to_end(tmp_path):
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
+
+
+def test_a_tunnel_that_rewrites_host_is_still_a_guest(site):
+    """ngrok --host-header=rewrite (or any proxy) sends `Host: localhost:<port>` from 127.0.0.1."""
+    site, gate = site
+    site.state.port = 8000
+    for host in ("localhost", "localhost:80", "127.0.0.1:9999"):
+        status, page = _get(site, "/", {"Host": host})
+        assert status == 403 and "Ask for the link" in page, host
+        assert _get(site, "/__pyweb/dev/requests", {"Host": host, "Cookie": f"{S.COOKIE}={gate.session}"})[0] == 403
+    status, page = _get(site, "/", {"Host": "localhost", "Cookie": f"{S.COOKIE}={gate.session}"})
+    assert status == 200 and "pyweb-devtools" not in page                 # with the link: the app, no tools
+    status, page = _get(site, "/", {"Host": "localhost:8000"})
+    assert status == 200 and "pyweb-devtools" in page                     # the developer

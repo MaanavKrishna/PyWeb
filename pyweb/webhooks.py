@@ -243,22 +243,25 @@ def receive(rcv, req):
     except SignatureError as exc:
         return answer(401, {"error": str(exc)})
     data = _json(body)
-    event_id = event_id or hashlib.sha256(body).hexdigest()[:40]    # unsigned ids: the body itself
+    digest = hashlib.sha256(body).hexdigest()[:40]
+    event_id = (event_id or digest)[:200]               # unsigned ids: the body itself
+    # GitHub doesn't sign X-GitHub-Delivery, so a captured body resent with a new id must still count
+    # as seen: de-duplicate on the body for that scheme.
+    key = f"body:{digest}" if rcv.scheme == "github" else event_id
     from pyweb.models import system
     ensure_tables()
-    event_id = event_id[:200]
     with system():
-        seen = WebhookEvent.where(source=rcv.path, event_id=event_id).exists()
+        seen = WebhookEvent.where(source=rcv.path, event_id=key).exists()
         if not seen:
             try:
-                WebhookEvent.create(source=rcv.path, event_id=event_id, event_type=event_type[:200])
+                WebhookEvent.create(source=rcv.path, event_id=key, event_type=event_type[:200])
             except Exception:  # noqa: BLE001 - the same event arriving twice at once: the unique index wins
                 seen = True
     if seen:
         return answer(200, {"ok": True, "duplicate": True})
     headers = {k.lower(): v for k, v in (req.headers or {}).items() if k.lower() in KEEP_HEADERS}
     rcv.job.enqueue({"id": event_id, "type": event_type, "data": data, "headers": headers, "source": rcv.path},
-                    key=f"webhook:{rcv.path}:{event_id}")
+                    key=f"webhook:{rcv.path}:{key}")
     return answer(202, {"ok": True})
 
 

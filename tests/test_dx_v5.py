@@ -482,7 +482,7 @@ def test_upgrade_a_04_app_keeps_its_data(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "deploy.sh").read_text() == "pyweb deploy k8s --port 9000 --out k8s\n"
     source = (tmp_path / "app.pyweb").read_text()
     assert 'App(database="sqlite:///shop.db", title="Old shop")' in source and "configure" not in source
-    assert {f.code for f in U.check("app.pyweb")} == {"memory-jobs", "raw-secret"}   # left to a person
+    assert {f.code for f in U.check("app.pyweb") if f.action} == {"memory-jobs", "raw-secret"}   # left to a person
     page = TestClient("app.pyweb").get("/")
     assert page.status == 200 and "<li>pen</li>" in page.text and "<li>cup</li>" in page.text
 

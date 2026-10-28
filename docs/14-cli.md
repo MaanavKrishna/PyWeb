@@ -31,7 +31,8 @@ pyweb inspect FILE [--security]      where every name runs and why; RPC table; f
 pyweb build FILE [--out dist] [--production] [--budget PATH=SIZE ...]
                                      self-contained dist/; --production hashes and minifies
 pyweb serve [DIR] [--host 0.0.0.0] [--port $PORT|8000] [--workers N] [--migrate]
-                                     production server for a built dist/ (N processes)
+                                     production server for a built dist/ (N processes);
+                                     needs PYWEB_AUTH_SECRET (or PYWEB_ENV=development)
 pyweb ui list | add NAME... [--force] | diff NAME   [--dir .]
                                      the UI kit's components; copy one into components/ to change
                                      it; show how your copy differs from the kit

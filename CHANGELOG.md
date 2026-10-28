@@ -6,6 +6,57 @@ project uses [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Security
+- **Guards fail closed without a secret.** A server function guarded by
+  `@auth.required` or permissions used to run unchecked when the app had no
+  `PYWEB_AUTH_SECRET`; it is now refused. Rate limits run before any other
+  check.
+- **Forms only accept the fields they rendered.** Each `<Form>` carries a
+  signed list of its field names; extra fields in a submit (`is_admin=1`)
+  are ignored, and a submit without the list is refused ("reload the page").
+- **Row policies cover bulk writes and the stored row.** `update()` and
+  `delete()` on a policied Model check every affected row, and `save()`
+  checks the row as stored as well as the new values.
+- **Postgres row-level security fails closed.** A connection that never set
+  the organization sees no rows (it used to see every organization), and
+  the organization is set before every statement, so views and functions
+  are covered too.
+- **Spread attributes** (`{**attrs}`) can't add `on*` handlers in any
+  case, `srcdoc`, or unchecked URLs (`formaction`, `data`, `poster`, ...).
+- **Emailed links** never use a foreign `Host` header, in development too.
+- **Accounts:** 2FA codes work once; setting a first password and signing
+  out other devices need a recent sign-in (10 minutes); OAuth
+  `email_verified` must really be true; form redirects go through
+  `safe_next`.
+- **Webhooks:** GitHub deliveries are de-duplicated on the body (GitHub
+  doesn't sign its delivery id).
+- **Push:** someone who learns a browser's push endpoint can't take it
+  over or unsubscribe it.
+- **Outbound fetch:** NAT64 (`64:ff9b::/96`) and IPv4-compatible IPv6
+  addresses are judged by the IPv4 address inside them.
+- **S3:** `upload_url(name, content_type=...)` signs the content type, so an
+  upload can't be stored as `text/html`.
+- **Request headers** are looked up case-insensitively everywhere (CSRF
+  token, `Last-Event-ID`, `traceparent`).
+- **WebSockets:** a ping flood closes the socket.
+- **Dev tools:** `pyweb dev --share` treats a tunnel that rewrites `Host` to
+  localhost as a guest; detailed error pages go only to the developer;
+  `pyweb mcp --http` always needs a token (kept in `.pyweb/mcp-token`);
+  the compile cache is read only from a folder and files only you can
+  write.
+
+### Changed
+- `pyweb serve` and `pyweb.asgi.create_app()` refuse to start without
+  `PYWEB_AUTH_SECRET` (set `PYWEB_ENV=development` to run without one).
+  The development key is random per machine (kept in
+  `~/.cache/pyweb/dev-secret`) instead of derived from the project path.
+- Tenant tables on Postgres get a new row-level security policy
+  (`pyweb_tenant_v2`). Apps that create tables get it on start; with
+  migrations, run `pyweb db diff` and `pyweb db upgrade`. `pyweb upgrade`
+  explains both changes.
+- Forms rendered by 0.6.2 and submitted after the upgrade are refused once
+  with "reload the page".
+
 ## [0.6.2]
 
 The dev loop. Saves update the open page in place with every page and

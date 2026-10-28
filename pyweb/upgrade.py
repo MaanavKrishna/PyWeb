@@ -181,6 +181,18 @@ def check(app="app.pyweb"):
             out.append(Finding(os.path.basename(app), 0, "origin",
                                "the auth kit needs PYWEB_ORIGIN (the site's address) in production for the links "
                                "in its emails", action=False))
+        if not os.environ.get("PYWEB_AUTH_SECRET"):
+            out.append(Finding(os.path.basename(app), 0, "auth-secret",
+                               "0.6.3: `pyweb serve` and `create_app()` refuse to start without PYWEB_AUTH_SECRET "
+                               "(make one with `python -c \"import secrets; print(secrets.token_urlsafe(32))\"`; "
+                               "PYWEB_ENV=development runs without it, on a random per-machine key)", action=False))
+        if re.search(r"tenant\s*=\s*True", source):
+            out.append(Finding(os.path.basename(app), 0, "rls-policy",
+                               "0.6.3 replaces the Postgres row-level security policy with one that fails closed "
+                               "(no organization set: no rows). Apps that create tables themselves get it on start; "
+                               "with migrations run `pyweb db diff --name rls_v2` and `pyweb db upgrade`. Scripts "
+                               "that read tenant tables over a plain connection now see nothing unless they set "
+                               "`pyweb.org_id` (an id, or '*' for every organization)", action=False))
         try:
             from . import a11y
             problems = a11y.check(source, app)

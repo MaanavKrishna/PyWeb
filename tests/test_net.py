@@ -635,3 +635,33 @@ def test_a_request_pipelined_after_a_chunked_body(running):
             b"GET /healthz HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n")
     out = raw(running, wire)
     assert out.count(b"HTTP/1.1 200 OK") == 2 and b'"A"' in out
+
+
+def test_a_ping_flood_closes_the_socket():
+    import asyncio
+
+    from pyweb.net import server as NS
+    from pyweb.net import ws as W2
+    wire = b"".join(W2.frame(W2.PING, b"p", mask=b"\x01\x02\x03\x04") for _ in range(NS.PING_LIMIT + 5))
+
+    class Writer:
+        def __init__(self):
+            self.out = b""
+
+        def write(self, data):
+            self.out += data
+
+        async def drain(self):
+            pass
+
+    async def run():
+        reader = asyncio.StreamReader()
+        reader.feed_data(wire)
+        reader.feed_eof()
+        w = Writer()
+        conn = NS._WSConnection(reader, w, 5)
+        assert await conn.recv() is None
+        return w.out
+    out = asyncio.run(run())
+    assert out.count(W2.frame(W2.PONG, b"p")) == NS.PING_LIMIT
+    assert W2.close_frame(W2.POLICY, "too many pings") in out

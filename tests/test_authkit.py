@@ -48,6 +48,31 @@ def add_note(text: str) -> int:
 def notes() -> list:
     return [n.text for n in Note.query().order("id")]
 
+class Doc(Model):
+    text: str
+    owner_id: int = 0
+
+Doc.policy(read=lambda user: True, write=lambda user, doc: user is not None and doc.owner_id == user.id)
+
+@server(login=True)
+def add_doc(text: str) -> int:
+    return Doc.create(text=text, owner_id=auth.user().id).id
+
+@server(login=True)
+def bulk_edit_doc(doc_id: int) -> int:
+    return Doc.where(id=doc_id).update(text="bulk")
+
+@server(login=True)
+def bulk_delete_doc(doc_id: int) -> int:
+    return Doc.where(id=doc_id).delete()
+
+@server(login=True)
+def take_doc(doc_id: int) -> str:
+    doc = Doc.get(doc_id)
+    doc.owner_id = auth.user().id
+    doc.save()
+    return "mine now"
+
 @server(login=True)
 def edit_note(note_id: int, text: str) -> str:
     with system():
@@ -334,8 +359,13 @@ def test_two_step_sign_in(make):
     status, headers, _ = b.post("/login", {"email": "ada@example.com", "password": PASSWORD, "action": "password"})
     assert headers["Location"] == "/login/2fa" and b.get("/dashboard")[0] == 303   # not signed in yet
     assert b.post("/login/2fa", {"code": "123456"})[0] == 422
-    assert b.post("/login/2fa", {"code": pyauth.totp(base64.b32decode(secret))})[0] == 303
+    used = pyauth.totp(base64.b32decode(secret))
+    assert b.post("/login/2fa", {"code": used})[0] == 303
     assert b.get("/dashboard")[0] == 200
+    b.post("/logout")
+    b.get("/login")
+    b.post("/login", {"email": "ada@example.com", "password": PASSWORD, "action": "password"})
+    assert b.post("/login/2fa", {"code": used})[0] == 422                # the same code doesn't work twice
     b.post("/logout")
     b.get("/login")
     b.post("/login", {"email": "ada@example.com", "password": PASSWORD, "action": "password"})
@@ -354,6 +384,33 @@ def test_account_changes_need_a_recent_sign_in(make, monkeypatch):
     monkeypatch.setattr(_time, "time", lambda: real() + 3600)
     status, headers, _ = b.post("/account", {"action": "totp_start"})
     assert status == 303 and "fresh=1" in headers["Location"]
+
+
+def test_setting_a_password_without_one_or_signing_out_everywhere_needs_a_recent_sign_in(make, monkeypatch):
+    site = make()
+    b, user, kit = signed_up(site)
+    from pyweb.models import system
+    with system():
+        user.password_hash = None                       # an account made with a magic link or OAuth
+        user.save(validate=False)
+    import time as _time
+    real = _time.time
+    monkeypatch.setattr(_time, "time", lambda: real() + 3600)
+    for data in ({"action": "password", "new": "a much longer pass phrase 9"}, {"action": "revoke"}):
+        status, headers, _ = b.post("/account", data)
+        assert status == 303 and "fresh=1" in headers["Location"], data
+
+
+def test_oauth_email_verified_must_really_be_true():
+    from pyweb.authkit import oauth
+    for value, ok in ((True, True), ("true", True), (False, False), ("false", False), (None, False), (1, False)):
+        p = oauth.Provider.__new__(oauth.Provider)
+        p.name, p.label = "custom", "Custom"
+        p.client_id = p.client_secret = "x"
+        p.token_endpoint, p.userinfo_endpoint = "https://id.example/token", "https://id.example/userinfo"
+        p.http = lambda url, token=None, data=None, v=value: (
+            {"access_token": "t"} if data else {"sub": "1", "email": "a@b.c", "email_verified": v})
+        assert p.finish("code", "https://app/cb", "verifier")["email_verified"] is ok, value
 
 
 def test_password_change_keeps_this_device_only(make):
@@ -586,6 +643,21 @@ def test_row_policies_follow_the_signed_in_user(make):
     assert sorted(n.text for n in Note.all()) == ["edited", "theirs"]    # no request: no policy
 
 
+def test_write_rules_cover_bulk_changes_and_the_row_as_stored(make):
+    site = make()
+    a, ua, _ = signed_up(site, email="a@example.com")
+    b, ub, _ = signed_up(site, email="b@example.com")
+    doc_id = a.rpc("add_doc", text="a's doc")[1]["result"]
+    assert b.rpc("bulk_edit_doc", doc_id=doc_id)[0] == 403
+    assert b.rpc("bulk_delete_doc", doc_id=doc_id)[0] == 403
+    assert b.rpc("take_doc", doc_id=doc_id)[0] == 403          # making it yours doesn't make it yours
+    Doc = next(m for m in site.app.models() if m.__name__ == "Doc")
+    doc = Doc.get(doc_id)
+    assert doc.text == "a's doc" and doc.owner_id == ua.id
+    assert a.rpc("bulk_edit_doc", doc_id=doc_id)[1] == {"result": 1}
+    assert a.rpc("bulk_delete_doc", doc_id=doc_id)[1] == {"result": 1}
+
+
 def test_audit_log_records_activity(make):
     site = make()
     b, user, _ = signed_up(site)
@@ -675,3 +747,15 @@ def test_auth_and_admin_pages_use_the_kit_and_the_app_theme(make):
     assert '<nav class="pw-nav" aria-label="Admin">' in users and 'aria-current="page"' in users
     _, _, bad = admin.post("/account", {"action": "password", "current": "wrong", "password": "x"})
     assert 'class="pw-alert pw-notice" data-tone="danger" role="alert"' in bad
+
+
+def test_emailed_links_never_use_a_foreign_host_header_outside_production(make, monkeypatch):
+    site = make()
+    kit = kit_of(site)
+    monkeypatch.delenv("PYWEB_ENV", raising=False)
+    monkeypatch.setattr(kit, "origin", None)
+    monkeypatch.setattr(kit, "_origin", lambda: "http://evil.example")      # what `Host: evil.example` gives
+    with pytest.raises(RuntimeError, match="PYWEB_ORIGIN"):
+        kit._link("/reset/abc")
+    monkeypatch.setattr(kit, "_origin", lambda: "http://localhost:8000")
+    assert kit._link("/reset/abc") == "http://localhost:8000/reset/abc"

@@ -34,14 +34,34 @@ _current = contextvars.ContextVar("pyweb_request", default=None)
 
 
 def _derive_dev_secret():
-    # Development only: stable across worker processes of the same project so
-    # sessions survive reloads and multi-worker dev servers. Production must
-    # set PYWEB_AUTH_SECRET (enforced when PYWEB_ENV=production).
-    import getpass
-    import hashlib
-    import socket
-    seed = f"pyweb-dev|{socket.gethostname()}|{os.getcwd()}|{getpass.getuser()}"
-    return hashlib.sha256(seed.encode()).hexdigest()
+    """The key used while developing when PYWEB_AUTH_SECRET isn't set: random, kept in a file only you
+    can read (``~/.cache/pyweb/dev-secret``) so sessions survive reloads and worker processes, or random
+    per process when that can't be written. Never derived from anything an attacker could learn.
+    ``pyweb serve`` and the ASGI app refuse to start without PYWEB_AUTH_SECRET (see config.require_secret)."""
+    import secrets
+    base = os.environ.get("PYWEB_CACHE_DIR") or os.path.join(
+        os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache"), "pyweb")
+    path = os.path.join(base, "dev-secret")
+    try:
+        st = os.stat(path)
+        if st.st_mode & 0o077 == 0 and (not hasattr(os, "getuid") or st.st_uid == os.getuid()):
+            with open(path, encoding="utf-8") as fh:
+                value = fh.read().strip()
+            if len(value) >= 32:
+                return value
+    except OSError:
+        pass
+    value = secrets.token_hex(32)
+    try:
+        os.makedirs(base, mode=0o700, exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(value)
+        os.replace(tmp, path)
+    except OSError:
+        pass                                        # read-only home: this process's own random key
+    return value
 
 
 _dev_secret = _derive_dev_secret()
@@ -182,7 +202,12 @@ def _api_token_payload(req):
 
 
 def _secret(ctx):
-    secret = ctx.auth_secret or os.environ.get("PYWEB_AUTH_SECRET")
+    return resolve_secret(ctx.auth_secret)
+
+
+def resolve_secret(explicit=None):
+    """The signing secret: ``explicit``, else PYWEB_AUTH_SECRET, else (not in production) the dev key."""
+    secret = explicit or os.environ.get("PYWEB_AUTH_SECRET")
     if secret:
         return secret
     if os.environ.get("PYWEB_ENV", "development") == "production":

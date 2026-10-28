@@ -244,6 +244,25 @@ def test_mass_assignment_is_ignored(app):
     assert post.id == 1 and post.owner_secret == ""
 
 
+def test_fields_the_form_did_not_render_are_ignored(app):
+    """The edit form shows title and draft only: views/status in the POST must not change the row."""
+    c = Client(app)
+    Post = post_model(app)
+    post = Post.create(title="Original", views=3)
+    _, _, html = c.get(f"/posts/{post.id}/edit")
+    c.post("save_post", {**c.hidden(html), "title": "Edited", "views": "999", "status": "live", "body": "x"})
+    post = Post.get(post.id)
+    assert post.title == "Edited" and post.views == 3 and post.status == "draft" and post.body == ""
+
+
+def test_a_submit_without_the_signed_field_list_is_refused(app):
+    c = Client(app)
+    _, _, html = c.get("/new")
+    hidden = {k: v for k, v in c.hidden(html).items() if k != "__pw_fields"}
+    status, _, page = c.post("save_post", {**hidden, "title": "Hello there"})
+    assert post_model(app).count() == 0 and "reload the page" in page
+
+
 def test_csrf_and_cross_site_posts_are_refused(app):
     c = Client(app)
     _, _, html = c.get("/new")
@@ -367,6 +386,9 @@ def test_storage_presigns_s3_urls():
     assert re.search(r"X-Amz-Signature=[0-9a-f]{64}$", url)
     with pytest.raises(ValueError):
         s3.presign("GET", "../escape")
+    _, put = s3.upload_url("cat.png", content_type="image/png")
+    assert "X-Amz-SignedHeaders=content-type%3Bhost" in put        # the upload must send that type
+    assert "X-Amz-SignedHeaders=host" in s3.upload_url("cat.png")[1]
 
 
 def test_carry_and_restore_for_multi_step_forms(app):

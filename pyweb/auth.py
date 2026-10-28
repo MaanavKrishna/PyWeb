@@ -470,11 +470,18 @@ def totp(secret: bytes, for_time: int | None = None, digits=_TOTP_DIGITS) -> str
 
 
 def verify_totp(secret: bytes, code: str, for_time: int | None = None, window: int = 1) -> bool:
+    return totp_step(secret, code, for_time, window) is not None
+
+
+def totp_step(secret: bytes, code: str, for_time: int | None = None, window: int = 1):
+    """The time step ``code`` belongs to (within ``window`` steps of now), or None. Store the last
+    accepted step and refuse codes from it or earlier, so a code can't be used twice."""
     now = int(time.time()) if for_time is None else for_time
     for skew in range(-window, window + 1):
-        if hmac.compare_digest(totp(secret, now + skew * _TOTP_STEP), str(code)):
-            return True
-    return False
+        at = now + skew * _TOTP_STEP
+        if hmac.compare_digest(totp(secret, at), str(code)):
+            return at // _TOTP_STEP
+    return None
 
 
 def csrf_token(secret, session_id):

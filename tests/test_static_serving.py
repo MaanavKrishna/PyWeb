@@ -104,7 +104,7 @@ def test_asgi_joins_repeated_cookie_headers(tmp_path):
     src = tmp_path / "app.pyweb"
     src.write_text("from pyweb import App, request\napp = App()\n@app.page('/')\ndef H():\n"
                    "    seen = sorted(request.cookies)\n    <p id=\"c\">{', '.join(seen)}</p>\n")
-    app = create_app(str(src), rate_limit=False)
+    app = create_app(str(src), rate_limit=False, auth_secret="t" * 32)
     sent = []
 
     async def receive():

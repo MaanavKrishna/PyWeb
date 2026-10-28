@@ -653,6 +653,20 @@ class QuerySet:
             next_cursor = base64.urlsafe_b64encode(json.dumps(vals).encode()).decode().rstrip("=")
         return Page(rows, next_cursor, size)
 
+    def _check_bulk_write(self, action, values=None):
+        """A Model's write rule applies to bulk changes too: every matching row (as it is, and as it
+        would become) must pass it, or nothing changes."""
+        policy = self.model._meta.policy
+        if policy is None or not policy.enforced():
+            return
+        for row in self.all():
+            policy.check_write(row, action)
+            if values:
+                after = self.model.__new__(self.model)
+                after.__dict__.update(row.__dict__)
+                after.__dict__.update(values)
+                policy.check_write(after, action)
+
     def update(self, *, all_rows=False, **values):
         """Change matching rows in one statement; returns how many changed."""
         if not values:
@@ -663,6 +677,7 @@ class QuerySet:
         if meta.tenant and not self._scoped:
             from pyweb import tenancy
             tenancy.before_bulk(self.model, "change", values)
+        self._check_bulk_write("change", values)
         db = self.db
         d = dialect_of(db)
         for f in meta.columns():
@@ -687,6 +702,7 @@ class QuerySet:
         if meta.tenant and not self._scoped:
             from pyweb import tenancy
             tenancy.before_bulk(self.model, "delete")
+        self._check_bulk_write("delete")
         db = self.db
         d = dialect_of(db)
         c = _Compiler(d)

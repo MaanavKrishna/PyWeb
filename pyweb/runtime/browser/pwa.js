@@ -90,7 +90,7 @@ async function unsubscribe() {
   const sub = reg && await reg.pushManager.getSubscription();
   if (sub) {
     await fetch("/__pyweb/push/unsubscribe", {
-      method: "POST", credentials: "same-origin", headers: csrfHeaders(), body: JSON.stringify({ endpoint: sub.endpoint }),
+      method: "POST", credentials: "same-origin", headers: csrfHeaders(), body: JSON.stringify({ endpoint: sub.endpoint, keys: (sub.toJSON() || {}).keys }),
     }).catch(() => {});
     await sub.unsubscribe();
   }

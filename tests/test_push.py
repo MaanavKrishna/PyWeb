@@ -245,8 +245,23 @@ def test_subscription_requests_are_checked(push_app, push_service):
     # Signed out is fine (the subscription has no user); unsubscribe deletes it.
     assert subscribe(push_app, ep, p256dh, auth).status == 200
     assert push.subscriptions()[0].user_id is None
-    r = push_app.post("/__pyweb/push/unsubscribe", {"endpoint": ep})
+    r = push_app.post("/__pyweb/push/unsubscribe", {"endpoint": ep})         # without its keys: kept
+    assert r.status == 200 and r.json()["deleted"] is False and len(push.subscriptions()) == 1
+    r = push_app.post("/__pyweb/push/unsubscribe", {"endpoint": ep, "keys": {"auth": auth}})
     assert r.status == 200 and r.json()["deleted"] is True and push.subscriptions() == []
+
+
+def test_someone_who_knows_an_endpoint_cant_take_it_over(push_app, push_service):
+    _, p256dh, auth = browser_keys()
+    _, other_key, _ = browser_keys()
+    other_auth = b64e(b"fedcba9876543210")
+    ep = push_service.url + "/mine"
+    push.subscribe(ep, p256dh, auth, user=7)
+    assert push_app.rpc("sign_in", user_id=8) is True
+    assert subscribe(push_app, ep, other_key, other_auth).status == 422          # someone else's browser
+    assert push.subscriptions(7) and not push.subscriptions(8)
+    assert subscribe(push_app, ep, p256dh, auth).status == 200                   # the same browser, new user
+    assert push.subscriptions(8)
 
 
 def test_broadcast(push_app, push_service):

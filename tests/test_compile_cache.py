@@ -110,7 +110,7 @@ def test_disk_cache_gives_the_same_output_in_a_new_process(tmp_path):
         return json.loads(res.stdout)
 
     plain = run("0")
-    assert not list(tmp_path.iterdir())
+    assert not list(tmp_path.rglob("*.bin"))
     first = run()
     entries = list(tmp_path.rglob("*.bin"))
     assert any(e.name.startswith("parse-") for e in entries) and any(e.name.startswith("code-") for e in entries)
@@ -147,3 +147,19 @@ def test_disk_cache_prunes_old_entries(tmp_path, monkeypatch):
     for i in range(9):
         diskcache.put("parse", str(i), b"x")
     assert len(list(tmp_path.rglob("*.bin"))) == 5
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="no file owners here")
+def test_disk_cache_ignores_files_others_can_write(tmp_path, monkeypatch):
+    from pyweb.compiler import diskcache
+    monkeypatch.setenv("PYWEB_CACHE", "1")
+    monkeypatch.setenv("PYWEB_CACHE_DIR", str(tmp_path))
+    diskcache.put("code", "k", b"one")
+    entry = next(tmp_path.rglob("code-k.bin"))
+    entry.chmod(0o666)
+    assert diskcache.get("code", "k") is None
+    entry.chmod(0o600)
+    entry.parent.chmod(0o777)
+    assert diskcache.get("code", "k") is None
+    entry.parent.chmod(0o700)
+    assert diskcache.get("code", "k") == b"one"

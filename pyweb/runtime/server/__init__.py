@@ -15,12 +15,35 @@ from pyweb.telemetry.tracing import RequestTelemetry as _RequestTelemetry
 from pyweb.telemetry.tracing import current as _telemetry_now
 
 
+class Headers(dict):
+    """Request headers: a plain dict (names as sent) whose lookups ignore case, as HTTP says they do."""
+
+    def _find(self, name):
+        if dict.__contains__(self, name):
+            return name
+        low = str(name).lower()
+        return next((k for k in self if str(k).lower() == low), None)
+
+    def get(self, name, default=None):
+        k = self._find(name)
+        return default if k is None else dict.__getitem__(self, k)
+
+    def __getitem__(self, name):
+        k = self._find(name)
+        if k is None:
+            raise KeyError(name)
+        return dict.__getitem__(self, k)
+
+    def __contains__(self, name):
+        return self._find(name) is not None
+
+
 class Request:
     def __init__(self, method, path, headers=None, body=b"", cookies=None, client=None):
         self.method = method.upper()
         self.client = client  # the peer's IP address, when the server knows it
         self.path = path
-        self.headers = headers or {}
+        self.headers = headers if isinstance(headers, Headers) else Headers(headers or {})
         self.body = body
         if cookies is None:
             cookies = {}
@@ -428,6 +451,9 @@ class Server:
     def _check_rpc_access(self, req: Request, fn, *, form=False):
         """Auth + CSRF + rate-limit gate. Returns None (allow) or Response."""
         from pyweb import rpc as _rpc
+        limited = self._rate_check(req, fn)       # first: every call counts, signed in or not
+        if limited is not None:
+            return limited
         blocked = self._guard_failure(req, [getattr(fn, "__pyweb_guard__", None)] if getattr(
             fn, "__pyweb_guard__", None) else None, page=False)
         if blocked is not None:
@@ -445,9 +471,11 @@ class Server:
         need = getattr(fn, "__pyweb_permissions__", [])
         csrf_exempt = getattr(fn, "__pyweb_csrf_exempt__", False)
         if need_auth or need:
-            secret = self.auth_secret
-            if not secret:
-                return None  # no secret configured: decorators are advisory
+            from pyweb.context import resolve_secret
+            try:
+                secret = resolve_secret(self.auth_secret)   # the key sessions are signed with (never "advisory")
+            except RuntimeError:
+                return self._err(_rpc.Code.AUTH, "sign-in isn't available: the server has no PYWEB_AUTH_SECRET")
             from pyweb import auth as _auth
             from pyweb import keys as _keys
             from pyweb.context import session as _session
@@ -465,6 +493,10 @@ class Server:
                                          session.get("sid", session.get("sub", "")),
                                          token):
                     return self._err(_rpc.Code.CSRF, "invalid CSRF token")
+        return None
+
+    def _rate_check(self, req, fn):
+        from pyweb import rpc as _rpc
         if self.rate_limit is not None:
             ok, retry = self.rate_limit.allow(f"{fn.__name__}:{client_ip(req)}")
             if not ok:
@@ -843,8 +875,9 @@ class Server:
                 return Response(status, json.dumps(body), {"Content-Type": "application/json",
                                                            "X-Request-Id": req.id, "Cache-Control": "no-store"})
             if fields is not None and fid is not None:
-                page = (fields.get("__pw_page") or [""])[-1]
-                if page.startswith("/") and not page.startswith("//"):
+                from pyweb.auth import safe_next
+                page = safe_next((fields.get("__pw_page") or [""])[-1], None)
+                if page:
                     rendered = self._form_page(req, page, fid, fields, errors or {}, message)
                     if rendered is not None:
                         rendered.status = status
@@ -940,8 +973,8 @@ class Server:
                                                     "Cache-Control": "no-store"})
         target = outcome.get("redirect")
         if not target:
-            page = (fields.get("__pw_page") or ["/"])[-1]
-            target = page if page.startswith("/") and not page.startswith("//") else "/"
+            from pyweb.auth import safe_next
+            target = safe_next((fields.get("__pw_page") or ["/"])[-1])
         return Response(303, "", {"Location": target, "X-Request-Id": req.id})
 
     def _form_page(self, req, page, fid, fields, errors, message):

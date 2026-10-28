@@ -409,12 +409,18 @@ class AuthKit(TeamsMixin, PrivacyMixin, TokensMixin):
     def _link(self, path):
         """An absolute link for an email. In production it never comes from the request's Host header,
         which anyone can set: a reset link pointing at an attacker's site would hand them the token."""
-        if not self.origin:
-            from pyweb.config import settings
-            if settings().production:
-                raise RuntimeError("set PYWEB_ORIGIN (e.g. https://example.com) so emailed links "
-                                   "point at your site")
-        return self._origin() + path
+        if self.origin:
+            return self._origin() + path
+        import urllib.parse as _up
+        from pyweb.config import settings
+        need = RuntimeError("set PYWEB_ORIGIN (e.g. https://example.com) so emailed links point at your site")
+        if settings().production:
+            raise need
+        origin = self._origin()      # only a loopback Host is trusted: anyone can send `Host: evil.com`
+        host = (_up.urlsplit(origin).hostname or "").lower()
+        if not (host in ("localhost", "127.0.0.1", "::1", "testserver") or host.endswith(".localhost")):
+            raise need
+        return origin + path
 
     def _mail(self, to, subject, text):
         from pyweb import mail

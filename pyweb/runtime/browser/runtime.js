@@ -238,7 +238,7 @@ const SVG_TAGS = new Set(["svg", "path", "circle", "rect", "line", "g", "polylin
   "polygon", "ellipse", "defs", "use", "linearGradient", "radialGradient", "stop",
   "clipPath", "mask", "pattern", "symbol", "tspan", "foreignObject"]);
 const PROPS = new Set(["value", "checked", "selected", "indeterminate"]);
-const URL_ATTRS = new Set(["href", "src", "action", "formaction", "xlink:href"]);
+const URL_ATTRS = new Set(["href", "src", "action", "formaction", "xlink:href", "data", "poster", "cite", "background", "ping"]);
 
 /** Block `javascript:` (and similar) URLs from reaching the DOM. */
 export function safeUrl(v) {
@@ -274,7 +274,7 @@ function applyAttr(el, k, v) {
   }
   if (v == null || v === false) { el.removeAttribute(k); return; }
   if (v === true) { el.setAttribute(k, ""); return; }
-  el.setAttribute(k, URL_ATTRS.has(k) ? safeUrl(v) : String(v));
+  el.setAttribute(k, URL_ATTRS.has(k.toLowerCase()) ? safeUrl(v) : String(v));
 }
 
 function listen(el, ev, handler) {
@@ -367,8 +367,9 @@ function spread(el, props, keys) {
       for (const [rawKey, v] of entries) {
         const key = rawKey === "class_" || rawKey === "className" ? "class" : String(rawKey);
         if (key === "class") { classes.push(v); continue; }
-        if (SKIP_SPREAD.has(key) || explicit.has(key)) continue;
-        if (key.length > 2 && key[0] === "o" && key[1] === "n") {
+        const low = key.toLowerCase();
+        if (SKIP_SPREAD.has(key) || explicit.has(key) || low === "srcdoc" || !/^[A-Za-z_:][-\w:.]*$/.test(key)) continue;
+        if (low.length > 2 && low[0] === "o" && low[1] === "n") {
           handlers[key] = v;
           if (!listening.has(key)) {
             listening.add(key);

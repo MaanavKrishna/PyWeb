@@ -85,6 +85,7 @@ def test_receiving_runs_the_handler_once_as_a_job(hook_app):
     body = json.dumps({"ref": "refs/heads/main"}).encode()
     assert gh_post(hook_app, body).status == 202
     assert gh_post(hook_app, body).status == 200                       # the same delivery again: dropped
+    assert gh_post(hook_app, body, delivery="d-2").status == 200       # a replay under a new (unsigned) id too
     assert gh_post(hook_app, body, secret=b"wrong").status == 401
     assert hook_app.request("GET", "/hooks/gh").status == 405
     assert jobs.Worker(concurrency=1, schedule=False).drain(timeout=10) == 1

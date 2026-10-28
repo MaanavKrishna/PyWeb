@@ -87,8 +87,13 @@ page Home("/") signals ['count'] rpc []
 ```bash
 pyweb check app.pyweb                          # compile, security and accessibility checks (CI-friendly)
 pyweb build app.pyweb --out dist --production  # hashed, minified, deployable dist/
+export PYWEB_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))")
 pyweb serve dist                               # production server with /healthz
 ```
+
+`pyweb serve` needs `PYWEB_AUTH_SECRET` (it signs sessions, CSRF tokens and
+links) and won't start without it; `PYWEB_ENV=development pyweb serve dist`
+tries a build locally without one.
 
 `dist/` contains your app source, static assets and a `Dockerfile`; see
 [Deployment](12-deployment.md).

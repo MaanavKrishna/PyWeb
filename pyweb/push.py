@@ -30,6 +30,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -268,6 +269,10 @@ def subscribe(endpoint, p256dh, auth, *, user=None, org=None, user_agent=None):
     org_id = getattr(org, "id", org)
     with system():
         row = PushSubscription.where(endpoint_hash=_hash(endpoint)).first()
+        if row is not None and row.user_id is not None and row.user_id != user_id \
+                and not hmac.compare_digest(str(row.auth or ""), str(auth or "")):
+            # Someone else's browser: only that browser (it holds the auth secret) may re-register it.
+            raise ValueError("this subscription belongs to another browser")
         if row is not None:
             PushSubscription.where(id=row.id).update(p256dh=p256dh, auth=auth, user_id=user_id, org_id=org_id,
                                                      failures=0, user_agent=user_agent)
@@ -276,11 +281,22 @@ def subscribe(endpoint, p256dh, auth, *, user=None, org=None, user_agent=None):
                                        user_id=user_id, org_id=org_id, user_agent=user_agent)
 
 
-def unsubscribe(endpoint) -> bool:
+def unsubscribe(endpoint, *, auth=None, user=None) -> bool:
+    """Delete a subscription. From a request, pass what proves it's yours: the browser's ``auth`` key
+    or the signed-in ``user`` who owns it (without either, any subscription goes: server code only)."""
     from pyweb.models import system
     ensure_tables()
     with system():
-        return bool(PushSubscription.where(endpoint_hash=_hash(endpoint or "")).delete())
+        q = PushSubscription.where(endpoint_hash=_hash(endpoint or ""))
+        if auth is not None or user is not None:
+            row = q.first()
+            if row is None:
+                return False
+            mine = (user is not None and row.user_id == getattr(user, "id", user)) or \
+                (auth is not None and hmac.compare_digest(str(row.auth or ""), str(auth)))
+            if not mine:
+                return False
+        return bool(q.delete())
 
 
 def subscriptions(user=None, *, org=None):
@@ -445,12 +461,14 @@ def handle(server, req, cfg):
     endpoint = data.get("endpoint")
     if not isinstance(endpoint, str):
         return _json(400, {"error": "endpoint missing"})
-    if path.endswith("/unsubscribe"):
-        return _json(200, {"ok": True, "deleted": unsubscribe(endpoint)})
-    keys = data.get("keys") or {}
+    keys = data.get("keys") if isinstance(data.get("keys"), dict) else {}
     from pyweb import tenancy
     from pyweb.context import session
     payload = session.user() or {}
+    if path.endswith("/unsubscribe"):
+        sub_id = payload.get("sub")
+        who = int(sub_id) if str(sub_id or "").isdigit() and not payload.get("api") else None
+        return _json(200, {"ok": True, "deleted": unsubscribe(endpoint, auth=str(keys.get("auth") or ""), user=who)})
     if payload.get("api"):
         return _json(403, {"error": "API tokens can't subscribe browsers"})
     sub_id = payload.get("sub")

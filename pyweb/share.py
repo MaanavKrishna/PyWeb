@@ -128,9 +128,10 @@ class Share:
         host = _lower(headers).get("host", "").rsplit(":", 1)[0].lower()
         return host == self.host
 
-    def check(self, method, path, headers):
-        """None to let a request through, else the response (the entry link sets the cookie)."""
-        if not self.guest(headers):
+    def check(self, method, path, headers, guest=None):
+        """None to let a request through, else the response (the entry link sets the cookie).
+        ``guest`` overrides the Host test (the dev server knows more, e.g. a tunnel that rewrote Host)."""
+        if not (self.guest(headers) if guest is None else guest):
             return None
         h = _lower(headers)
         if urlparse(path).path == ENTRY:

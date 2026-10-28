@@ -28,7 +28,11 @@ from .compiler.ast import ControlFor, ControlIf, Element, ExprNode, MarkdownNode
 
 VOID = {"input", "img", "br", "hr", "meta", "link", "source", "wbr",
         "col", "base", "area", "embed", "track", "param"}
-URL_ATTRS = {"href", "src", "action", "formaction", "xlink:href"}
+URL_ATTRS = {"href", "src", "action", "formaction", "xlink:href", "data", "poster", "cite", "background", "ping"}
+#: Attribute names a ``{**dict}`` spread may set (anything else, e.g. "x onmouseover=..", is dropped).
+_ATTR_NAME = re.compile(r"[A-Za-z_:][-A-Za-z0-9_:.]*\Z")
+#: Never from a spread: inline HTML documents and event handlers in any case.
+_SPREAD_BLOCKED = {"srcdoc"}
 #: HTML boolean attributes: present or absent, so any falsy value (0 from a database too) leaves
 #: them out, as the browser runtime does when it sets the property.
 BOOLEAN_ATTRS = {"checked", "disabled", "selected", "readonly", "required", "multiple", "hidden", "open",
@@ -417,9 +421,11 @@ def spread_attrs(explicit, own_class, dicts):
             continue
         for key, v in dict(d).items():
             name = "class" if key in ("class_", "className") else str(key)
+            lower = name.lower()
             if name == "class":
                 classes.append(v)
-            elif name in explicit or name in SKIP_SPREAD or name.startswith("on") or name.startswith(SPREAD):
+            elif (name in explicit or name in SKIP_SPREAD or lower.startswith("on") or name.startswith(SPREAD)
+                  or lower in _SPREAD_BLOCKED or not _ATTR_NAME.match(name)):
                 continue
             else:
                 merged[name] = v
@@ -439,7 +445,7 @@ def _attr(name, v):
         return ""
     if v is True or (name in BOOLEAN_ATTRS and not isinstance(v, str)):
         return f" {name}"
-    if name in URL_ATTRS:
+    if name.lower() in URL_ATTRS:
         v = safe_url(v)
     return f' {name}="{_html.escape(str(v))}"'
 

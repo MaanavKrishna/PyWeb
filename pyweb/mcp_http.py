@@ -6,8 +6,10 @@ the response) when the client accepts ``text/event-stream``. ``initialize`` star
 (``Mcp-Session-Id``); ``DELETE`` ends it.
 
 It listens on 127.0.0.1 by default and refuses requests whose ``Origin`` or ``Host`` isn't local
-(a web page you visit can't reach it through DNS rebinding). Listening on another address needs a
-token (``--token`` or ``PYWEB_MCP_TOKEN``), sent as ``Authorization: Bearer <token>``.
+(a web page you visit can't reach it through DNS rebinding). It always needs a token, sent as
+``Authorization: Bearer <token>``: ``--token``, ``PYWEB_MCP_TOKEN``, or else one it makes and keeps in
+``.pyweb/mcp-token`` (readable only by you), so other users and programs on the machine can't drive
+your project's tools.
 """
 
 from __future__ import annotations
@@ -207,10 +209,38 @@ def make_server(host="127.0.0.1", port=8765, *, path="/mcp", token=None):
     return srv
 
 
+def local_token(folder="."):
+    """The token in ``<folder>/.pyweb/mcp-token``, made (0600) the first time."""
+    d = os.path.join(folder, ".pyweb")
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, "mcp-token")
+    try:
+        st = os.stat(p)
+        if hasattr(os, "getuid") and (st.st_uid != os.getuid() or st.st_mode & 0o077):
+            raise SystemExit(f"{p} is readable by others or not yours; delete it and run again")
+        with open(p) as f:
+            tok = f.read().strip()
+        if len(tok) >= 20:
+            return tok
+    except FileNotFoundError:
+        pass
+    tok = secrets.token_urlsafe(32)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(tok + "\n")
+    return tok
+
+
 def serve_http(host="127.0.0.1", port=8765, *, path="/mcp", token=None):
-    srv = make_server(host, port, path=path, token=token)
     import sys
+    made = None
+    if not (token or os.environ.get("PYWEB_MCP_TOKEN")):
+        token = made = local_token()
+    srv = make_server(host, port, path=path, token=token)
     print(f"PyWeb MCP server: http://{host}:{srv.server_address[1]}{path}", file=sys.stderr, flush=True)
+    if made:
+        print(f"  send the header  Authorization: Bearer {made}\n  (kept in .pyweb/mcp-token)",
+              file=sys.stderr, flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

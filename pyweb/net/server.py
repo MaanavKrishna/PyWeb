@@ -35,6 +35,7 @@ from . import ws as W
 HEAD_TIMEOUT = 10.0           # seconds to send a whole request head
 IDLE_TIMEOUT = 15.0           # seconds a keep-alive connection may sit idle
 WS_PATH = "/__pyweb/ws"
+PING_LIMIT = 20             # WebSocket pings answered per second before the socket is closed
 
 
 class Server:
@@ -296,6 +297,7 @@ class _WSConnection:
         self.pending = []
         self.closed = False
         self.lock = asyncio.Lock()
+        self._ping_window, self._pings = 0.0, 0
 
     async def recv(self):
         while not self.pending:
@@ -317,6 +319,13 @@ class _WSConnection:
                 if isinstance(event, W.Message):
                     self.pending.append(event.data)
                 elif isinstance(event, W.Ping):
+                    now = time.monotonic()
+                    if now - self._ping_window >= 1.0:
+                        self._ping_window, self._pings = now, 0
+                    self._pings += 1
+                    if self._pings > PING_LIMIT:          # a ping flood: each pong costs a write
+                        await self.close(W.POLICY, "too many pings")
+                        return None
                     await self._raw(W.frame(W.PONG, event.data))
                 elif isinstance(event, W.Closed):
                     await self.close(W.NORMAL if event.code == 1005 else event.code, "")

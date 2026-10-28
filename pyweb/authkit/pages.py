@@ -21,7 +21,7 @@ from . import PENDING_2FA, OAUTH_COOKIE, WEBAUTHN_COOKIE, _safe_next, passwords
 from . import html as H
 from .models import AuthEvent, AuthToken, Credential, Identity, User
 
-FRESH = 15 * 60          # account changes need a sign-in this recent
+FRESH = 10 * 60          # account changes need a sign-in this recent
 ASSET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "runtime", "browser")
 
 
@@ -216,7 +216,14 @@ def two_factor(c):
 def _check_code(user, code):
     from pyweb import auth
     if re.fullmatch(r"\d{6}", code or ""):
-        return auth.verify_totp(base64.b32decode(user.totp_secret), code)
+        stored = user.totp_secret
+        secret, _, last = stored.partition(":")       # "<base32>:<last accepted step>"
+        step = auth.totp_step(base64.b32decode(secret), code)
+        if step is None or (last.isdigit() and step <= int(last)):
+            return False                              # wrong, or already used: a code works once
+        from pyweb.models import system
+        with system():                                # compare-and-set: two submits of one code can't both win
+            return User.where(id=user.id, totp_secret=stored).update(totp_secret=f"{secret}:{step}") == 1
     digest = hashlib.sha256((code or "").lower().encode()).hexdigest()
     codes = list(user.recovery_codes or [])
     if digest in codes:
@@ -252,12 +259,14 @@ def signup(c):
                 kit.start_signup(values["email"], c.get("password"), values["name"])
                 return page(c, "Check your email", H.notice(
                     f"We sent a link to {values['email']} to finish signing up. It works for 24 hours.", "ok"))
-            existing = User.where(email=values["email"]).first()
-            if existing is not None:
-                raise ValidationError({"email": "already has an account; sign in or reset your password"})
             problem = passwords.problem(c.get("password"), email=values["email"], name=values["name"])
             if problem:
                 raise ValidationError({"password": problem})
+            existing = User.where(email=values["email"]).first()
+            if existing is not None:
+                # signup="instant" signs new people in at once, so it can't hide which addresses have an
+                # account; signup="verify" (the default) answers the same either way.
+                raise ValidationError({"email": "already has an account; sign in or reset your password"})
             user = kit.create_user(values["email"], c.get("password"), name=values["name"])
             kit.event("signup", user=user)
             return _finish_login(c, user, "signup", kit.after_login)
@@ -385,7 +394,7 @@ def account(c):
             return forbidden(c)
         action = c.get("action")
         sensitive = action in ("passkey_remove", "totp_start", "totp_confirm", "totp_disable", "unlink", "email",
-                               "delete_account")
+                               "delete_account", "revoke") or (action == "password" and not user.password_hash)
         if sensitive and not kit.fresh(FRESH):
             return redirect("/login?" + urllib.parse.urlencode({"next": "/account", "fresh": "1"}))
         if action == "delete_account":

@@ -5,7 +5,8 @@ off). Entries are keyed by the source's hash plus the PyWeb and Python versions,
 and pruned to the newest few hundred. A missing, corrupt or unreadable entry is ignored (and rewritten).
 
 The cache lives in ``$PYWEB_CACHE_DIR``, else ``$XDG_CACHE_HOME/pyweb``, else ``~/.cache/pyweb``: a
-folder only you can write to, holding what your own source files compile to.
+folder only you can write to, holding what your own source files compile to. Entries hold code that
+runs, so a folder or file that isn't yours, or that others can write to, is never read.
 """
 
 import hashlib
@@ -35,11 +36,23 @@ def key(*parts):
     return h.hexdigest()
 
 
+def _private(st):
+    """Owned by this user and not writable by anyone else (always true where there are no uids)."""
+    if not hasattr(os, "getuid"):
+        return True
+    return st.st_uid == os.getuid() and not st.st_mode & 0o022
+
+
 def get(kind, k):
     if not enabled():
         return None
     try:
-        with open(os.path.join(_dir(), f"{kind}-{k}.bin"), "rb") as fh:
+        folder = _dir()
+        if not _private(os.stat(folder)):
+            return None
+        with open(os.path.join(folder, f"{kind}-{k}.bin"), "rb") as fh:
+            if not _private(os.fstat(fh.fileno())):
+                return None
             return fh.read()
     except OSError:
         return None

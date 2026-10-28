@@ -90,6 +90,9 @@ async def _websocket(site, scope, receive, send):
 
 def create_app(target="app.pyweb", *, debug=False, max_body=1_048_576, **server_kwargs):
     """Return an ASGI 3 application serving ``target`` (a `.pyweb` file or dist dir)."""
+    if not debug and not server_kwargs.get("auth_secret"):
+        from .config import require_secret
+        require_secret("pyweb.asgi.create_app")
     site = Site(target, debug=debug, max_body=max_body, **server_kwargs)
     site.use_transport_timeouts()
 

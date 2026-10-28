@@ -284,6 +284,27 @@ def sign_pk(form_id, model, pk):
     return payload + "." + _mac(_secret(), "pk:" + payload)
 
 
+def sign_fields(form_id, names):
+    """The fields a form rendered, signed: a submit may only set these (no mass assignment)."""
+    raw = json.dumps([form_id, sorted(names)])
+    payload = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+    return payload + "." + _mac(_secret(), "fields:" + payload)
+
+
+def read_fields(token, form_id):
+    """The set of field names signed by :func:`sign_fields` for ``form_id``, or None."""
+    if not token or "." not in token:
+        return None
+    payload, mac = token.rsplit(".", 1)
+    if not any(hmac.compare_digest(_mac(k, "fields:" + payload), mac) for k in _verify_keys()):
+        return None
+    try:
+        fid, names = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except (ValueError, TypeError):
+        return None
+    return set(names) if fid == form_id and isinstance(names, list) else None
+
+
 def read_pk(token, form_id, model):
     if not token or "." not in token:
         return None
@@ -430,7 +451,8 @@ def specs(entries):
             if submitted is not None and fdef.multiple and not isinstance(raw, list):
                 raw = [raw] if raw else []
             fields[name] = _field_spec(fid, fdef, raw, errors.get(name), tag)
-        hidden = {"__pw_form": fid, "__pw_csrf": token, "__pw_key": secrets.token_urlsafe(16), "__pw_page": page}
+        hidden = {"__pw_form": fid, "__pw_csrf": token, "__pw_key": secrets.token_urlsafe(16), "__pw_page": page,
+                  "__pw_fields": sign_fields(fid, [name for name, _ in used])}
         if entry.get("redirect"):
             hidden["__pw_redirect"] = entry["redirect"]
         from pyweb.models import Model
@@ -606,10 +628,15 @@ def build_args(action, fid, fields, files):
     from pyweb.rules import ValidationError
     shape, param, model, defs = form_fields(action, choices_for=set())
     errors: dict = {}
+    rendered = read_fields(_one(fields.get("__pw_fields")), fid)
+    if rendered is None:
+        raise ValidationError({"__all__": "this form was changed or is too old; reload the page"})
     if shape == "model":
         # Fields the form showed: checkboxes and multi-selects send nothing when empty,
-        # so the markup adds a hidden __pw_has_<name> for them.
-        submitted = {name for name in defs if name in fields or name in files or f"__pw_has_{name}" in fields}
+        # so the markup adds a hidden __pw_has_<name> for them. Only fields the form rendered count:
+        # extra names in the POST (published=1, owner=2) are ignored.
+        submitted = {name for name in defs if name in rendered
+                     and (name in fields or name in files or f"__pw_has_{name}" in fields)}
         row = None
         pk = read_pk(_one(fields.get("__pw_pk")), fid, model) if fields.get("__pw_pk") else None
         if fields.get("__pw_pk") and pk is None:
@@ -652,7 +679,7 @@ def build_args(action, fid, fields, files):
         return {param: row}
     out = {}
     for name, fdef in defs.items():
-        if name not in fields and name not in files and f"__pw_has_{name}" not in fields:
+        if name not in rendered or (name not in fields and name not in files and f"__pw_has_{name}" not in fields):
             if fdef.default is not None or fdef.nullable or fdef.bool_field or fdef.multiple:
                 continue
             errors[name] = "is required"
@@ -715,7 +742,8 @@ def fill_redirect(template, result):
         value = data.get(m.group(1))
         return "" if value is None else re.sub(r"[^A-Za-z0-9._~-]", lambda c: "%%%02X" % ord(c.group()), str(value))
     url = re.sub(r"\{(\w+)\}", sub, template)
-    if not url.startswith("/") or url.startswith("//") or "\\" in url:
+    from pyweb.auth import safe_next
+    if "\\" in url or safe_next(url, None) is None:
         return None
     return url
 

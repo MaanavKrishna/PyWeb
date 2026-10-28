@@ -166,6 +166,18 @@ def settings(env=None) -> Settings:
     return value
 
 
+def require_secret(where="pyweb serve"):
+    """Production entry points (``pyweb serve``, the ASGI app) stop when PYWEB_AUTH_SECRET is missing:
+    without it every session, CSRF token and encrypted field would hang on a development key. Set
+    PYWEB_ENV=development to run a production server locally without one."""
+    if os.environ.get("PYWEB_AUTH_SECRET") or os.environ.get("PYWEB_ENV") == "development":
+        return
+    raise SystemExit(
+        f"{where}: set PYWEB_AUTH_SECRET before serving (it signs sessions, CSRF tokens and links):\n"
+        "  export PYWEB_AUTH_SECRET=$(python -c \"import secrets; print(secrets.token_hex(32))\")\n"
+        "(to try a production build locally without one: PYWEB_ENV=development)")
+
+
 def startup():
     """Validate settings when a server starts (a bad value stops it with a clear error) and
     connect shared services: with ``PYWEB_REDIS_URL``, live updates go through Redis so

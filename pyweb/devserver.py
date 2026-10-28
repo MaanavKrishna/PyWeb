@@ -175,6 +175,9 @@ class _DevSite:
                 and (guest or (not mine and not bare.startswith("/__pyweb/dev/agent/"))):
             from pyweb.telemetry.devtools import _json
             return _json({"error": "the dev tools are for the person running pyweb dev, on that machine"}, 403)
+        if bare.endswith(".js.map") and not mine:
+            # A source map holds the whole .pyweb file, server functions included: the developer's only.
+            return 404, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], b"not found"
         if path == "/__pyweb/dev/version":
             return 200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], str(state.version).encode()
         if path.split("?")[0] == "/__pyweb/dev/changes":

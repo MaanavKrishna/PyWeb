@@ -51,6 +51,21 @@ tenant tables get a new policy.
 - **Request headers** are looked up case-insensitively everywhere (CSRF
   token, `Last-Event-ID`, `traceparent`).
 - **WebSockets:** a ping flood closes the socket.
+- **Translations:** the `Plural-Forms` rule of a `.po` file may only be a
+  plural rule (no powers, shifts or huge numbers), so a hostile catalog
+  can't hang the server.
+- **Page cache:** copies are kept per host and per language, and cached
+  pages say `Vary: Cookie` (plus `Accept-Language` with translations) so a
+  CDN keeps them apart too.
+- **`<Image>`:** Pillow opens only the format a file's name says, and each
+  file has one cached copy per width however its path is spelled.
+- **Source maps** in `pyweb dev` hold the whole `.pyweb` file, server code
+  included: only the developer's own browser gets them (not share-link
+  guests or the LAN). `pyweb build` maps never contain source.
+- **CSV:** DataTable downloads also neutralize cells starting with a tab or
+  carriage return.
+- The VS Code extension uses `vscode-languageclient` 11; its build tools no
+  longer pull in vulnerable `@azure/msal-node` and `qs` versions.
 - **Dev tools:** `pyweb dev --share` treats a tunnel that rewrites `Host` to
   localhost as a guest; detailed error pages go only to the developer;
   `pyweb mcp --http` always needs a token (kept in `.pyweb/mcp-token`);

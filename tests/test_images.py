@@ -72,3 +72,12 @@ def test_without_pillow_the_original_is_sent(site, monkeypatch):
     monkeypatch.setattr(images, "_pillow", lambda: None)
     status, _, body = site.respond("GET", "/__pyweb/img/640/cat.jpg", {})
     assert status == 200 and body == site.respond("GET", "/static/cat.jpg", {})[2]
+
+
+def test_one_copy_per_file_and_only_its_own_format(site, tmp_path):
+    (tmp_path / "static" / "fake.png").write_bytes((tmp_path / "static" / "cat.jpg").read_bytes())   # a JPEG named .png
+    status, _, body = site.respond("GET", "/__pyweb/img/640/fake.png", {})
+    assert status == 200 and body == (tmp_path / "static" / "fake.png").read_bytes()               # sent as it is
+    site.respond("GET", "/__pyweb/img/640/cat.jpg", {})
+    site.respond("GET", "/__pyweb/img/640/./cat.jpg", {})
+    assert len([k for k in images._cache if k[0] == "cat.jpg"]) == 1

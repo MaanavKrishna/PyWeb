@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import logging
+import posixpath
 import threading
 from collections import OrderedDict
 
@@ -42,7 +43,7 @@ def resize(data, width, fmt):
     if lib is None:
         return data
     Image, ImageOps = lib
-    with Image.open(io.BytesIO(data)) as im:
+    with Image.open(io.BytesIO(data), formats=[fmt]) as im:     # only the format its name says
         if im.width * im.height > MAX_PIXELS or im.width <= width:
             return data
         im = ImageOps.exif_transpose(im)
@@ -78,6 +79,9 @@ def respond(static_dirs, rest, *, query="", if_none_match=None, dev=False):
     if not width_s.isdigit() or int(width_s) not in WIDTHS or not rel:
         return 404, [("Content-Type", "text/plain")], b"not found"
     width = int(width_s)
+    rel = posixpath.normpath(rel)             # one cache entry per file, whatever the spelling
+    if rel.startswith(("../", "/")) or rel in ("..", "."):
+        return 404, [("Content-Type", "text/plain")], b"not found"
     status, headers, body = static_file(static_dirs, rel, query=query, dev=dev)
     if status != 200:
         return status, headers, body

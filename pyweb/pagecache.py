@@ -79,8 +79,10 @@ def _install():
 
 
 def key(name, req, vary):
-    parts = [name, req.path]
     headers = req.headers
+    from . import i18n
+    # The host (app code may read it), and the language a translated page was rendered in.
+    parts = [name, req.path, (headers.get("host") or "").lower(), i18n.get_locale() or ""]
     for v in vary:
         if v == "accept-language":
             parts.append((headers.get("accept-language") or "").split(",")[0].strip().lower())

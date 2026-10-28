@@ -163,6 +163,11 @@ def _ternary(s):
     return "".join(out)
 
 
+_PLURAL_NODES = (ast.Expression, ast.BoolOp, ast.And, ast.Or, ast.BinOp, ast.Add, ast.Sub, ast.Mult, ast.FloorDiv,
+                 ast.Mod, ast.UnaryOp, ast.Not, ast.USub, ast.UAdd, ast.Compare, ast.Eq, ast.NotEq, ast.Lt,
+                 ast.LtE, ast.Gt, ast.GtE, ast.IfExp, ast.Name, ast.Load, ast.Constant)
+
+
 def plural_function(expr):
     """A Python function for a gettext ``Plural-Forms`` expression (C syntax, ``n`` only)."""
     expr = (expr or "").strip().rstrip(";")
@@ -178,10 +183,17 @@ def plural_function(expr):
         pos = m.end()
     code = "".join(out)
     code = _ternary(code)
-    compiled = compile(code, "<plural>", "eval")
-    for name in compiled.co_names:
-        if name != "n":
+    try:
+        tree = ast.parse(code, "<plural>", "eval")
+    except SyntaxError:
+        raise ValueError(f"unsupported plural expression: {expr!r}") from None
+    # Only what plural rules use: no powers or shifts (a hostile catalog could hang the server), small numbers.
+    for node in ast.walk(tree):
+        if not isinstance(node, _PLURAL_NODES) or (
+                isinstance(node, ast.Name) and node.id != "n") or (
+                isinstance(node, ast.Constant) and not (isinstance(node.value, int) and 0 <= node.value < 10 ** 6)):
             raise ValueError(f"unsupported plural expression: {expr!r}")
+    compiled = compile(tree, "<plural>", "eval")
     return lambda n: int(eval(compiled, {"__builtins__": {}}, {"n": n}))  # noqa: S307 - checked above
 
 

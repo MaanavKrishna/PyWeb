@@ -167,3 +167,14 @@ def test_a_tunnel_that_rewrites_host_is_still_a_guest(site):
     assert status == 200 and "pyweb-devtools" not in page                 # with the link: the app, no tools
     status, page = _get(site, "/", {"Host": "localhost:8000"})
     assert status == 200 and "pyweb-devtools" in page                     # the developer
+
+
+def test_source_maps_hold_server_code_so_only_the_developer_gets_them(site):
+    site, gate = site
+    _, page = _get(site, "/", {"Host": "localhost:8000"})
+    js = re.search(r'src="(/static/[^"?]+\.js)', page).group(1)
+    status, body = _get(site, js + ".map", {"Host": "localhost:8000"})
+    assert status == 200 and "sourcesContent" in body
+    guest = {"Host": PUBLIC, "Cookie": f"{S.COOKIE}={gate.session}", "Sec-Fetch-Site": "same-origin"}
+    assert _get(site, js + ".map", guest)[0] == 404
+    assert _get(site, js + ".map", {"Host": "192.168.1.20:8000"}, client=("192.168.1.30", 5000))[0] == 404

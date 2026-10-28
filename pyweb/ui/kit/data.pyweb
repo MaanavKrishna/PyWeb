@@ -41,7 +41,7 @@ def _cell(row, col):
 
 
 def _csv_field(text):
-    if text[:1] in ("=", "+", "-", "@"):
+    if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
         text = "'" + text                        # a spreadsheet must not run it as a formula
     if any(ch in text for ch in ',"\n\r'):
         return '"' + text.replace('"', '""') + '"'

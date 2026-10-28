@@ -1064,6 +1064,12 @@ class Server:
                    "Content-Disposition": ("inline" if inline else "attachment") + f'; filename="{key.split("/", 1)[1]}"'}
         return Response(200, data if req.method == "GET" else b"", headers)
 
+    def _cache_vary(self):
+        """``Vary`` for a page shared through a CDN: a signed-in visitor (a cookie) or another language
+        must not get the copy made for someone else."""
+        app = getattr(self.app, "app", None)
+        return "Cookie, Accept-Language" if getattr(app, "locales", None) else "Cookie"
+
     def _render_page(self, req, name, params):
         from pyweb.context import BadRequest, NotFound, Redirect
         from urllib.parse import parse_qs, unquote
@@ -1081,7 +1087,7 @@ class Server:
                 if hit is not None:
                     return Response(200, hit, {"Content-Type": "text/html; charset=utf-8", "X-Request-Id": req.id,
                                                "Cache-Control": f"public, max-age={cache_for}",
-                                               "X-PyWeb-Cache": "hit"})
+                                               "Vary": self._cache_vary(), "X-PyWeb-Cache": "hit"})
                 cache_token = pagecache.begin()
         try:
             result = self._render_with_timeout(name, {k: unquote(v) for k, v in params.items()},
@@ -1122,6 +1128,7 @@ class Server:
             from pyweb import pagecache
             if pagecache.finish(cache_token, name, req, page.get("vary") or (), result, cache_for):
                 headers["Cache-Control"] = f"public, max-age={cache_for}"
+                headers["Vary"] = self._cache_vary()
                 headers["X-PyWeb-Cache"] = "miss"
         if getattr(getattr(self.app, "app", None), "pwa", None):
             from pyweb import pwa as _pwa

@@ -108,3 +108,23 @@ def test_cache_options_are_checked():
     bad = 'from pyweb import App\napp = App()\n@app.page("/", cache=5, vary=["moon"])\ndef H():\n    <p>x</p>\n'
     with pytest.raises(CompileError, match="vary="):
         compile_source(bad, filename="app.pyweb")
+
+
+def test_translated_pages_are_cached_per_language_and_host(tmp_path, monkeypatch):
+    from pyweb import models as M
+    monkeypatch.setattr(M._state, "db", None)
+    monkeypatch.setattr(pagecache, "_store", None)
+    (tmp_path / "locales" / "de").mkdir(parents=True)
+    (tmp_path / "locales" / "de" / "messages.po").write_text('msgid "Hello"\nmsgstr "Hallo"\n')
+    (tmp_path / "app.pyweb").write_text(
+        'from pyweb import App, _\n\napp = App(locales=["en", "de"])\n\n\n'
+        '@app.page("/", cache=60)\ndef Home():\n    <p id="t">{_("Hello")}</p>\n')
+    c = TestClient(str(tmp_path / "app.pyweb"))
+    de = c.request("GET", "/", headers={"Accept-Language": "de"})
+    en = c.request("GET", "/", headers={"Accept-Language": "en"})
+    assert "Hallo" in de.text and "Hello" in en.text and "Hallo" not in en.text   # never the other language's copy
+    assert en.header("Vary") == "Cookie, Accept-Language"
+    a = pagecache.key("Home", type("R", (), {"path": "/", "headers": {"host": "a.example"}, "cookies": {}})(), ())
+    b = pagecache.key("Home", type("R", (), {"path": "/", "headers": {"host": "b.example"}, "cookies": {}})(), ())
+    assert a != b
+    M._state.db = None

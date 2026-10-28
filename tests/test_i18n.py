@@ -112,3 +112,15 @@ def test_cli_extract_init_and_check(app_dir):
     r = run("check")
     assert "de: 3/3 translated" in r.stdout and "fr: 0/3 translated" in r.stdout
     assert run("check", "--strict").returncode == 1
+
+
+def test_a_hostile_plural_rule_is_refused():
+    """Plural-Forms comes from a translation file: it may only be a small plural rule, never code
+    or an expression that takes forever (powers, shifts, huge numbers)."""
+    import pytest
+    from pyweb.i18n import plural_function
+    for bad in ("n**9**9**9", "1<<99999", "n.__class__", "99999999999", "__import__('os')"):
+        with pytest.raises(ValueError):
+            plural_function(bad)
+    ru = plural_function("(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2)")
+    assert [ru(i) for i in (1, 2, 5, 11, 21, 22)] == [0, 1, 2, 2, 0, 1]

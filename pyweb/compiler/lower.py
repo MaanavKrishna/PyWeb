@@ -104,6 +104,21 @@ def _page_kwargs(fn):
     return {}
 
 
+def _cache_options(options, node):
+    """``cache=`` (seconds) and ``vary=`` from ``@app.page``, checked."""
+    cache, vary = options.get("cache"), options.get("vary") or []
+    if cache is not None and (isinstance(cache, bool) or not isinstance(cache, int) or cache <= 0):
+        raise CompileError("cache= is how many seconds to keep the page (a whole number above 0)", node.lineno)
+    if isinstance(vary, str):
+        vary = [vary]
+    for v in vary:
+        if not isinstance(v, str) or not (v in ("accept-language", "query") or v.startswith(("cookie:", "header:"))):
+            raise CompileError(f"vary={v!r}: use \"accept-language\", \"cookie:NAME\" or \"header:NAME\"", node.lineno)
+    if vary and cache is None:
+        raise CompileError("vary= only matters with cache=", node.lineno)
+    return cache, list(vary)
+
+
 def _guard(options):
     """``login=`` / ``roles=`` / ``fresh=`` / ``org_role=`` / ``feature=`` from a page or layout
     decorator, or None."""
@@ -173,6 +188,7 @@ class PageInfo:
         self.route = route          # pages: the route; layouts: the path prefix they wrap
         options = _page_kwargs(node) if kind in ("page", "layout") else {}
         self.guard = _guard(options)
+        self.cache, self.vary = _cache_options(options, node) if kind == "page" else (None, [])
         if kind == "layout":
             options = {}
         self.title = options.get("title")

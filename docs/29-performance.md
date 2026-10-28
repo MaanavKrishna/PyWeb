@@ -77,6 +77,42 @@ threads meet. Your server functions are just Python, so module-level
 state you change from several requests at once needs a lock there too,
 the same as with threads on any Python.
 
+## Caching pages
+
+Every page answered `200` gets an `ETag`. A browser coming back with it gets `304 Not Modified`
+and no body; pages that are the same for everyone are sent with `Cache-Control: no-cache` (keep,
+but check first) instead of `no-store`.
+
+For pages many people read and few change, keep the rendered HTML:
+
+```python
+@app.page("/pricing", cache=300)
+def Pricing():
+    plans = Plan.where(public=True).order_by("price")
+    ...
+
+
+@app.page("/docs/{slug}", cache=3600, vary=["accept-language"])
+def Doc(slug: str):
+    ...
+```
+
+The first visitor's render is kept for up to `cache` seconds and reused for everyone after, sent
+with `Cache-Control: public, max-age=...` so a CDN can keep it too. `vary=` keeps one copy per
+value of `"accept-language"`, `"cookie:NAME"` or `"header:NAME"`; the path and query string are
+always part of the key.
+
+Only what's the same for everyone is kept:
+
+- a visitor with a session cookie (or an `Authorization` header) always gets a fresh render;
+- a render that read the session, set a cookie (a `<Form>` sets its CSRF cookie), showed a toast
+  or opened a live feed (`channel()`, `live()`) isn't stored.
+
+A copy is dropped as soon as the process writes to a table the page read while rendering (PyWeb
+watches the queries), or with `pyweb.pagecache.invalidate("/pricing")` (`invalidate()` drops
+them all). With `PYWEB_REDIS_URL` the copies live in Redis, shared by every server process.
+`pyweb dev` never uses them.
+
 ## Finding the slow part of your app
 
 ### The dev toolbar

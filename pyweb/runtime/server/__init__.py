@@ -386,6 +386,9 @@ class Server:
     #: Default cap for RPC request bodies (1 MiB). Bodies beyond this
     #: are rejected with ``413 body-too-large`` before JSON parsing.
     MAX_BODY = 1_048_576
+    #: ``@app.page(cache=...)`` copies and page ETags are used (off in ``pyweb dev``, which adds
+    #: its scripts to each page after it renders).
+    page_cache = True
 
     def __init__(self, compiled=None, *, auth_secret=None, csrf_secret=None,
                  rate_limit=None, rpc_timeout=None, tracer=None,
@@ -723,6 +726,21 @@ class Server:
                 resp.headers["X-PyWeb-Toast"] = packed
             else:     # a form post or a page: the next page shows it (after a redirect too)
                 rc.set_cookies.append(f"pyweb_toast={packed}; Path=/; Max-Age=60; SameSite=Lax")
+        if resp is not None and self.page_cache and req.method in ("GET", "HEAD") and resp.status == 200 \
+                and isinstance(resp.body, (str, bytes)) \
+                and str(resp.headers.get("Content-Type", "")).startswith("text/html"):
+            # Pages: an ETag, and 304 for a browser that has this version. A page that is the same
+            # for everyone may be kept and revalidated; a personal one is still never stored.
+            from pyweb import pagecache
+            tag = pagecache.etag(resp.body)
+            if resp.headers.get("Cache-Control") == "no-store" and not (rc._session_loaded or rc.set_cookies
+                                                                         or rc.toasts or getattr(rc, "personal", False)):
+                resp.headers["Cache-Control"] = "no-cache"
+            if resp.headers.get("Cache-Control") != "no-store":
+                resp.headers["ETag"] = tag
+                if pagecache.matches(req.headers.get("if-none-match"), tag):
+                    resp = Response(304, "", {k: v for k, v in resp.headers.items()
+                                              if k in ("ETag", "Cache-Control", "X-Request-Id", "Vary")})
         if resp is not None and rc.set_cookies:
             existing = resp.headers.get("Set-Cookie")
             cookies = ([existing] if isinstance(existing, str) else list(existing or [])) + rc.set_cookies
@@ -1046,6 +1064,18 @@ class Server:
         if blocked is not None:
             return blocked
         path, _, qs = req.path.partition("?")
+        page = self.compiled["pages"].get(name, {})
+        cache_for = page.get("cache") if req.method in ("GET", "HEAD") and self.page_cache else None
+        cache_token = None
+        if cache_for:
+            from pyweb import pagecache
+            if not pagecache.personal(req):
+                hit = pagecache.lookup(name, req, page.get("vary") or ())
+                if hit is not None:
+                    return Response(200, hit, {"Content-Type": "text/html; charset=utf-8", "X-Request-Id": req.id,
+                                               "Cache-Control": f"public, max-age={cache_for}",
+                                               "X-PyWeb-Cache": "hit"})
+                cache_token = pagecache.begin()
         try:
             result = self._render_with_timeout(name, {k: unquote(v) for k, v in params.items()},
                                                parse_qs(qs, keep_blank_values=True), path)
@@ -1081,6 +1111,11 @@ class Server:
         if isinstance(result, Redirect):
             return Response(result.status, "", {"Location": result.url, "X-Request-Id": req.id})
         headers = {"Content-Type": "text/html; charset=utf-8", "X-Request-Id": req.id, "Cache-Control": "no-store"}
+        if cache_token is not None:
+            from pyweb import pagecache
+            if pagecache.finish(cache_token, name, req, page.get("vary") or (), result, cache_for):
+                headers["Cache-Control"] = f"public, max-age={cache_for}"
+                headers["X-PyWeb-Cache"] = "miss"
         if getattr(getattr(self.app, "app", None), "pwa", None):
             from pyweb import pwa as _pwa
             _pwa.offline_header(self, req, headers)

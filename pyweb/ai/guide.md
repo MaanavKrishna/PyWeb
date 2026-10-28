@@ -246,6 +246,8 @@ def Item(item_id: int):
   `pyweb.routes.json(...)/csv(rows, filename=)/redirect(...)`. Use server
   functions for the app's own pages; routes for other clients.
 - `@app.middleware` `def mw(request, call_next): ...` wraps every request.
+- Read-mostly public pages: `@app.page("/pricing", cache=300)` keeps the HTML for
+  visitors who aren't signed in (dropped when a table it read changes).
 
 ## 7. Python that compiles to the browser
 

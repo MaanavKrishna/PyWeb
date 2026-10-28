@@ -298,6 +298,7 @@ class Site:
             self.app = LoadedApp(target, dev=dev)
             self._index_memory_js()
         self.server = Server(app=self.app, debug=debug, max_body=max_body, **self.server_kwargs)
+        self.server.page_cache = not dev          # `pyweb dev` always renders afresh
         self.trust_proxy = config.settings().trust_proxy > 0
         telemetry.install()
 
@@ -312,6 +313,7 @@ class Site:
         self.app = app
         self._index_memory_js()
         self.server = Server(app=app, debug=self.debug, max_body=self.max_body, **self.server_kwargs)
+        self.server.page_cache = not self.dev
 
     # ------------------------------------------------------------ static
     def static(self, rel, *, query="", if_none_match=None):

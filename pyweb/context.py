@@ -117,6 +117,7 @@ class RequestContext:
         self.toasts = []           # pyweb.ui.toast(...): shown by the page that gets this answer
         self._session = None
         self._session_loaded = False
+        self.personal = False      # the answer is for this visitor only (a live feed, ...): never shared
 
 
 def current():

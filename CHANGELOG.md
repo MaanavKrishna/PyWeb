@@ -83,6 +83,12 @@ project uses [semantic versioning](https://semver.org).
   `@app.middleware` runs around every request. Routes appear in
   `pyweb openapi` and the MCP `pyweb_routes` tool. See
   [Routes & middleware](docs/36-routes.md).
+- **Page caching.** Every page gets an `ETag` (and `304 Not Modified`);
+  pages that are the same for everyone may be kept by the browser
+  (`no-cache` instead of `no-store`). `@app.page(cache=300, vary=[...])` keeps
+  the rendered HTML for visitors who aren't signed in, dropped when a table
+  the page read changes, shared through Redis when configured. See
+  [Performance](docs/29-performance.md#caching-pages).
 - `/robots.txt` and `/sitemap.xml` (with `App(base_url=...)`), from the app's
   public pages plus `@app.sitemap` generators; `App(robots=...)`.
 - Plugins work: `App(plugins=[...])` registers a plugin's routes, pages,

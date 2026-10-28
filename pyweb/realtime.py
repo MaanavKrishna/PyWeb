@@ -278,6 +278,10 @@ def make_feed(name, secret, *, since=0, max_age=FEED_MAX_AGE, now=None, sid=None
     """
     import json as _json
     import time as _time
+    from . import context as _ctx
+    rc = _ctx._current.get()
+    if rc is not None:
+        rc.personal = True          # a page with a live feed isn't shared (pyweb.pagecache)
     expires = int((now or _time.time()) + max_age)
     fields = [str(name), expires, int(since)] + ([sid] if sid else [])
     payload = _b64(_json.dumps(fields, separators=(",", ":")).encode())

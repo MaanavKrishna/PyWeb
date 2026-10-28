@@ -80,7 +80,8 @@ class App:
             self.use(plugin)
 
     def page(self, route, *, title=None, render="server", description=None, image=None, canonical=None,
-             noindex=False, layout=..., login=False, roles=(), fresh=None, org_role=None, feature=None):
+             noindex=False, layout=..., login=False, roles=(), fresh=None, org_role=None, feature=None,
+             cache=None, vary=()):
         """Register a page at ``route``. ``{name}`` segments and other parameters of the
         function (from the query string) become its arguments.
 
@@ -89,6 +90,9 @@ class App:
         ``fresh=600`` requires a sign-in in the last 600 seconds;
         ``org_role="admin"`` (or a list) requires that role in the current organization and
         ``feature="exports"`` a plan with that feature (with ``use_auth(orgs=True)``).
+        ``cache=60`` keeps the rendered page for 60 seconds for visitors who aren't signed in
+        (see :mod:`pyweb.pagecache`); ``vary=["accept-language", "cookie:theme"]`` keeps one copy
+        per value of those.
         """
         def deco(fn):
             self.pages.append((route, fn.__name__, {"render": render, "title": title}))

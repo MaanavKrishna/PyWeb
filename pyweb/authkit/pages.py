@@ -55,11 +55,8 @@ class Ctx:
 
     def csrf_ok(self):
         from pyweb import forms
-        if self.headers.get("sec-fetch-site") == "cross-site":
-            return False
-        origin = self.headers.get("origin")
-        host = self.headers.get("x-forwarded-host") or self.headers.get("host")
-        if origin and host and origin != "null" and urllib.parse.urlparse(origin).netloc != host:
+        from pyweb.security import cross_site
+        if cross_site(self.headers):
             return False
         token = self.fields.get("__pw_csrf") or self.headers.get("x-pw-csrf", "")
         return forms.check_csrf(self.req.cookies.get(forms.CSRF_COOKIE), token)

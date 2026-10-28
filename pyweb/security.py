@@ -229,3 +229,42 @@ def assert_browser_safe(source, filename="<pyweb>"):
         f = leaks[0]
         raise ValueError(f"ERROR: server secret referenced from browser-executed code ({filename}:{f['line']})")
     return True
+
+
+# ------------------------------------------------------------ where a request came from
+# One place decides what "came from another site" means, so server functions, forms, the auth
+# kit, push subscriptions and the dev tools can't drift apart.
+
+def _lower_headers(headers):
+    if headers is None:
+        return {}
+    return {str(k).lower(): v for k, v in headers.items()}
+
+
+def cross_site(headers):
+    """True when the browser says the request came from another site.
+
+    ``Sec-Fetch-Site: cross-site`` is refused; so is an ``Origin`` whose host isn't the one the
+    request was sent to (``X-Forwarded-Host`` first, as a proxy rewrites ``Host``). A request with
+    neither header (a script, an old browser) isn't treated as cross-site: endpoints that need more
+    also check a CSRF token or a JSON content type, which another site's page can't send.
+    """
+    h = _lower_headers(headers)
+    if h.get("sec-fetch-site") == "cross-site":
+        return True
+    origin = h.get("origin")
+    host = h.get("x-forwarded-host") or h.get("host")
+    if origin and host and origin != "null":
+        return urllib.parse.urlparse(origin).netloc != host
+    return False
+
+
+def same_origin(headers):
+    """Stricter: True only for the site's own pages (``Sec-Fetch-Site: same-origin``/``none``, or a
+    matching ``Origin``). For endpoints that change files or settings (the dev tools)."""
+    h = _lower_headers(headers)
+    site = h.get("sec-fetch-site")
+    if site is not None:
+        return site in ("same-origin", "none")
+    origin, host = h.get("origin"), h.get("host", "")
+    return origin is None or origin.split("://", 1)[-1] == host

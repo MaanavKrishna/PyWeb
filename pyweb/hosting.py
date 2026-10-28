@@ -146,6 +146,12 @@ def shutdown(timeout=10.0, logger=None):
     return closed, unfinished
 
 
+def json_response(data, status=200):
+    """``(status, headers, body)`` for a JSON answer that must not be cached."""
+    return status, [("Content-Type", "application/json"), ("Cache-Control", "no-store")], \
+        json.dumps(data, default=str).encode()
+
+
 def health(ready=False, started=None):
     """``(status, payload)`` for ``/healthz`` (the process is up) or ``/readyz`` (it can serve:
     every database the app opened answers)."""
@@ -257,7 +263,8 @@ class Site:
     def __init__(self, target, *, debug=False, max_body=1_048_576, dev=False, **server_kwargs):
         from . import config
         from .app_loader import LoadedApp
-        from .serve import DEFAULT_CSP, load_dist
+        from .csp import DEFAULT_CSP
+        from .serve import load_dist
         config.startup()
         self.debug = debug
         self.dev = dev                     # `pyweb dev`: elements carry their source line (click to source)
@@ -424,7 +431,7 @@ class Site:
                 hdrs.append((k, v))
         ctype = next((v for k, v in hdrs if k.lower() == "content-type"), "")
         if ctype.startswith("text/html") and not self.debug and "content-security-policy" not in names:
-            from .serve import csp_for
+            from .csp import csp_for
             hdrs.append(("Content-Security-Policy", csp_for(self.csp, raw) if isinstance(raw, bytes) else self.csp))
         if not is_stream(raw) and status == 200:
             ae = next((v for k, v in (headers or {}).items() if k.lower() == "accept-encoding"), "")

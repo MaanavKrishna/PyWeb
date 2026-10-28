@@ -93,17 +93,11 @@ __all__ = [
     "observability",
     "forms",
     "testing",
-    "sync",
-    "livetable",
-    "deploy",
-    "uploads",
-    "lsp",
     "browser_api",
-    "build",
-    "css",
-    "plugins",
     "platform",
 ]
+# Also importable from `pyweb` but not part of `from pyweb import *` (tooling, or still experimental):
+# sync, livetable, deploy, uploads, lsp, build, css, plugins.
 
 def _version():
     """Single source of truth: installed dist metadata, else pyproject."""

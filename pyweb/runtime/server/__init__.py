@@ -15,6 +15,12 @@ from pyweb.telemetry.tracing import RequestTelemetry as _RequestTelemetry
 from pyweb.telemetry.tracing import current as _telemetry_now
 
 
+from pyweb.net.http import parse_cookies as _parse_cookies  # noqa: E402
+
+#: Called with ``(exc, request)`` when a page raises in debug mode (the dev server adds one).
+PAGE_EXCEPTION_HOOKS: list = []
+
+
 class Headers(dict):
     """Request headers: a plain dict (names as sent) whose lookups ignore case, as HTTP says they do."""
 
@@ -46,12 +52,7 @@ class Request:
         self.headers = headers if isinstance(headers, Headers) else Headers(headers or {})
         self.body = body
         if cookies is None:
-            cookies = {}
-            raw = next((v for k, v in self.headers.items() if k.lower() == "cookie"), "")
-            for pair in (raw or "").split(";"):
-                name, sep, value = pair.partition("=")
-                if sep and name.strip():
-                    cookies[name.strip()] = value.strip().strip('"')
+            cookies = _parse_cookies(self.headers.get("cookie", ""))
         self.cookies = cookies
         self.id = _speedups.trace_id()[:12]     # replaced by the telemetry's request id when there is one
 
@@ -579,17 +580,11 @@ class Server:
                 # preflight using form encodings; requiring JSON blocks them.
                 return self._err(415, "RPC requests must be application/json",
                                  trace_id=trace_id, traceparent=traceparent)
-            if hdr.get("sec-fetch-site") == "cross-site":
+            from pyweb.security import cross_site
+            if cross_site(hdr):
                 # Browsers say where a request came from; another site's page can't call these.
                 return self._err(_rpc.Code.CSRF, "cross-site RPC call rejected",
                                  trace_id=trace_id, traceparent=traceparent)
-            origin = hdr.get("origin")
-            host = hdr.get("x-forwarded-host") or hdr.get("host")
-            if origin and host and origin != "null":
-                from urllib.parse import urlparse as _urlparse
-                if _urlparse(origin).netloc != host:
-                    return self._err(_rpc.Code.CSRF, "cross-origin RPC call rejected",
-                                     trace_id=trace_id, traceparent=traceparent)
             if self.max_body is not None and len(req.body or b"") > self.max_body:
                 return self._err(413, "request body too large",
                                  trace_id=trace_id, traceparent=traceparent)
@@ -892,14 +887,9 @@ class Server:
 
         if fn is None:
             return fail(404, "this form's action doesn't exist")
-        if hdr.get("sec-fetch-site") == "cross-site":
+        from pyweb.security import cross_site
+        if cross_site(hdr):
             return fail(403, "forms can't be sent from other sites")
-        origin = hdr.get("origin")
-        host = hdr.get("x-forwarded-host") or hdr.get("host")
-        if origin and host and origin != "null":
-            from urllib.parse import urlparse as _urlparse
-            if _urlparse(origin).netloc != host:
-                return fail(403, "forms can't be sent from other sites")
         gate = self._check_rpc_access(req, fn, form=True)
         if gate is not None:
             status = gate.status
@@ -1052,9 +1042,12 @@ class Server:
             if self.logger is not None:
                 self.logger.error(f"page {name} failed: {exc}", request_id=req.id, page=name)
             if self.debug:
-                from pyweb import assist
                 from pyweb.compiler.errors import explain_exception
-                assist.note_exception(exc, getattr(req, "id", None))     # for "Fix with AI" in pyweb dev
+                for hook in list(PAGE_EXCEPTION_HOOKS):            # pyweb dev: "Fix with AI" remembers it
+                    try:
+                        hook(exc, req)
+                    except Exception:  # noqa: BLE001 - a dev tool must not change the error page
+                        pass
                 return self.error_page(500, req, title=f"{type(exc).__name__} in {name}()",
                                        message=explain_exception(exc))
             return self.error_page(500, req)

@@ -440,11 +440,9 @@ def handle(server, req, cfg):
     hdr = {k.lower(): v for k, v in (req.headers or {}).items()}
     if "json" not in hdr.get("content-type", "").lower():
         return _json(415, {"error": "send JSON"})
-    if hdr.get("sec-fetch-site") == "cross-site":
+    from pyweb.security import cross_site
+    if cross_site(hdr):
         return _json(403, {"error": "cross-site request rejected"})
-    origin, host = hdr.get("origin"), hdr.get("x-forwarded-host") or hdr.get("host")
-    if origin and host and origin != "null" and urlparse(origin).netloc != host:
-        return _json(403, {"error": "cross-origin request rejected"})
     if getattr(server, "rate_limit", None) is not None:
         from pyweb.runtime.server import client_ip
         ok, _retry = server.rate_limit.allow(f"push:{client_ip(req)}")

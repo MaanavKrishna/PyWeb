@@ -208,3 +208,7 @@ their URLs include the version.
 Trusted Types rule the others have (many libraries write `innerHTML`
 themselves); the rest of the policy still applies. See
 [Security](13-security.md#cross-site-scripting).
+
+
+`PYWEB_NPM_REGISTRY` points `pyweb add` at another registry (a mirror or a private one); the default is
+`https://registry.npmjs.org`.

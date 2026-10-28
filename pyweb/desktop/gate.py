@@ -40,7 +40,7 @@ def _lower(headers):
 
 
 def _cookie(header, name):
-    from pyweb.serve import parse_cookies
+    from pyweb.net.http import parse_cookies
     return parse_cookies(header or "").get(name, "")
 
 

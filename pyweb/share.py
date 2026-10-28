@@ -141,7 +141,7 @@ class Share:
             cookie = f"{COOKIE}={self.session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400"
             return 303, [("Location", "/"), ("Set-Cookie", cookie), ("Cache-Control", "no-store"),
                          ("Referrer-Policy", "no-referrer"), ("Content-Length", "0")], b""
-        from pyweb.serve import parse_cookies
+        from pyweb.net.http import parse_cookies
         sent = parse_cookies(h.get("cookie", "")).get(COOKIE, "")
         if not sent or not hmac.compare_digest(sent, self.session):
             return _answer(403, _REFUSED)

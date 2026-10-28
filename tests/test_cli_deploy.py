@@ -42,8 +42,9 @@ def test_deploy_unknown_target_fails(tmp_path):
 
 def test_package_exports_new_modules():
     import pyweb
-    for name in ("sync", "live", "deploy", "uploads", "lsp"):
-        assert name in pyweb.__all__ and hasattr(pyweb, name)
+    assert "live" in pyweb.__all__
+    for name in ("sync", "deploy", "uploads", "lsp"):          # importable, but not in `import *`
+        assert hasattr(pyweb, name) and name not in pyweb.__all__
     assert os.path.exists("pyweb/sync.py")
 
 

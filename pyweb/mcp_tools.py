@@ -371,7 +371,7 @@ def tool_upgrade(args):
 
 def tool_deploy_plan(args):
     """What `pyweb deploy TARGET` would run and why, without writing anything."""
-    from .cli import production_problems
+    from .checks import production_problems
     from .deploy.plan import describe, make_plan, read_app
     path = args.get("path") or "app.pyweb"
     facts = read_app(path)

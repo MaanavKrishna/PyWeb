@@ -77,6 +77,21 @@ project uses [semantic versioning](https://semver.org).
 ### Added
 - `PYWEB_DB_POOL` (default 10): database connections per process.
 
+### Changed (internals)
+- An option in `@app.page(...)`/`@app.layout(...)` that isn't written out as
+  a value (`login=NEEDS_LOGIN`) is a compile error; it used to be ignored,
+  which could leave a page public.
+- One definition of "came from another site" (`pyweb.security.cross_site`)
+  for server functions, forms, the auth kit and push; one cookie parser
+  (`pyweb.net.http.parse_cookies`).
+- The dev server moved to `pyweb.devserver`, the production checks to
+  `pyweb.checks`, project scaffolding to `pyweb.scaffold` and the page CSP to
+  `pyweb.csp` (the old import paths still work). The server runtime no longer
+  imports the AI helper: `pyweb dev` hooks into page errors instead.
+- `from pyweb import *` no longer brings in tooling modules (`sync`, `lsp`,
+  `deploy`, `build`, ...); `pyweb.lsp` and the others still import.
+- Every `PYWEB_*` setting is documented (a test keeps it that way).
+
 ### Changed
 - `pyweb serve` and `pyweb.asgi.create_app()` refuse to start without
   `PYWEB_AUTH_SECRET` (set `PYWEB_ENV=development` to run without one).

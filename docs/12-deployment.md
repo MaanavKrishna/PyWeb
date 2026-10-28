@@ -230,6 +230,10 @@ across processes use `RedisCache`, and for
 | `PYWEB_DB_POOL` | `10` | database connections each process may open (keep `workers × pool` under the server's limit) |
 | `PYWEB_MAX_QUEUE` | `256` | requests waiting for a thread before new ones get `503` with `Retry-After` |
 | `PYWEB_SHUTDOWN_TIMEOUT` | `25` | seconds to finish requests and jobs after `SIGTERM` |
+| `PYWEB_MIGRATE_ON_START` | unset | `1`: apply pending migrations when the server starts (same as `pyweb serve --migrate`) |
+| `PYWEB_WORKER_HEARTBEAT` | temp dir | file `pyweb worker` touches every round (point a container health check at it) |
+| `PYWEB_METRICS_EVERY` | `5` | seconds between each worker process writing its metrics for `/metrics` (with `--workers`) |
+| `PYWEB_STRICT_RELATIONS` | on outside production | reading a relation you didn't `include()` is an error (`1`) or a logged warning (`0`) |
 | `PYWEB_ALLOWED_ORIGINS` | unset | other origins allowed to open the pages' WebSocket (comma-separated); by default only the site itself |
 | `WEB_CONCURRENCY` | `1` | worker processes for `pyweb serve` (same as `--workers`) |
 | `PYWEB_WORKER` | `1` | `0`: don't run background jobs inside the web server (run `pyweb worker` processes; see [Background jobs](24-jobs.md)) |

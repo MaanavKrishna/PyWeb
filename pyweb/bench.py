@@ -173,7 +173,7 @@ def saas_page_us(repeat=300):
     import os
     import shutil
     import tempfile
-    from pyweb.mcp import scaffold
+    from pyweb.scaffold import scaffold
     from pyweb.testing import TestClient
     old = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
@@ -243,7 +243,7 @@ def reload_ms(rounds=5):
             if os.path.isdir(fixed):
                 shutil.copytree(fixed, os.path.join(tmp, "team"))
             else:
-                from pyweb.mcp import scaffold
+                from pyweb.scaffold import scaffold
                 scaffold(os.path.join(tmp, "team"), template="saas")
             os.chdir(os.path.join(tmp, "team"))
             Site("app.pyweb")                                   # the first load fills the caches
@@ -275,7 +275,7 @@ def cold_dev_ms(rounds=5):
         if os.path.isdir(fixed):
             shutil.copytree(fixed, app)
         else:
-            from pyweb.mcp import scaffold
+            from pyweb.scaffold import scaffold
             scaffold(app, template="saas")
         env = {**os.environ, "PYWEB_CACHE": "1", "PYWEB_CACHE_DIR": os.path.join(tmp, "cache"),
                "PYTHONPATH": root + os.pathsep + os.environ.get("PYTHONPATH", "")}

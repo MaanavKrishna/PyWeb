@@ -188,3 +188,7 @@ Unsigned apps work, but the OS warns people before opening them.
   apps; desktop apps use `desktop.notify()`.
 - On Linux, pywebview needs WebKitGTK (`gir1.2-webkit2-4.1`) or Qt
   WebEngine (`pip install "pywebview[qt6]"`).
+
+
+`PYWEB_AUTHOR` and `PYWEB_AUTHOR_EMAIL` fill in the package's author when `pyweb build --desktop --package`
+isn't given `--author` / `--author-email`.

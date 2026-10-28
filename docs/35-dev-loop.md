@@ -149,3 +149,11 @@ answer only requests from your machine to `localhost`.
 
 The [threat model](https://github.com/MaanavKrishna/PyWeb/blob/main/THREAT_MODEL.md) lists each of these with the tests
 that prove it.
+
+
+### Environment
+
+| Variable | What it does |
+|---|---|
+| `PYWEB_NO_OPEN` | `1`: `pyweb dev` doesn't open the browser (also skipped over SSH and in CI) |
+| `PYWEB_SHARE_COMMAND` | the tunnel command for `--share` instead of cloudflared/ssh (`{port}` is filled in) |

@@ -88,6 +88,18 @@ def _literal_kwargs(call):
 def _page_kwargs(fn):
     for d in fn.decorator_list:
         if isinstance(d, ast.Call) and _deco_name(d) in (*PAGE_DECORATOR_ATTRS, ERROR_DECORATOR, LAYOUT_DECORATOR):
+            for k in d.keywords:
+                if k.arg is None:
+                    raise CompileError(f"@app.{_deco_name(d)}(**...) isn't supported: write each option out",
+                                       d.lineno)
+                try:
+                    ast.literal_eval(k.value)
+                except (ValueError, SyntaxError, TypeError):
+                    # The compiler reads these options without running the app: a name or a call here
+                    # used to be ignored silently (a page with login=NEEDS_LOGIN was public).
+                    raise CompileError(f"{k.arg}= in @app.{_deco_name(d)}(...) must be written out as a value "
+                                       f"(a string, number, True/False, None, or a list of them), not "
+                                       f"`{ast.unparse(k.value)}`", k.value.lineno) from None
             return _literal_kwargs(d)
     return {}
 

@@ -231,3 +231,15 @@ def response_head(status, headers, *, version="HTTP/1.1") -> bytes:
             raise ValueError(f"invalid response header {name!r}")
         lines.append(f"{name}: {value}")
     return ("\r\n".join(lines) + "\r\n\r\n").encode("latin-1")
+
+
+def parse_cookies(header_value):
+    """Parse a ``Cookie`` header into a dict. Malformed pairs are skipped (never raise on
+    attacker-controlled input). The one cookie parser every part of PyWeb uses."""
+    cookies = {}
+    for pair in (header_value or "").split(";"):
+        name, sep, value = pair.partition("=")
+        name = name.strip()
+        if sep and name:
+            cookies[name] = value.strip().strip('"')
+    return cookies

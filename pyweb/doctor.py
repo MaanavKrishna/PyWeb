@@ -251,7 +251,7 @@ def check_ai(app):
 
 
 def check_production(app):
-    from .cli import production_problems
+    from .checks import production_problems
     source = _read(app) if os.path.isfile(app) else ""
     problems = production_problems(source, os.path.dirname(os.path.abspath(app)))
     if not problems:

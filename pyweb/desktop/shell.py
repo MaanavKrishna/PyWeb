@@ -89,7 +89,7 @@ def build_site(app_path, *, dev=False):
     """The gated site for ``app_path`` (and a reload watcher with ``dev``)."""
     from .gate import DesktopSite
     if dev:
-        from pyweb.cli import _dev_load, _DevSite, _DevState
+        from pyweb.devserver import _dev_load, _DevSite, _DevState
         from pyweb.hosting import Site
         state = _DevState(app_path)
         _dev_load(state, Site)
@@ -139,7 +139,7 @@ def run(app_path, *, dev=False, smoke=False, gui=None):
     except Exception as exc:  # noqa: BLE001 - the window matters more than background jobs
         print(f"background jobs not started: {exc}", file=sys.stderr)
     if dev:
-        from pyweb.cli import _watch_and_reload
+        from pyweb.devserver import _watch_and_reload
         from pyweb.hosting import Site
         _watch_and_reload(gate.site.state_for_reload, Site)
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True

@@ -152,8 +152,8 @@ class Link:
 
 
 def _json(data, status=200):
-    return status, [("Content-Type", "application/json"), ("Cache-Control", "no-store")], \
-        json.dumps(data, default=str).encode()
+    from pyweb.hosting import json_response
+    return json_response(data, status)
 
 
 # ------------------------------------------------------------------ the MCP side

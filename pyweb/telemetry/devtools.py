@@ -22,17 +22,13 @@ PREFIX = "/__pyweb/dev/"
 
 
 def _json(data, status=200):
-    return status, [("Content-Type", "application/json"), ("Cache-Control", "no-store")], \
-        json.dumps(data, default=str).encode()
+    from pyweb.hosting import json_response
+    return json_response(data, status)
 
 
 def _same_origin(headers):
-    h = {k.lower(): v for k, v in (headers or {}).items()}
-    site = h.get("sec-fetch-site")
-    if site is not None:
-        return site in ("same-origin", "none")
-    origin, host = h.get("origin"), h.get("host", "")
-    return origin is None or origin.split("://", 1)[-1] == host
+    from pyweb.security import same_origin
+    return same_origin(headers)
 
 
 def _theme_fields(app, query):

@@ -139,6 +139,9 @@ class LoadedApp:
         app_obj = next((v for v in self.module.__dict__.values()
                         if type(v).__name__ == "App" and type(v).__module__.startswith("pyweb")), None)
         self.app = app_obj
+        for plugin in getattr(getattr(app_obj, "plugins", None), "_plugins", {}).values():
+            for fn in plugin.rpc:                       # a plugin's server functions are callable too
+                self.rpc.setdefault(fn.__name__, fn)
         if self.ctx.live_names or any(lib.ctx.live_names for lib in self.libraries):
             from . import livedata
             livedata.enable()            # announce table writes from this process, even before a live() call

@@ -75,6 +75,19 @@ project uses [semantic versioning](https://semver.org).
   reaches every job; failures in the live-data watcher are logged.
 
 ### Added
+- **HTTP routes and middleware.** `@app.route("/api/items/{id:int}",
+  methods=[...])` (and `@app.get` / `@app.post`) answer anything that isn't a
+  page: JSON, text, CSV downloads (`pyweb.routes.csv`), redirects, with typed
+  path parameters, `login=`/`roles=`/`rate=` guards, API tokens
+  (`tokens=True`), CORS (`cors=[...]`) and a same-site check for writes.
+  `@app.middleware` runs around every request. Routes appear in
+  `pyweb openapi` and the MCP `pyweb_routes` tool. See
+  [Routes & middleware](docs/36-routes.md).
+- `/robots.txt` and `/sitemap.xml` (with `App(base_url=...)`), from the app's
+  public pages plus `@app.sitemap` generators; `App(robots=...)`.
+- Plugins work: `App(plugins=[...])` registers a plugin's routes, pages,
+  server functions and Models.
+- `TestClient.put/patch/delete`; `pyweb.request.body` and `request.json()`.
 - `PYWEB_DB_POOL` (default 10): database connections per process.
 
 ### Changed (internals)

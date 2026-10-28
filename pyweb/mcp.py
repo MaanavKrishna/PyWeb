@@ -229,7 +229,35 @@ def tool_routes(args):
                for n, lay in out.get("layouts", {}).items()]
     return {"pages": pages, "layouts": layouts,
             "server_functions": [{"name": s["name"], "endpoint": f"POST /__pyweb/rpc/{s['name']}",
-                                  "streams": bool(s.get("stream"))} for s in out["rpc"]]}
+                                  "streams": bool(s.get("stream"))} for s in out["rpc"]],
+            "routes": _http_routes(_source)}
+
+
+def _http_routes(source):
+    """``@app.route`` / ``@app.get`` / ``@app.post`` endpoints, read from the source (nothing runs)."""
+    import ast
+    try:
+        from .compiler.parser import parse_source
+        tree = parse_source(source, filename="app.pyweb")[0]
+    except Exception:  # noqa: BLE001 - a file that doesn't parse has no routes to list
+        return []
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for d in node.decorator_list:
+            if not (isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
+                    and d.func.attr in ("route", "get", "post") and d.args):
+                continue
+            try:
+                path = ast.literal_eval(d.args[0])
+                opts = {k.arg: ast.literal_eval(k.value) for k in d.keywords if k.arg}
+            except (ValueError, SyntaxError):
+                continue
+            methods = {"get": ["GET"], "post": ["POST"]}.get(d.func.attr) or list(opts.get("methods") or ["GET"])
+            found.append({"path": path, "methods": [m.upper() for m in methods], "handler": node.name,
+                          "line": node.lineno, **({"login": True} if opts.get("login") or opts.get("roles") else {})})
+    return found
 
 
 def tool_packages(args):

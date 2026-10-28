@@ -239,6 +239,13 @@ def Item(item_id: int):
   unhandled errors (e.g. to Sentry). The dev toolbar (`pyweb dev`) shows
   each request's SQL: a "N+1?" warning means add `include(...)`.
   `/metrics` needs `PYWEB_METRICS_TOKEN` in production.
+- **HTTP routes** (JSON APIs, CSV downloads, anything that isn't a page):
+  `@app.route("/api/items/{id:int}", methods=["GET", "POST"], login=True)` on a
+  plain function; it gets path/query parameters by name, `body` (JSON) and
+  `request`, and returns a dict/list (JSON), a str, bytes, None (204) or
+  `pyweb.routes.json(...)/csv(rows, filename=)/redirect(...)`. Use server
+  functions for the app's own pages; routes for other clients.
+- `@app.middleware` `def mw(request, call_next): ...` wraps every request.
 
 ## 7. Python that compiles to the browser
 

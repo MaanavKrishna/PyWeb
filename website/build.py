@@ -48,6 +48,7 @@ DOCS = [
     ("07-browser-python.md", "browser-python", "Python in the browser", "Language"),
     ("18-npm-packages.md", "npm", "npm packages", "Language"),
     ("06-server-functions.md", "server-functions", "Server functions & RPC", "Server"),
+    ("36-routes.md", "routes", "Routes & middleware", "Server"),
     ("08-pages-routing-assets.md", "routing", "Pages, routing & assets", "Server"),
     ("19-layouts-navigation.md", "layouts", "Layouts & navigation", "Server"),
     ("09-data.md", "data", "Data & databases", "Server"),

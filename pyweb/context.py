@@ -163,6 +163,17 @@ class _RequestProxy:
     def id(self):
         return current().request.id
 
+    @property
+    def body(self):
+        """The raw request body (bytes)."""
+        return current().request.body or b""
+
+    def json(self):
+        """The body parsed as JSON (None when there's none)."""
+        import json as _json
+        raw = self.body
+        return _json.loads(raw) if raw else None
+
     def set_cookie(self, name, value, *, max_age=None, path="/", http_only=True,
                    same_site="Lax", secure=None):
         ctx = current()
@@ -198,7 +209,11 @@ def _api_token_payload(req):
     kit = KIT.get("kit")
     if kit is None:
         return None
-    return kit.token_payload(header[len("Bearer "):].strip(), (getattr(req, "path", "") or "").split("?")[0])
+    path = (getattr(req, "path", "") or "").split("?")[0]
+    route = getattr(req, "token_route", None)          # an @app.route(tokens=True): scoped by its name
+    if route is not None:
+        path = "/__pyweb/rpc/" + route
+    return kit.token_payload(header[len("Bearer "):].strip(), path)
 
 
 def _secret(ctx):

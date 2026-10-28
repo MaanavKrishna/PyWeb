@@ -25,7 +25,8 @@ class Plugin:
     def __init__(self, name, *, version="0.1.0"):
         self.name = name
         self.version = version
-        self.routes: list = []
+        self.routes: list = []          # (path, fn): HTML pages the plugin answers
+        self.http_routes: list = []     # (path, fn, options): @plugin.route
         self.rpc: list = []
         self.models: list = []
         self.browser_bindings: dict = {}
@@ -52,10 +53,19 @@ class Plugin:
         return fn
 
     def page(self, route, **opts):
+        """A page the plugin answers: ``fn(...)`` returns its HTML (plugins have no markup compiler)."""
         def deco(fn):
             fn.__pyweb_route__ = route
             fn.__pyweb_plugin__ = self.name
             self.routes.append((route, fn))
+            return fn
+        return deco
+
+    def route(self, path, **options):
+        """An HTTP route, as :meth:`pyweb.app.App.route` (the app registers it on ``app.use``)."""
+        def deco(fn):
+            fn.__pyweb_plugin__ = self.name
+            self.http_routes.append((path, fn, options))
             return fn
         return deco
 
@@ -76,7 +86,7 @@ class Plugin:
 
     def describe(self) -> dict:
         return {"name": self.name, "version": self.version,
-                "routes": [r for r, _ in self.routes],
+                "routes": [r for r, _ in self.routes] + [r for r, _f, _o in self.http_routes],
                 "rpc": [f.__name__ for f in self.rpc],
                 "models": [m.__name__ for m in self.models],
                 "bindings": dict(self.browser_bindings),

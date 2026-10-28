@@ -704,7 +704,12 @@ class Server:
                                  secure_cookies=self.secure_cookies)
         token = _ctx.activate(rc)
         try:
-            resp = self._dispatch(req)
+            chain = getattr(getattr(self.app, "app", None), "middlewares", None)
+            if chain:
+                from pyweb.routes import run_middleware
+                resp = run_middleware(chain, req, self._dispatch)
+            else:
+                resp = self._dispatch(req)
         finally:
             _ctx.deactivate(token)
             if rc._session_loaded and rc._session:
@@ -772,6 +777,20 @@ class Server:
             from pyweb import webhooks as _webhooks
             tel.route = "webhook"
             return _webhooks.receive(hooks[path], req)
+        user_app = getattr(self.app, "app", None)
+        http_routes = getattr(user_app, "http_routes", None)
+        if http_routes:
+            from pyweb import routes as _routes
+            found = _routes.find(http_routes, path, req.method)
+            if found is not None:
+                route, extra = found
+                if route is None:
+                    if req.method not in ("GET", "HEAD") or not any(p.match(path) for p, _ in self.routes):
+                        return Response(405, "method not allowed", {"Allow": ", ".join(extra),
+                                                                    "Content-Type": "text/plain"})
+                else:
+                    tel.route = f"route:{route.path}"
+                    return _routes.respond(self, route, extra, req)
         for pat, name in self.routes:
             m = pat.match(path)
             if not m:
@@ -791,6 +810,14 @@ class Server:
             if resp is not None:
                 tel.route = "auth"
                 return resp
+        if path in ("/robots.txt", "/sitemap.xml") and req.method in ("GET", "HEAD") and user_app is not None:
+            from pyweb import routes as _routes
+            body = _routes.robots_txt(user_app) if path == "/robots.txt" else \
+                _routes.sitemap_xml(user_app, self.compiled)
+            if body is not None:
+                tel.route = path[1:]
+                ctype = "text/plain; charset=utf-8" if path == "/robots.txt" else "application/xml"
+                return Response(200, body, {"Content-Type": ctype, "Cache-Control": "public, max-age=3600"})
         tel.route = "not_found"
         return self.error_page(404, req)
 

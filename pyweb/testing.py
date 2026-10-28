@@ -99,6 +99,17 @@ class TestClient:
         body = json.dumps(data).encode() if data is not None else b""
         return self.request("POST", path, body, {"Content-Type": "application/json", **(headers or {})})
 
+    def put(self, path, data=None, headers=None):
+        body = json.dumps(data).encode() if data is not None else b""
+        return self.request("PUT", path, body, {"Content-Type": "application/json", **(headers or {})})
+
+    def patch(self, path, data=None, headers=None):
+        body = json.dumps(data).encode() if data is not None else b""
+        return self.request("PATCH", path, body, {"Content-Type": "application/json", **(headers or {})})
+
+    def delete(self, path, headers=None):
+        return self.request("DELETE", path, b"", headers)
+
     def login(self, email="user@example.com", *, roles=(), name=None, org=None, org_role="owner", **claims):
         """Sign in as someone without going through the sign-in form; returns the user.
 

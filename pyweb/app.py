@@ -20,8 +20,13 @@ class App:
 
     def __init__(self, database=None, cache=None, auth=None, plugins=(), *,
                  title="PyWeb", stylesheets=(), lang="en", base_url=None, description=None,
-                 image=None, client_nav=True, pwa=None, desktop=None, theme=None, motion=None):
+                 image=None, client_nav=True, pwa=None, desktop=None, theme=None, motion=None,
+                 robots=None):
         self.title = title
+        self.robots = robots             # /robots.txt: None (PyWeb's default), False (none), or the text
+        self.http_routes: list = []      # @app.route (pyweb.routes.Route)
+        self.middlewares: list = []      # @app.middleware, outermost first
+        self.sitemap_sources: list = []  # @app.sitemap
         self.stylesheets = list(stylesheets)
         self.lang = lang
         self.base_url = base_url.rstrip("/") if base_url else None
@@ -143,6 +148,45 @@ class App:
         from .jobs import every
         return every(**options)
 
+    # ------------------------------------------------------------- routes
+    def route(self, path, *, methods=("GET",), login=False, roles=(), fresh=None, rate=None, per="user",
+              tokens=False, cors=None, csrf=True, content_type=None):
+        """An HTTP endpoint that isn't a page (see :mod:`pyweb.routes`): ``@app.route("/api/items/{id:int}",
+        methods=["GET", "POST"])``. ``login=``/``roles=``/``fresh=``/``rate=`` guard it like a server
+        function; ``tokens=True`` accepts API tokens; ``cors=["https://other.site"]`` lets those
+        origins call it from the browser; ``content_type=`` is what a returned string is."""
+        def deco(fn):
+            from pyweb.routes import Route
+            route = Route(path, fn, methods, login=login, roles=roles, fresh=fresh, rate=rate, per=per,
+                          tokens=tokens, cors=cors, csrf=csrf, content_type=content_type)
+            for other in self.http_routes:
+                if other.path == path and set(other.methods) & set(route.methods) - {"HEAD"}:
+                    raise ValueError(f"{path} {sorted(set(other.methods) & set(route.methods))} is already "
+                                     f"answered by {other.name}()")
+            self.http_routes.append(route)
+            fn.__pyweb_http_route__ = route
+            return fn
+        return deco
+
+    def get(self, path, **options):
+        """``@app.get("/api/x")``: :meth:`route` for GET."""
+        return self.route(path, methods=("GET",), **options)
+
+    def post(self, path, **options):
+        """``@app.post("/api/x")``: :meth:`route` for POST."""
+        return self.route(path, methods=("POST",), **options)
+
+    def middleware(self, fn):
+        """``@app.middleware``: ``fn(request, call_next)`` around every request (see :mod:`pyweb.routes`)."""
+        self.middlewares.append(fn)
+        return fn
+
+    def sitemap(self, fn):
+        """``@app.sitemap``: ``fn()`` returns more paths (or full URLs) for ``/sitemap.xml``, e.g. one per
+        blog post. Pages without parameters are listed already (needs ``App(base_url=...)``)."""
+        self.sitemap_sources.append(fn)
+        return fn
+
     def webhook(self, path, *, secret, scheme="standard", retries=5):
         """Receive webhooks at ``path`` (see :mod:`pyweb.webhooks`): the signature is checked, repeats are
         dropped and ``fn(event)`` runs as a background job. ``scheme``: ``"github"``, ``"stripe"`` or
@@ -159,9 +203,18 @@ class App:
         return use_auth(self, db, **options)
 
     def use(self, plugin):
-        """Attach a :class:`pyweb.plugins.Plugin`; merges its routes."""
+        """Attach a :class:`pyweb.plugins.Plugin`: its routes and pages answer, its server functions
+        can be called, its Models join the migrations and its build steps run in ``pyweb build``."""
         self.plugins.add(plugin)
         for route, fn in plugin.routes:
-            self.pages.append((route, fn.__name__, {"render": "server",
-                                                   "plugin": plugin.name}))
+            self.route(route, content_type="text/html; charset=utf-8")(fn)
+        for path, fn, options in plugin.http_routes:
+            self.route(path, **options)(fn)
+        for model in plugin.models:
+            if model not in self.models:
+                self.models.append(model)
+        if plugin.build_steps or plugin.browser_bindings:
+            import warnings
+            warnings.warn(f"plugin {plugin.name!r}: build steps and browser bindings aren't used by PyWeb yet "
+                          "(routes, pages, server functions and Models are)", stacklevel=2)
         return plugin

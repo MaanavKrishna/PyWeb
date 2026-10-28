@@ -201,6 +201,50 @@ def _operation(name, fn, components):
     return op
 
 
+def _openapi_path(path):
+    import re
+    return re.sub(r"\{(\w+)(?::\w+)?\}", r"{\1}", path)
+
+
+def _route_operation(route, method, components):
+    """An ``@app.route`` endpoint: path parameters, query parameters, a JSON body for writes."""
+    sig = inspect.signature(route.fn)
+    try:
+        hints = typing.get_type_hints(route.fn)
+    except Exception:  # noqa: BLE001
+        hints = {}
+    kinds = {int: {"type": "integer"}, float: {"type": "number"}}
+    params, body = [], None
+    for p in sig.parameters.values():
+        if p.name == "request" or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        if p.name == "body":
+            body = schema_for(hints.get("body"), components) if hints.get("body") else {"type": "object"}
+            continue
+        if p.name in route.converters:
+            convert = route.converters[p.name]
+            params.append({"name": p.name, "in": "path", "required": True,
+                           "schema": kinds.get(convert, {"type": "string"})})
+        else:
+            entry = {"name": p.name, "in": "query", "schema": schema_for(hints.get(p.name, p.annotation), components)}
+            if p.default is p.empty:
+                entry["required"] = True
+            params.append(entry)
+    doc = inspect.getdoc(route.fn) or ""
+    op = {"operationId": f"{route.name}_{method.lower()}" if len(route.methods) > 2 else route.name,
+          "summary": doc.splitlines()[0] if doc else route.name.replace("_", " "),
+          "responses": {"200": {"description": "The result"}}}
+    if params:
+        op["parameters"] = params
+    if body is not None and method in ("POST", "PUT", "PATCH"):
+        op["requestBody"] = {"content": {"application/json": {"schema": body}}}
+    if route.guard:
+        op["security"] = [{"apiToken": []}, {"session": []}] if route.tokens else [{"session": []}]
+        op["responses"]["401"] = {"description": "Not signed in", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"error": {"type": "string"}}}}}}
+    return op
+
+
 def generate(app_path, *, server_url=None):
     """The OpenAPI document (a dict) for the app at ``app_path``."""
     from .app_loader import LoadedApp
@@ -209,6 +253,12 @@ def generate(app_path, *, server_url=None):
     paths = {}
     for name in sorted(loaded.rpc):
         paths[f"/__pyweb/rpc/{name}"] = {"post": _operation(name, loaded.rpc[name], components)}
+    for route in getattr(loaded.app, "http_routes", ()):
+        item = paths.setdefault(_openapi_path(route.path), {})
+        for method in route.methods:
+            if method in ("HEAD", "OPTIONS"):
+                continue
+            item[method.lower()] = _route_operation(route, method, components)
     from . import __version__
     doc = {
         "openapi": "3.1.0",
